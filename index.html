@@ -9,15 +9,21 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="المستشفى">
-<link rel="icon" type="image/png" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%23173B4A' width='192' height='192'/><text x='50%' y='50%' font-size='120' fill='%23fff' text-anchor='middle' dominant-baseline='central' font-weight='bold' font-family='Arial'>م</text></svg>">
-<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%23173B4A' width='192' height='192' rx='45'/><text x='50%' y='50%' font-size='120' fill='%23fff' text-anchor='middle' dominant-baseline='central' font-weight='bold' font-family='Arial'>م</text></svg>">
-<link rel="manifest" href="data:application/manifest+json,{%22name%22:%22نظام إدارة مستشفى لجنة زكاة ميت على التخصصي%22,%22short_name%22:%22المستشفى%22,%22description%22:%22تطبيق متكامل لإدارة العيادات والزيارات والعاملين%22,%22start_url%22:%22/%22,%22scope%22:%22/%22,%22display%22:%22standalone%22,%22orientation%22:%22portrait-primary%22,%22theme_color%22:%22%23173B4A%22,%22background_color%22:%22%23F6F4EE%22,%22icons%22:[{%22src%22:%22data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 192 192%27><rect fill=%27%23173B4A%27 width=%27192%27 height=%27192%27/><text x=%2750%25%27 y=%2750%25%27 font-size=%27120%27 fill=%27%23fff%27 text-anchor=%27middle%27 dominant-baseline=%27central%27 font-weight=%27bold%27 font-family=%27Arial%27>م</text></svg>%22,%22sizes%22:%22192x192%22,%22type%22:%22image/svg+xml%22,%22purpose%22:%22any%22},{%22src%22:%22data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 512 512%27><rect fill=%27%23173B4A%27 width=%27512%27 height=%27512%27/><text x=%2750%25%27 y=%2750%25%27 font-size=%27300%27 fill=%27%23fff%27 text-anchor=%27middle%27 dominant-baseline=%27central%27 font-weight=%27bold%27 font-family=%27Arial%27>م</text></svg>%22,%22sizes%22:%22512x512%22,%22type%22:%22image/svg+xml%22,%22purpose%22:%22any%22}],%22categories%22:[%22medical%22,%22productivity%22],%22screenshots%22:[]}">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<!-- الـ manifest لازم يكون ملف حقيقي (manifest.json) بجانب index.html فى نفس
+     المجلد على GitHub Pages - المتصفحات لا تعتبر التطبيق قابلاً للتثبيت أبدًا
+     لو الـ manifest كان data: URI مهما كان محتواه صحيحًا. -->
+<link rel="manifest" href="manifest.json">
 <script>
+// الـ Service Worker أيضًا لازم يكون ملف حقيقي (sw.js) - تسجيله من blob: URL
+// مرفوض تمامًا فى مواصفة الويب (SecurityError) فى كل المتصفحات، وبدون Service
+// Worker فعّال يفشل شرط "قابلية التثبيت" (installability) تلقائيًا.
 if ('serviceWorker' in navigator) {
-  const swCode = `const CACHE_NAME = 'hospital-v1.2.2';const urlsToCache = ['/','index.html'];self.addEventListener('install', event => {event.waitUntil(caches.open(CACHE_NAME).then(cache => {console.log('✅ Service Worker installed');}));self.skipWaiting();});self.addEventListener('activate', event => {event.waitUntil(caches.keys().then(cacheNames => {return Promise.all(cacheNames.map(cacheName => {if (cacheName !== CACHE_NAME) {return caches.delete(cacheName);}}));}));self.clients.claim();});self.addEventListener('fetch', event => {if (event.request.method !== 'GET') return;event.respondWith(caches.match(event.request).then(response => {if (response) return response;return fetch(event.request).then(response => {if (!response || response.status !== 200) {return response;}const responseToCache = response.clone();caches.open(CACHE_NAME).then(cache => {cache.put(event.request, responseToCache);});return response;}).catch(() => {return caches.match(event.request);});})});`;
-  const blob = new Blob([swCode], { type: 'application/javascript' });
-  const swUrl = URL.createObjectURL(blob);
-  navigator.serviceWorker.register(swUrl, { scope: '/' }).then(reg => {console.log('✅ Service Worker registered successfully');setInterval(() => reg.update(), 3600000);}).catch(err => console.log('Service Worker registration failed:', err));
+  navigator.serviceWorker.register('sw.js', { scope: './' })
+    .then(reg => { console.log('✅ Service Worker registered successfully'); setInterval(() => reg.update(), 3600000); })
+    .catch(err => console.log('Service Worker registration failed:', err));
 }
 let deferredPrompt;let installPromptShown = false;
 window.addEventListener('beforeinstallprompt', (e) => {console.log('✅ beforeinstallprompt fired - Installation is available!');e.preventDefault();deferredPrompt = e;showInstallPrompt();});
@@ -285,6 +291,23 @@ window.addEventListener('offline', () => {console.log('📴 Offline');if (typeof
 </style>
 </head>
 <body>
+
+<!-- شاشة البداية (Splash Screen) - تظهر فورًا مع فتح التطبيق (قبل حتى تحميل
+     أي بيانات) وتختفي تلقائيًا بمجرد جاهزية الشاشة الأولى (تسجيل الدخول أو
+     لوحة القيادة)، فى دالة boot() أسفل الملف. -->
+<div id="appSplash" style="
+  position:fixed; inset:0; z-index:99999; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:18px;
+  background:#F6F4EE; transition:opacity .4s ease;
+">
+  <img src="icon-512.png" alt="شعار مستشفى ميت على"
+    style="width:132px; height:132px; border-radius:26px; box-shadow:0 8px 28px rgba(23,59,74,.18);">
+  <div style="font-family:'Tajawal',sans-serif; font-weight:900; font-size:17px; color:#173B4A; text-align:center; max-width:280px;">
+    نظام إدارة مستشفى لجنة زكاة ميت على التخصصي
+  </div>
+  <div style="width:34px; height:34px; border:3px solid #E7E2D6; border-top-color:#173B4A; border-radius:50%; animation:appSplashSpin .8s linear infinite;"></div>
+</div>
+<style>@keyframes appSplashSpin{to{transform:rotate(360deg);}}</style>
 
 <aside id="sidebar"></aside>
 <div id="sidebarOverlay"></div>
@@ -6305,10 +6328,10 @@ async function boot() {
     DB.staffAccounts = seedStaffAccounts();
   }
   currentUser = getSession();
-  if (!currentUser) { renderLogin(); return; }
+  if (!currentUser) { renderLogin(); hideAppSplash(); return; }
   // تأكد أن المستخدم لا يزال حسابًا صالحًا (لم يُحذف)
   const sessionAccount = (DB.staffAccounts || []).find(a => a.id === currentUser.id);
-  if (!sessionAccount || sessionAccount.status === "موقوف") { clearSession(); renderLogin(); return; }
+  if (!sessionAccount || sessionAccount.status === "موقوف") { clearSession(); renderLogin(); hideAppSplash(); return; }
   // نفس إصلاح firstAccessiblePage عند تسجيل الدخول: state.page يبدأ دائمًا بقيمة
   // "dashboard" الافتراضية عند كل تحميل جديد للصفحة (JS متغيّر فى الذاكرة، لا يُحفَظ
   // بين إعادة التحميل) - فحتى مستخدم مسجّل دخوله بالفعل من قبل كان يقابل شاشة رفض
@@ -6316,11 +6339,19 @@ async function boot() {
   state.page = firstAccessiblePage();
   resetIdleTimer();
   route();
+  hideAppSplash();
   // إن كانت هناك عمليات معلّقة من جلسة سابقة لم تُرفَع بعد (مثلًا بعد إغلاق
   // المتصفح أثناء انقطاع الاتصال)، حاول رفعها الآن فى الخلفية دون تعطيل الواجهة.
   if (STORAGE_MODE === "supabase" && !SYNC_PAUSED) flushPendingSync();
   if (STORAGE_MODE === "supabase" && navigator.onLine) subscribeStaffAccountsRealtime();
 }
+function hideAppSplash() {
+  const el = document.getElementById("appSplash");
+  if (!el) return;
+  el.style.opacity = "0";
+  setTimeout(() => el.remove(), 420);
+}
+setTimeout(hideAppSplash, 8000); // شبكة أمان: لا تترك المستخدم عالقًا خلف الشاشة لو حدث خطأ غير متوقع
 boot();
 
 </script>

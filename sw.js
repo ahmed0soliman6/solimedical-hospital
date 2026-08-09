@@ -1,19 +1,42 @@
-const CACHE_NAME='mit-azzoun-hospital-pwa-v1.2.3';
-const APP_SHELL=['./','./index.html','./system.html','./manifest.webmanifest','./icon.svg'];
-self.addEventListener('install',event=>{
-  event.waitUntil(caches.open(CACHE_NAME).then(cache=>cache.addAll(APP_SHELL)).then(()=>self.skipWaiting()));
+const CACHE_NAME = 'hospital-v1.2.2';
+const urlsToCache = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './favicon-32.png'];
+
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(cache => {
+      console.log('✅ Service Worker installed');
+      return cache.addAll(urlsToCache);
+    })
+  );
+  self.skipWaiting();
 });
-self.addEventListener('activate',event=>{
-  event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE_NAME).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));
+
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys().then(cacheNames =>
+      Promise.all(
+        cacheNames.map(cacheName => {
+          if (cacheName !== CACHE_NAME) return caches.delete(cacheName);
+        })
+      )
+    )
+  );
+  self.clients.claim();
 });
-self.addEventListener('fetch',event=>{
-  const req=event.request;
-  if(req.method!=='GET') return;
-  const url=new URL(req.url);
-  if(url.origin!==self.location.origin) return;
-  event.respondWith(caches.match(req).then(cached=>cached||fetch(req).then(res=>{
-    const copy=res.clone();
-    caches.open(CACHE_NAME).then(cache=>cache.put(req,copy)).catch(()=>{});
-    return res;
-  }).catch(()=>caches.match('./index.html'))));
+
+self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET') return;
+  event.respondWith(
+    caches.match(event.request).then(response => {
+      if (response) return response;
+      return fetch(event.request)
+        .then(response => {
+          if (!response || response.status !== 200) return response;
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseToCache));
+          return response;
+        })
+        .catch(() => caches.match(event.request));
+    })
+  );
 });
