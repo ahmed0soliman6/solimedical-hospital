@@ -4,6 +4,29 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>نظام إدارة مستشفى لجنة زكاة ميت على التخصصي</title>
+<meta name="theme-color" content="#173B4A">
+<meta name="description" content="نظام إدارة مستشفى لجنة زكاة ميت على التخصصي">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="المستشفى">
+<link rel="icon" type="image/png" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%23173B4A' width='192' height='192'/><text x='50%' y='50%' font-size='120' fill='%23fff' text-anchor='middle' dominant-baseline='central' font-weight='bold' font-family='Arial'>م</text></svg>">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%23173B4A' width='192' height='192' rx='45'/><text x='50%' y='50%' font-size='120' fill='%23fff' text-anchor='middle' dominant-baseline='central' font-weight='bold' font-family='Arial'>م</text></svg>">
+<link rel="manifest" href="data:application/manifest+json,{%22name%22:%22نظام إدارة مستشفى لجنة زكاة ميت على التخصصي%22,%22short_name%22:%22المستشفى%22,%22description%22:%22تطبيق متكامل لإدارة العيادات والزيارات والعاملين%22,%22start_url%22:%22/%22,%22scope%22:%22/%22,%22display%22:%22standalone%22,%22orientation%22:%22portrait-primary%22,%22theme_color%22:%22%23173B4A%22,%22background_color%22:%22%23F6F4EE%22,%22icons%22:[{%22src%22:%22data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 192 192%27><rect fill=%27%23173B4A%27 width=%27192%27 height=%27192%27/><text x=%2750%25%27 y=%2750%25%27 font-size=%27120%27 fill=%27%23fff%27 text-anchor=%27middle%27 dominant-baseline=%27central%27 font-weight=%27bold%27 font-family=%27Arial%27>م</text></svg>%22,%22sizes%22:%22192x192%22,%22type%22:%22image/svg+xml%22,%22purpose%22:%22any%22},{%22src%22:%22data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 512 512%27><rect fill=%27%23173B4A%27 width=%27512%27 height=%27512%27/><text x=%2750%25%27 y=%2750%25%27 font-size=%27300%27 fill=%27%23fff%27 text-anchor=%27middle%27 dominant-baseline=%27central%27 font-weight=%27bold%27 font-family=%27Arial%27>م</text></svg>%22,%22sizes%22:%22512x512%22,%22type%22:%22image/svg+xml%22,%22purpose%22:%22any%22}],%22categories%22:[%22medical%22,%22productivity%22],%22screenshots%22:[]}">
+<script>
+if ('serviceWorker' in navigator) {
+  const swCode = `const CACHE_NAME = 'hospital-v1.2.2';const urlsToCache = ['/','index.html'];self.addEventListener('install', event => {event.waitUntil(caches.open(CACHE_NAME).then(cache => {console.log('✅ Service Worker installed');}));self.skipWaiting();});self.addEventListener('activate', event => {event.waitUntil(caches.keys().then(cacheNames => {return Promise.all(cacheNames.map(cacheName => {if (cacheName !== CACHE_NAME) {return caches.delete(cacheName);}}));}));self.clients.claim();});self.addEventListener('fetch', event => {if (event.request.method !== 'GET') return;event.respondWith(caches.match(event.request).then(response => {if (response) return response;return fetch(event.request).then(response => {if (!response || response.status !== 200) {return response;}const responseToCache = response.clone();caches.open(CACHE_NAME).then(cache => {cache.put(event.request, responseToCache);});return response;}).catch(() => {return caches.match(event.request);});})});`;
+  const blob = new Blob([swCode], { type: 'application/javascript' });
+  const swUrl = URL.createObjectURL(blob);
+  navigator.serviceWorker.register(swUrl, { scope: '/' }).then(reg => {console.log('✅ Service Worker registered successfully');setInterval(() => reg.update(), 3600000);}).catch(err => console.log('Service Worker registration failed:', err));
+}
+let deferredPrompt;let installPromptShown = false;
+window.addEventListener('beforeinstallprompt', (e) => {console.log('✅ beforeinstallprompt fired - Installation is available!');e.preventDefault();deferredPrompt = e;showInstallPrompt();});
+function showInstallPrompt() {if (!deferredPrompt || installPromptShown) return;installPromptShown = true;console.log('📱 Showing install prompt...');setTimeout(() => {if (deferredPrompt) {deferredPrompt.prompt();deferredPrompt.userChoice.then(choiceResult => {if (choiceResult.outcome === 'accepted') {console.log('✅ User accepted the install prompt');if (typeof logActivity === 'function') logActivity('تم تثبيت التطبيق على الجهاز', 'install');} else {console.log('❌ User dismissed the install prompt');}deferredPrompt = null;installPromptShown = false;});}},'2000');}
+window.addEventListener('beforeunload', () => {installPromptShown = false;});
+window.addEventListener('appinstalled', () => {console.log('🎉 App installed successfully!');deferredPrompt = null;});
+window.addEventListener('online', () => {console.log('🌐 Back online');if (typeof showToast === 'function') showToast('✅ عدت للاتصال');});
+window.addEventListener('offline', () => {console.log('📴 Offline');if (typeof showToast === 'function') showToast('⚠️ انقطع الاتصال - التطبيق يعمل بدون إنترنت');});
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@500;700;900&family=Cairo:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
