@@ -1,4 +1,4 @@
-const CACHE_NAME='mit-azzoun-hospital-pwa-v1.2.0';
+const CACHE_NAME='mit-azzoun-hospital-pwa-v1.2.1';
 const APP_SHELL=['./','./index.html','./system.html','./manifest.webmanifest','./icon.svg'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE_NAME).then(cache=>cache.addAll(APP_SHELL)).then(()=>self.skipWaiting()));
