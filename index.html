@@ -4,35 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>نظام إدارة مستشفى لجنة زكاة ميت على التخصصي</title>
-<meta name="theme-color" content="#173B4A">
-<meta name="description" content="نظام إدارة مستشفى لجنة زكاة ميت على التخصصي">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="المستشفى">
-<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
-<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
-<!-- الـ manifest لازم يكون ملف حقيقي (manifest.json) بجانب index.html فى نفس
-     المجلد على GitHub Pages - المتصفحات لا تعتبر التطبيق قابلاً للتثبيت أبدًا
-     لو الـ manifest كان data: URI مهما كان محتواه صحيحًا. -->
-<link rel="manifest" href="manifest.json">
-<script>
-// الـ Service Worker أيضًا لازم يكون ملف حقيقي (sw.js) - تسجيله من blob: URL
-// مرفوض تمامًا فى مواصفة الويب (SecurityError) فى كل المتصفحات، وبدون Service
-// Worker فعّال يفشل شرط "قابلية التثبيت" (installability) تلقائيًا.
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js', { scope: './' })
-    .then(reg => { console.log('✅ Service Worker registered successfully'); setInterval(() => reg.update(), 3600000); })
-    .catch(err => console.log('Service Worker registration failed:', err));
-}
-let deferredPrompt;let installPromptShown = false;
-window.addEventListener('beforeinstallprompt', (e) => {console.log('✅ beforeinstallprompt fired - Installation is available!');e.preventDefault();deferredPrompt = e;showInstallPrompt();});
-function showInstallPrompt() {if (!deferredPrompt || installPromptShown) return;installPromptShown = true;console.log('📱 Showing install prompt...');setTimeout(() => {if (deferredPrompt) {deferredPrompt.prompt();deferredPrompt.userChoice.then(choiceResult => {if (choiceResult.outcome === 'accepted') {console.log('✅ User accepted the install prompt');if (typeof logActivity === 'function') logActivity('تم تثبيت التطبيق على الجهاز', 'install');} else {console.log('❌ User dismissed the install prompt');}deferredPrompt = null;installPromptShown = false;});}},'2000');}
-window.addEventListener('beforeunload', () => {installPromptShown = false;});
-window.addEventListener('appinstalled', () => {console.log('🎉 App installed successfully!');deferredPrompt = null;});
-window.addEventListener('online', () => {console.log('🌐 Back online');if (typeof showToast === 'function') showToast('✅ عدت للاتصال');});
-window.addEventListener('offline', () => {console.log('📴 Offline');if (typeof showToast === 'function') showToast('⚠️ انقطع الاتصال - التطبيق يعمل بدون إنترنت');});
-</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@500;700;900&family=Cairo:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
@@ -291,23 +262,6 @@ window.addEventListener('offline', () => {console.log('📴 Offline');if (typeof
 </style>
 </head>
 <body>
-
-<!-- شاشة البداية (Splash Screen) - تظهر فورًا مع فتح التطبيق (قبل حتى تحميل
-     أي بيانات) وتختفي تلقائيًا بمجرد جاهزية الشاشة الأولى (تسجيل الدخول أو
-     لوحة القيادة)، فى دالة boot() أسفل الملف. -->
-<div id="appSplash" style="
-  position:fixed; inset:0; z-index:99999; display:flex; flex-direction:column;
-  align-items:center; justify-content:center; gap:18px;
-  background:#F6F4EE; transition:opacity .4s ease;
-">
-  <img src="icon-512.png" alt="شعار مستشفى ميت على"
-    style="width:132px; height:132px; border-radius:26px; box-shadow:0 8px 28px rgba(23,59,74,.18);">
-  <div style="font-family:'Tajawal',sans-serif; font-weight:900; font-size:17px; color:#173B4A; text-align:center; max-width:280px;">
-    نظام إدارة مستشفى لجنة زكاة ميت على التخصصي
-  </div>
-  <div style="width:34px; height:34px; border:3px solid #E7E2D6; border-top-color:#173B4A; border-radius:50%; animation:appSplashSpin .8s linear infinite;"></div>
-</div>
-<style>@keyframes appSplashSpin{to{transform:rotate(360deg);}}</style>
 
 <aside id="sidebar"></aside>
 <div id="sidebarOverlay"></div>
@@ -1818,7 +1772,7 @@ const SB_CRED_KEY = APP_PREFIX + "supabase_credentials";
 // على أي جهاز أو متصفح دون الحاجة لإدخالها يدويًا فى كل مرة.
 // رقم إصدار النظام - يُحدَّث يدويًا مع كل تعديل حقيقى فى الكود، ليسهل معرفة
 // هل الهاتف شغّال بأحدث نسخة أم لا بمجرد النظر لصفحة الإعدادات، بدل تخمين ذلك.
-const APP_VERSION = "v1.2.2 — إصلاح: حساب المدير الافتراضي (admin) لم يكن يُرفع لـ Supabase عند إنشاء قاعدة بيانات جديدة فارغة (2026-08-09)";
+const APP_VERSION = "v1.2.4 — إصلاح باق خطير: شاشة الدخول كانت تمسح حسابات المستخدمين المحلية (بما فيها admin الافتراضي) لو رجع جدول Supabase فارغًا، فيفشل تسجيل الدخول دائمًا فى هذه الحالة رغم صحة البيانات (2026-08-09)";
 
 // بيانات اتصال Supabase الخاصة بمستشفى ميت على
 const DEFAULT_SB_URL = "https://uorxtilwjrvwvlnnamop.supabase.co";
@@ -2416,6 +2370,16 @@ async function backgroundRefreshAll() {
       try {
         const before = JSON.stringify(DB[key]);
         const fresh = await storeGet(key, DB[key]);
+        // إعادة تحقق فورية بعد انتظار الشبكة (وهذا هو الإصلاح الجوهري لمشكلة
+        // اختفاء التعديل بعد ثوانٍ رغم الاتصال): الفحص الأول لـ PENDING_WRITES
+        // فى بداية الحلقة لا يكفى، لأن المستخدم قد يبدأ (أو حتى ينهي) حفظ تعديل
+        // جديد لنفس هذا الجدول بالكامل أثناء فترة انتظار storeGet نفسها (طلب
+        // شبكة يستغرق وقتًا). النتيجة "fresh" فى هذه الحالة لا يمكن الوثوق بها
+        // لأنها قد لا تعكس التعديل الجديد بشكل موثوق، فنتجاهلها كليًا هنا بدل
+        // استبدال DB[key] بها والتسبب فى اختفاء تعديل المستخدم الذى نجح فعليًا.
+        if (PENDING_WRITES > 0) break;
+        const pendingAfter = await getPendingQueueKeys();
+        if (pendingAfter.includes(key)) continue;
         if (fresh !== undefined && JSON.stringify(fresh) !== before) { DB[key] = fresh; changed = true; }
       } catch (e) { /* تجاهل فشل جدول واحد ولا يوقف تحديث الباقى */ }
     }
@@ -6229,7 +6193,15 @@ function renderLogin(errorMsg) {
     try {
       if (STORAGE_MODE === "supabase" && navigator.onLine && !SYNC_PAUSED) {
         await flushPendingSync();
-        DB.staffAccounts = await storeGet("staffAccounts", DB.staffAccounts);
+        // إصلاح باق خطير: كان هذا السطر يستبدل DB.staffAccounts بأي نتيجة تأتي من
+        // Supabase دون تحقق - فلو رجع الجدول السحابي فارغًا لأي سبب (لم يُرفَع
+        // الحساب الافتراضي بعد، أو مشكلة شبكة مؤقتة أعادت مصفوفة فارغة بدل خطأ
+        // فعلي)، كان يُمسَح حساب admin المحلي بالكامل قبل حتى التحقق من كلمة
+        // المرور، فتفشل كل محاولات الدخول برسالة "بيانات غير صحيحة" رغم صحتها.
+        // الآن: تجاهل النتيجة السحابية تمامًا إن كانت فارغة، واعتمد على النسخة
+        // المحلية الموجودة (التي تحتوي حساب admin الافتراضي دائمًا على الأقل).
+        const freshAccounts = await storeGet("staffAccounts", DB.staffAccounts);
+        if (freshAccounts && freshAccounts.length) DB.staffAccounts = freshAccounts;
       }
     } catch (err) { /* تعذّر التحديث الآن - نكمل بالتحقق من أحدث نسخة متاحة محليًا */ }
     const account = (DB.staffAccounts || []).find(a => a.username === username && a.password === password);
@@ -6307,7 +6279,14 @@ function subscribeStaffAccountsRealtime() {
         try {
           const pendingNow = await getPendingQueueKeys();
           if (pendingNow.includes("staffAccounts")) return; // لا تسحب فوق تعديل محلى لم يُرفَع بعد
-          DB.staffAccounts = await storeGet("staffAccounts", DB.staffAccounts);
+          const fresh = await storeGet("staffAccounts", DB.staffAccounts);
+          // نفس إصلاح فجوة السباق فى backgroundRefreshAll: تحقق تانى بعد انتظار
+          // الشبكة مباشرة قبل استبدال DB.staffAccounts - المستخدم ممكن يكون
+          // بدأ (أو أنهى) حفظ تغيير كلمة السر أثناء انتظار storeGet نفسها.
+          if (PENDING_WRITES > 0) return;
+          const pendingAfter = await getPendingQueueKeys();
+          if (pendingAfter.includes("staffAccounts")) return;
+          DB.staffAccounts = fresh;
           if (currentUser) {
             const me = DB.staffAccounts.find(a => a.id === currentUser.id);
             if (!me || me.status === "موقوف") { clearSession(); renderLogin("تم إيقاف هذا الحساب أو حذفه."); return; }
@@ -6328,10 +6307,10 @@ async function boot() {
     DB.staffAccounts = seedStaffAccounts();
   }
   currentUser = getSession();
-  if (!currentUser) { renderLogin(); hideAppSplash(); return; }
+  if (!currentUser) { renderLogin(); return; }
   // تأكد أن المستخدم لا يزال حسابًا صالحًا (لم يُحذف)
   const sessionAccount = (DB.staffAccounts || []).find(a => a.id === currentUser.id);
-  if (!sessionAccount || sessionAccount.status === "موقوف") { clearSession(); renderLogin(); hideAppSplash(); return; }
+  if (!sessionAccount || sessionAccount.status === "موقوف") { clearSession(); renderLogin(); return; }
   // نفس إصلاح firstAccessiblePage عند تسجيل الدخول: state.page يبدأ دائمًا بقيمة
   // "dashboard" الافتراضية عند كل تحميل جديد للصفحة (JS متغيّر فى الذاكرة، لا يُحفَظ
   // بين إعادة التحميل) - فحتى مستخدم مسجّل دخوله بالفعل من قبل كان يقابل شاشة رفض
@@ -6339,19 +6318,11 @@ async function boot() {
   state.page = firstAccessiblePage();
   resetIdleTimer();
   route();
-  hideAppSplash();
   // إن كانت هناك عمليات معلّقة من جلسة سابقة لم تُرفَع بعد (مثلًا بعد إغلاق
   // المتصفح أثناء انقطاع الاتصال)، حاول رفعها الآن فى الخلفية دون تعطيل الواجهة.
   if (STORAGE_MODE === "supabase" && !SYNC_PAUSED) flushPendingSync();
   if (STORAGE_MODE === "supabase" && navigator.onLine) subscribeStaffAccountsRealtime();
 }
-function hideAppSplash() {
-  const el = document.getElementById("appSplash");
-  if (!el) return;
-  el.style.opacity = "0";
-  setTimeout(() => el.remove(), 420);
-}
-setTimeout(hideAppSplash, 8000); // شبكة أمان: لا تترك المستخدم عالقًا خلف الشاشة لو حدث خطأ غير متوقع
 boot();
 
 </script>
