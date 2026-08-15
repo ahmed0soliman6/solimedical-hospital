@@ -556,6 +556,15 @@ function recordsEqual(a, b) {
   if (!a || !b) return false;
   return JSON.stringify(stripUpdatedAt(a)) === JSON.stringify(stripUpdatedAt(b));
 }
+function syncRecordsEqual(key, a, b) {
+  if (key !== "auditLog") return recordsEqual(a, b);
+  if (!a || !b) return false;
+  const left = Object.assign({}, a); const right = Object.assign({}, b);
+  // audit_log يستخدم created_at كطابع ينشئه الخادم؛ لا تجعله سبباً لاعتبار
+  // كل سجل غير متطابق أو لإيقاف طابور المزامنة بعد نجاح الإدخال.
+  delete left.timestamp; delete right.timestamp;
+  return JSON.stringify(left) === JSON.stringify(right);
+}
 
 // تعارضات بانتظار مراجعة يدوية من المدير (تُستخدم فقط إذا كان خيار
 // "مراجعة التعارضات يدويًا" مُفعّلًا فى الإعدادات)
@@ -2044,15 +2053,15 @@ async function pushTableSmart(key, localArr) {
   for (const local of localArr) {
     const remote = remoteMap.get(local.id);
     if (!remote) { toUpsert.push(local); mergedLocal.push(local); continue; }
-    if (recordsEqual(local, remote)) { mergedLocal.push(local); continue; }
+    if (syncRecordsEqual(key, local, remote)) { mergedLocal.push(local); continue; }
     // لا نقارن ساعة الجهاز بساعة Supabase لحسم تعديل محلي صريح؛ فرق التوقيت أو
     // تقريب الطوابع قد يجعل remote.updated_at أحدث رغم أن المستخدم عدّل السجل الآن.
     // خط الأساس هو المرجع الصحيح: إذا تغيّر السجل محليًا منذ آخر تطابق، فالتعديل
     // المحلي هو المقصود ويجب رفعه، خصوصًا تغيير كلمة المرور والصلاحيات.
     const base = baseMap.get(local.id);
-    const localChangedSinceBase = !base || !recordsEqual(base, local);
+    const localChangedSinceBase = !base || !syncRecordsEqual(key, base, local);
     if (localChangedSinceBase) {
-      if (manualReview && base && !recordsEqual(base, remote)) {
+      if (manualReview && base && !syncRecordsEqual(key, base, remote)) {
         conflicts.push({ table: key, id: local.id, local, remote, detectedAt: nowISO() });
         mergedLocal.push(local); // احتفظ بتعديل المستخدم لحين قرار المدير
       } else {
@@ -2126,7 +2135,7 @@ async function pushTableSmart(key, localArr) {
     const verifiedMap = new Map(verified.map(r => [r.id, r]));
     for (const local of toUpsert) {
       const remote = verifiedMap.get(local.id);
-      if (!remote || !recordsEqual(local, remote)) {
+      if (!remote || !syncRecordsEqual(key, local, remote)) {
         throw new Error(`Supabase upsert not confirmed for ${table}:${local.id}`);
       }
     }
