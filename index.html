@@ -2045,32 +2045,35 @@ async function pushTableSmart(key, localArr) {
     const remote = remoteMap.get(local.id);
     if (!remote) { toUpsert.push(local); mergedLocal.push(local); continue; }
     if (recordsEqual(local, remote)) { mergedLocal.push(local); continue; }
-    const localTime = local.updatedAt || "";
-    const remoteTime = remote.updatedAt || "";
-    if (!remoteTime || localTime >= remoteTime) {
-      toUpsert.push(local); mergedLocal.push(local);
-    } else {
-      // السحابة أحدث زمنيًا ومحتواها مختلف عن المحلى = تعارض محتمل
-      const base = baseMap.get(local.id);
-      const localChangedSinceBase = !base || !recordsEqual(base, local);
-      if (!localChangedSinceBase) {
-        mergedLocal.push(remote); // المحلى لم يتغيّر أصلًا، اعتمد النسخة السحابية الأحدث دون إزعاج أحد
-      } else if (manualReview) {
+    // لا نقارن ساعة الجهاز بساعة Supabase لحسم تعديل محلي صريح؛ فرق التوقيت أو
+    // تقريب الطوابع قد يجعل remote.updated_at أحدث رغم أن المستخدم عدّل السجل الآن.
+    // خط الأساس هو المرجع الصحيح: إذا تغيّر السجل محليًا منذ آخر تطابق، فالتعديل
+    // المحلي هو المقصود ويجب رفعه، خصوصًا تغيير كلمة المرور والصلاحيات.
+    const base = baseMap.get(local.id);
+    const localChangedSinceBase = !base || !recordsEqual(base, local);
+    if (localChangedSinceBase) {
+      if (manualReview && base && !recordsEqual(base, remote)) {
         conflicts.push({ table: key, id: local.id, local, remote, detectedAt: nowISO() });
-        mergedLocal.push(local); // احتفظ بالمحلى مؤقتًا دون دفعه لحين قرار المدير
+        mergedLocal.push(local); // احتفظ بتعديل المستخدم لحين قرار المدير
       } else {
-        mergedLocal.push(remote); // تلقائى: الأحدث زمنيًا (وهو السحابى هنا) يفوز
+        toUpsert.push(local);
+        mergedLocal.push(local);
       }
+    } else {
+      mergedLocal.push(remote); // الجهاز لم يغيّر السجل؛ اعتمد النسخة السحابية المختلفة
     }
-  }
-  // سجلات موجودة سحابيًا فقط (أضافها جهاز آخر ولم تصل بعد لهذا الجهاز) - أضِفها محليًا، لا تحذفها أبدًا
-  for (const remote of remoteArr) {
-    if (!localMap.has(remote.id)) mergedLocal.push(remote);
   }
   // حذف حقيقى فقط: كان معروفًا محليًا فى آخر مزامنة، وأصبح غائبًا محليًا الآن (حُذف فعليًا)،
   // وما زال موجودًا سحابيًا. أما السجلات "غير المعروفة" محليًا فلا تُحذف أبدًا حتى لا نفقد بيانات جهاز آخر.
   for (const base of (baseline || [])) {
     if (!localMap.has(base.id) && remoteMap.has(base.id)) toDelete.push(base.id);
+  }
+  const toDeleteSet = new Set(toDelete);
+  // سجلات موجودة سحابيًا فقط تُضاف محليًا، باستثناء ما حذفه المستخدم صراحةً؛
+  // كان هذا الاستثناء مفقودًا، فكان الكود يحذف السجل من Supabase ثم يضيفه مباشرة
+  // إلى mergedLocal ويعيده إلى الشاشة والكاش.
+  for (const remote of remoteArr) {
+    if (!localMap.has(remote.id) && !toDeleteSet.has(remote.id)) mergedLocal.push(remote);
   }
 
   // إصلاح جوهري: مكتبة Supabase لا ترمي استثناء عند فشل upsert/delete، بل
@@ -2098,6 +2101,34 @@ async function pushTableSmart(key, localArr) {
     for (const batch of chunkArray(rows, CHUNK)) {
       const { error: upsertErr } = await sbClient.from(table).upsert(batch, { onConflict: "id" });
       if (upsertErr) throw upsertErr;
+    }
+  }
+  // لا تعتبر العملية ناجحة لمجرد أن PostgREST لم يُرجع exception؛ بعض سياسات
+  // RLS قد تسمح بالطلب شكلياً وتعيد صفر صفوف. أعد القراءة والتحقق قبل إزالة الجدول
+  // من الطابور أو تحديث baseline، وإلا ستعود النسخة القديمة بعد أول Realtime/refresh.
+  if (toDelete.length) {
+    for (const batch of chunkArray(toDelete, CHUNK)) {
+      const { data: remaining, error: verifyDeleteErr } = await sbClient.from(table).select("id").in("id", batch);
+      if (verifyDeleteErr) throw verifyDeleteErr;
+      if ((remaining || []).length) {
+        throw new Error(`Supabase delete not confirmed for ${table}: ${(remaining || []).map(r => r.id).join(",")}`);
+      }
+    }
+  }
+  if (toUpsert.length) {
+    const ids = toUpsert.map(o => o.id);
+    const verified = [];
+    for (const batch of chunkArray(ids, CHUNK)) {
+      const { data: rows, error: verifyUpsertErr } = await sbClient.from(table).select("*").in("id", batch);
+      if (verifyUpsertErr) throw verifyUpsertErr;
+      verified.push(...(rows || []).map(row => sbFromRow(key, row)));
+    }
+    const verifiedMap = new Map(verified.map(r => [r.id, r]));
+    for (const local of toUpsert) {
+      const remote = verifiedMap.get(local.id);
+      if (!remote || !recordsEqual(local, remote)) {
+        throw new Error(`Supabase upsert not confirmed for ${table}:${local.id}`);
+      }
     }
   }
   if (conflicts.length) await stashConflicts(conflicts);
@@ -3217,22 +3248,27 @@ function renderVisitsPage(kind) {
       paid: v2.paid, remaining: visitRemaining(v2),
     });
   }));
-  c.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
+  c.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", async () => {
     if (!canDelete) { showToast("⚠️ ليس لديك صلاحية حذف الزيارات"); return; }
     const target = list.find(v => v.id === b.dataset.del);
     const hasLinked = target && target.linkedIncomeId;
     if (!confirm(hasLinked ? "هل تريد حذف هذه الزيارة؟ سيتم أيضًا حذف حركة الوارد المرتبطة بها فى دفتر الخزينة." : "هل تريد حذف هذه الزيارة؟")) return;
-    if (hasLinked) {
-      const idx2 = DB.income.findIndex(x => x.id === target.linkedIncomeId);
-      if (idx2 > -1) DB.income.splice(idx2, 1);
-      persist("income");
+    try {
+      if (hasLinked) {
+        const idx2 = DB.income.findIndex(x => x.id === target.linkedIncomeId);
+        if (idx2 > -1) DB.income.splice(idx2, 1);
+        await persist("income");
+      }
+      const idx = list.findIndex(v => v.id === b.dataset.del);
+      const removed = idx > -1 ? list[idx] : null;
+      if (idx > -1) list.splice(idx, 1);
+      logActivity(isDental ? "حذف حالة أسنان" : "حذف زيارة", kind, removed, null);
+      await persist(isDental ? "visitsDental" : "visitsClinic");
+      showToast("تم الحذف");
+    } catch (err) {
+      console.error("Visit delete sync failed:", err);
+      showToast("⚠️ تم الحذف محليًا فقط — تعذّر تأكيد الحذف في السحابة وسيُعاد تلقائيًا عند نجاح المزامنة");
     }
-    const idx = list.findIndex(v => v.id === b.dataset.del);
-    const removed = idx > -1 ? list[idx] : null;
-    if (idx > -1) list.splice(idx, 1);
-    logActivity(isDental ? "حذف حالة أسنان" : "حذف زيارة", kind, removed, null);
-    persist(isDental ? "visitsDental" : "visitsClinic");
-    showToast("تم الحذف");
     route();
   }));
 }
@@ -3441,22 +3477,27 @@ function renderServiceVisitsPage(kind) {
       paid: v2.paid, remaining: visitRemaining(v2),
     });
   }));
-  c.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
+  c.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", async () => {
     if (!canDelete) { showToast("⚠️ ليس لديك صلاحية حذف السجلات"); return; }
     const target = list.find(v => v.id === b.dataset.del);
     const hasLinked = target && target.linkedIncomeId;
     if (!confirm(hasLinked ? "هل تريد حذف هذا السجل؟ سيتم أيضًا حذف حركة الوارد المرتبطة به فى دفتر الخزينة." : "هل تريد حذف هذا السجل؟")) return;
-    if (hasLinked) {
-      const idx2 = DB.income.findIndex(x => x.id === target.linkedIncomeId);
-      if (idx2 > -1) DB.income.splice(idx2, 1);
-      persist("income");
+    try {
+      if (hasLinked) {
+        const idx2 = DB.income.findIndex(x => x.id === target.linkedIncomeId);
+        if (idx2 > -1) DB.income.splice(idx2, 1);
+        await persist("income");
+      }
+      const idx = list.findIndex(v => v.id === b.dataset.del);
+      const removed = idx > -1 ? list[idx] : null;
+      if (idx > -1) list.splice(idx, 1);
+      logActivity(cfg.deleteAction, kind, removed, null);
+      await persist(cfg.listKey);
+      showToast("تم الحذف");
+    } catch (err) {
+      console.error("Record delete sync failed:", err);
+      showToast("⚠️ تم الحذف محليًا فقط — تعذّر تأكيد الحذف في السحابة وسيُعاد تلقائيًا عند نجاح المزامنة");
     }
-    const idx = list.findIndex(v => v.id === b.dataset.del);
-    const removed = idx > -1 ? list[idx] : null;
-    if (idx > -1) list.splice(idx, 1);
-    logActivity(cfg.deleteAction, kind, removed, null);
-    persist(cfg.listKey);
-    showToast("تم الحذف");
     route();
   }));
 }
