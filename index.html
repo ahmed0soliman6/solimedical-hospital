@@ -6453,8 +6453,13 @@ const SESSION_KEY = APP_PREFIX + "session_user";
 // حسابات نُقلت إلى Firebase Auth. تبقى بقية الحسابات على المسار القديم مؤقتاً
 // حتى يعيّن أصحابها كلمات مرور جديدة وتُنقل صلاحياتهم بأمان.
 const FIREBASE_MIGRATED_USERNAMES = new Set(["admin"]);
+const FIREBASE_ONLY_USERNAMES = new Set(["admin"]);
+function isFirebaseOnlyUsername(username) {
+  return FIREBASE_ONLY_USERNAMES.has(String(username || "").trim().toLowerCase());
+}
 function isFirebaseAccountCandidate(username) {
-  return FIREBASE_MIGRATED_USERNAMES.has(username)
+  return isFirebaseOnlyUsername(username)
+    || FIREBASE_MIGRATED_USERNAMES.has(username)
     || (DB.staffAccounts || []).some(a => a.username === username && a.firebaseUid);
 }
 let currentUser = null;
@@ -6565,10 +6570,12 @@ function renderLogin(errorMsg) {
         console.warn("Firebase Auth login failed:", code || firebaseError.message || firebaseError);
         // عند عدم وجود حساب Firebase نكمل للمسار القديم. أما الحساب المعروف
         // بأنه مرتبط بـ Firebase فنوقف الدخول ولا نسمح بكلمة مرور قديمة.
-        if (knownFirebaseAccount && code !== "auth/user-not-found") {
+        if (knownFirebaseAccount || isFirebaseOnlyUsername(username)) {
           const authMessage = (code === "auth/wrong-password" || code === "auth/invalid-credential")
             ? "كلمة مرور Firebase غير صحيحة. استخدم كلمة المرور التي عيّنها مدير النظام."
-            : `تعذّر تسجيل الدخول إلى Firebase (${code || "خطأ غير معروف"}).`;
+            : code === "auth/user-not-found"
+              ? "حساب admin غير موجود في Firebase Authentication؛ لا يمكن استخدام كلمة المرور القديمة."
+                : `تعذّر تسجيل الدخول إلى Firebase (${code || "خطأ غير معروف"}).`;
           renderLogin(authMessage);
           return;
         }
@@ -6599,7 +6606,11 @@ function renderLogin(errorMsg) {
     // الموظف الجديد قد يبدأ من شاشة الدخول قبل وجود جلسة Firebase، لذلك يكون
     // loadAll الأول على Supabase الاحتياطي. بعد نجاح Auth نحوله فوراً إلى Firestore
     // حتى تكون كل عملياته وصلاحياته على المصدر الرئيسي نفسه.
-    if (firebaseAuthAccount && isFirestoreEnabled() && isFirestoreMigrated()) {
+    if (firebaseAuthAccount && (isFirebaseOnlyUsername(username) || isFirestoreEnabled() || isFirestoreMigrated())) {
+      // تفعيل المصدر الرئيسي لكل متصفح جديد بعد نجاح Firebase Auth؛ لا نعتمد
+      // على localStorage الخاص بمتصفح سابق حتى لا يعود الحساب القديم من Supabase.
+      setFirestoreEnabled(true);
+      try { localStorage.setItem(FIRESTORE_MIGRATED_FLAG, "1"); } catch (e) { /* ignore */ }
       STORAGE_MODE = "firestore";
       try {
         await loadAll();
