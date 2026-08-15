@@ -1,5 +1,5 @@
-const CACHE_NAME = 'hospital-v1.2.2';
-const urlsToCache = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './favicon-32.png'];
+const CACHE_NAME = 'hospital-v1.2.3';
+const urlsToCache = ['./', './index.html', './manifest.json', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './favicon-32.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(
