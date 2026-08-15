@@ -556,13 +556,37 @@ function recordsEqual(a, b) {
   if (!a || !b) return false;
   return JSON.stringify(stripUpdatedAt(a)) === JSON.stringify(stripUpdatedAt(b));
 }
+function stableSyncValue(value) {
+  if (Array.isArray(value)) return value.map(stableSyncValue);
+  if (value && typeof value === "object") {
+    return Object.keys(value).sort().reduce((out, k) => { out[k] = stableSyncValue(value[k]); return out; }, {});
+  }
+  return value;
+}
+function syncDateOnly(value) {
+  if (!value) return null;
+  const s = String(value);
+  const m = s.match(/^\d{4}-\d{2}-\d{2}/);
+  return m ? m[0] : s;
+}
+function syncTimestamp(value) {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? String(value) : new Date(ms).toISOString();
+}
 function syncRecordsEqual(key, a, b) {
-  if (key !== "auditLog") return recordsEqual(a, b);
   if (!a || !b) return false;
-  const left = Object.assign({}, a); const right = Object.assign({}, b);
-  // audit_log يستخدم created_at كطابع ينشئه الخادم؛ لا تجعله سبباً لاعتبار
-  // كل سجل غير متطابق أو لإيقاف طابور المزامنة بعد نجاح الإدخال.
-  delete left.timestamp; delete right.timestamp;
+  const left = {}; const right = {};
+  const fields = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const field of fields) {
+    // updated_at/created_at الخاص بسجل النشاط طوابع خادم لا تمثل اختلاف محتوى.
+    if (field === "updatedAt" || (key === "auditLog" && field === "timestamp")) continue;
+    let lv = a[field]; let rv = b[field];
+    if (key === "staffAccounts" && field === "createdAt") { lv = syncDateOnly(lv); rv = syncDateOnly(rv); }
+    if (key === "staffAccounts" && field === "lastLogin") { lv = syncTimestamp(lv); rv = syncTimestamp(rv); }
+    left[field] = stableSyncValue(lv);
+    right[field] = stableSyncValue(rv);
+  }
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
@@ -1295,7 +1319,7 @@ async function stampChangedRecords(key, newArr) {
   newArr.forEach(item => {
     if (!item || typeof item !== "object") return;
     const base = baseMap.get(item.id);
-    if (!base || !recordsEqual(base, item)) item.updatedAt = ts;
+    if (!base || !syncRecordsEqual(key, base, item)) item.updatedAt = ts;
     else if (!item.updatedAt) item.updatedAt = base.updatedAt || ts;
   });
 }
@@ -1322,7 +1346,7 @@ function mergeRemoteSnapshot(key, remoteValue) {
     const remoteTime = remoteRecord.updatedAt || "";
     // لا تسمح لنسخة سحابية أقدم أن تمحو تعديل الجهاز الحالي.
     if (localTime && remoteTime && localTime > remoteTime) return localRecord;
-    if (recentMutation && (!localTime || !remoteTime) && !recordsEqual(localRecord, remoteRecord)) return localRecord;
+    if (recentMutation && (!localTime || !remoteTime) && !syncRecordsEqual(key, localRecord, remoteRecord)) return localRecord;
     return remoteRecord;
   });
   // سجل جديد لم يظهر في لقطة السحابة بعد: احتفظ به خلال نافذة الحماية.
