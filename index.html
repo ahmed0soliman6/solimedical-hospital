@@ -889,6 +889,12 @@ async function storeSetInner(key, value) {
     if (STORAGE_MODE === "firestore") {
       await cacheLocally(key, value);
       await window.MitaliFirebase.setValue(key, value);
+      if (key === "staffAccounts" && Array.isArray(value) && window.MitaliFirebase.setUserProfile) {
+        for (const account of value) {
+          if (!account || !account.firebaseUid) continue;
+          await window.MitaliFirebase.setUserProfile(account.firebaseUid, account);
+        }
+      }
       if (Array.isArray(value)) await writeSyncBaseline(key, value);
       renderStorageIndicator();
       return;
@@ -5133,7 +5139,7 @@ function renderSettings() {
               <tr>
                 <td>${esc(a.displayName)}</td>
                 <td>${esc(a.username)}</td>
-                <td>${esc(a.password)}</td>
+                <td>${a.firebaseUid ? "مدارة عبر Firebase Authentication" : esc(a.password || "-")}</td>
                 <td>${esc(a.role)}</td>
                 <td>${can("users","delete") ? `<button class="btn sm danger" data-delstaff="${a.id}">حذف</button>` : ""}</td>
               </tr>`).join("") || `<tr class="empty-row"><td colspan="5">لا توجد حسابات</td></tr>`}
@@ -6056,7 +6062,7 @@ function renderUsersPage() {
         <input type="hidden" name="editId" value="${editing?.id || ""}">
         <div class="field"><label>الاسم الظاهر</label><input type="text" name="displayName" required value="${esc(editing?.displayName)}"></div>
         <div class="field"><label>اسم المستخدم</label><input type="text" name="username" required value="${esc(editing?.username)}"></div>
-        <div class="field"><label>كلمة المرور</label><input type="text" name="password" ${editing ? "" : "required"} placeholder="${editing ? "اتركه فارغًا لعدم التغيير" : ""}" value=""></div>
+        <div class="field"><label>كلمة المرور الجديدة</label><input type="password" name="password" ${editing ? "" : "required"} placeholder="${editing ? "للحسابات المرتبطة بـ Firebase تُدار من Firebase Authentication" : "تُستخدم لإنشاء حساب Firebase"}" value="" autocomplete="new-password"></div>
         <div class="field"><label>الدور</label><select name="role">
           <option value="موظف" ${editing && editing.role !== "مدير" ? "selected" : ""}>موظف</option>
           <option value="مدير" ${editing?.role === "مدير" ? "selected" : ""}>مدير</option>
@@ -6107,7 +6113,7 @@ function renderUsersPage() {
     const username = fd.get("username").trim();
     const dup = (DB.staffAccounts || []).some(a => a.username === username && a.id !== editId);
     if (dup) { showToast("⚠️ اسم المستخدم مستخدم بالفعل"); return; }
-    const password = fd.get("password");
+    const password = (fd.get("password") || "").trim();
     const role = fd.get("role");
     let msg;
     if (editId) {
@@ -6121,6 +6127,14 @@ function renderUsersPage() {
       // لاحقًا عند المراجعة. لا نُدرج كلمة المرور نفسها هنا (قبل أو بعد) تفاديًا لتكرار
       // نص حساس فى سجل النشاط بلا داعٍ - فقط إشارة إلى ما إذا تغيّرت أم لا.
       const before = { displayName: a.displayName, username: a.username, role: a.role, passwordChanged: false };
+      if (a.firebaseUid && username !== a.username) {
+        showToast("⚠️ لا يمكن تغيير اسم مستخدم مرتبط بـ Firebase من هذا الحقل؛ الاسم مرتبط بحساب Authentication.", 6000);
+        return;
+      }
+      if (password && a.firebaseUid) {
+        showToast("⚠️ هذا الحساب مرتبط بـ Firebase Authentication. تغيير كلمة مروره يحتاج تدفق إعادة تعيين Firebase، ولن يتم تغييرها من هذا الحقل.", 6000);
+        return;
+      }
       a.displayName = fd.get("displayName"); a.username = username; a.role = role;
       if (password) a.password = password;
       // إصلاح جوهري: بدون تحديث updatedAt هنا، كان الدمج الذكى (pushTableSmart)
@@ -6132,14 +6146,41 @@ function renderUsersPage() {
       state.editUserId = null;
       msg = "تم حفظ تعديل المستخدم";
     } else {
+      if (!password) { showToast("⚠️ أدخل كلمة مرور جديدة لإنشاء الحساب"); return; }
+      if (password.length < 6) { showToast("⚠️ كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل"); return; }
       const newUser = {
         id: uid(), displayName: fd.get("displayName"), username, password, role,
         status: "نشط", createdAt: todayISO(), lastLogin: null, updatedAt: nowISO(),
         permissions: role === "مدير" ? fullPermissions() : emptyPermissions(),
       };
+      if (STORAGE_MODE === "firestore" && window.MitaliFirebase && window.MitaliFirebase.authUser()) {
+        try {
+          const credential = await window.MitaliFirebase.createAuthUserForUsername(username, password);
+          const firebaseUid = credential && credential.user && credential.user.uid;
+          if (!firebaseUid) throw new Error("Firebase لم يُرجع UID للحساب الجديد");
+          newUser.id = firebaseUid;
+          newUser.firebaseUid = firebaseUid;
+          await window.MitaliFirebase.setUserProfile(firebaseUid, newUser);
+          newUser.password = "";
+          msg = "تم إنشاء حساب الموظف وربطه مباشرةً بـ Firebase Authentication وFirestore";
+        } catch (firebaseError) {
+          console.error("Firebase staff account creation failed:", firebaseError);
+          const code = firebaseError && firebaseError.code;
+          const reason = code === "auth/email-already-in-use"
+            ? "اسم المستخدم مرتبط بحساب Firebase موجود بالفعل"
+            : code === "auth/invalid-email"
+              ? "اسم المستخدم غير صالح"
+              : code === "auth/weak-password"
+                ? "كلمة المرور ضعيفة؛ استخدم 6 أحرف أو أرقام على الأقل"
+                : (firebaseError && firebaseError.message) || "تعذر إنشاء الحساب في Firebase";
+          showToast(`⚠️ لم تتم إضافة الموظف: ${reason}`, 6000);
+          return;
+        }
+      } else {
+        msg = "تمت إضافة المستخدم محليًا — سجّل الدخول بحساب المدير مع تفعيل Firebase لإنشائه مباشرةً";
+      }
       DB.staffAccounts.push(newUser);
-      logActivity("إضافة مستخدم", "users", null, { displayName: newUser.displayName, username: newUser.username, role: newUser.role });
-      msg = "تمت إضافة المستخدم — لا تنسَ ضبط صلاحياته من صفحة إدارة الصلاحيات";
+      logActivity("إضافة مستخدم وربطه بـ Firebase", "users", null, { displayName: newUser.displayName, username: newUser.username, role: newUser.role, firebaseUid: newUser.firebaseUid || null });
     }
     // ننتظر اكتمال الحفظ فعليًا قبل الإعلان عن النجاح. هذا مهم بشكل خاص هنا:
     // كان تغيير اسم المستخدم/كلمة المرور يظهر "تم الحفظ" فورًا حتى لو فشل الرفع
@@ -6167,6 +6208,10 @@ function renderUsersPage() {
     const newPass = prompt(`كلمة مرور جديدة للمستخدم "${a.displayName}":`, "");
     if (newPass === null) return;
     if (!newPass.trim()) { showToast("لم يتم تغيير كلمة المرور"); return; }
+    if (a.firebaseUid) {
+      showToast("⚠️ الحساب مرتبط بـ Firebase Authentication. استخدم كلمة مرور Firebase الحالية أو تدفق إعادة التعيين.", 6000);
+      return;
+    }
     a.password = newPass.trim();
     a.updatedAt = nowISO(); // نفس إصلاح تحديث المستخدم أعلاه - ضرورى لصحة الدمج الذكي بين الأجهزة
     logActivity("إعادة تعيين كلمة مرور", "users", null, a.displayName);
@@ -6206,6 +6251,7 @@ function renderUsersPage() {
     if (!a) return;
     if (currentUser && currentUser.id === a.id) { showToast("⚠️ لا يمكنك حذف حسابك الحالي أثناء تسجيل الدخول به"); return; }
     if (a.role === "مدير" && countActiveAdmins(a.id) === 0) { showToast("⚠️ لا يمكن حذف آخر مدير نشط فى النظام"); return; }
+    if (a.firebaseUid) { showToast("⚠️ هذا الحساب مرتبط بـ Firebase Authentication. استخدم إيقاف الحساب بدل الحذف النهائي.", 5000); return; }
     if (!confirm(`حذف المستخدم "${a.displayName}"؟ لن يتمكن من تسجيل الدخول بعد الآن.`)) return;
     DB.staffAccounts.splice(DB.staffAccounts.findIndex(x => x.id === a.id), 1);
     logActivity("حذف مستخدم", "users", a.displayName, null);
@@ -6392,6 +6438,10 @@ const SESSION_KEY = APP_PREFIX + "session_user";
 // حسابات نُقلت إلى Firebase Auth. تبقى بقية الحسابات على المسار القديم مؤقتاً
 // حتى يعيّن أصحابها كلمات مرور جديدة وتُنقل صلاحياتهم بأمان.
 const FIREBASE_MIGRATED_USERNAMES = new Set(["admin"]);
+function isFirebaseAccountCandidate(username) {
+  return FIREBASE_MIGRATED_USERNAMES.has(username)
+    || (DB.staffAccounts || []).some(a => a.username === username && a.firebaseUid);
+}
 let currentUser = null;
 
 // إصلاح جوهري: كانت الجلسة تُحفظ فى sessionStorage، وهو نوع تخزين يُمسَح تلقائيًا
@@ -6489,21 +6539,27 @@ function renderLogin(errorMsg) {
     } catch (err) { /* تعذّر التحديث الآن - نكمل بالتحقق من أحدث نسخة متاحة محليًا */ }
     let account = null;
     let firebaseAuthAccount = null;
-    if (FIREBASE_MIGRATED_USERNAMES.has(username) && window.MitaliFirebase) {
+    // نحاول Firebase أولاً لكل اسم مستخدم. الحسابات القديمة التي لم تُنشأ في
+    // Firebase ترجع إلى Supabase/التحقق المحلي بلا تغيير مرئي للمستخدم.
+    if (window.MitaliFirebase) {
       try {
         await window.MitaliFirebase.signInWithUsername(username, password);
       } catch (firebaseError) {
         const code = firebaseError && firebaseError.code;
+        const knownFirebaseAccount = isFirebaseAccountCandidate(username);
         console.warn("Firebase Auth login failed:", code || firebaseError.message || firebaseError);
-        const authMessage = code === "auth/user-not-found"
-          ? "حساب admin غير موجود في Firebase Authentication."
-          : (code === "auth/wrong-password" || code === "auth/invalid-credential")
-            ? "كلمة مرور Firebase غير صحيحة. استخدم كلمة المرور التي عيّنتها في Authentication."
+        // عند عدم وجود حساب Firebase نكمل للمسار القديم. أما الحساب المعروف
+        // بأنه مرتبط بـ Firebase فنوقف الدخول ولا نسمح بكلمة مرور قديمة.
+        if (knownFirebaseAccount && code !== "auth/user-not-found") {
+          const authMessage = (code === "auth/wrong-password" || code === "auth/invalid-credential")
+            ? "كلمة مرور Firebase غير صحيحة. استخدم كلمة المرور التي عيّنها مدير النظام."
             : `تعذّر تسجيل الدخول إلى Firebase (${code || "خطأ غير معروف"}).`;
-        renderLogin(authMessage);
-        return;
+          renderLogin(authMessage);
+          return;
+        }
       }
-      try {
+      if (window.MitaliFirebase.authUser()) {
+        try {
         const authUser = window.MitaliFirebase.authUser();
         const profile = authUser ? await window.MitaliFirebase.getUserProfile(authUser.uid) : null;
         if (!profile) {
@@ -6514,10 +6570,11 @@ function renderLogin(errorMsg) {
         const oldIndex = (DB.staffAccounts || []).findIndex(a => a.username === username);
         if (oldIndex > -1) DB.staffAccounts[oldIndex] = Object.assign({}, DB.staffAccounts[oldIndex], firebaseAuthAccount);
         else DB.staffAccounts = [...(DB.staffAccounts || []), firebaseAuthAccount];
-      } catch (profileError) {
-        console.error("Firebase profile read failed:", profileError);
-        renderLogin("تم قبول كلمة المرور، لكن تعذر قراءة صلاحيات admin من Firestore. راجع قواعد Firestore وDocument ID.");
-        return;
+        } catch (profileError) {
+          console.error("Firebase profile read failed:", profileError);
+          renderLogin("تم قبول كلمة المرور، لكن تعذر قراءة ملف الصلاحيات من Firestore. راجع قواعد Firestore وDocument ID.");
+          return;
+        }
       }
     }
     if (firebaseAuthAccount) account = firebaseAuthAccount;

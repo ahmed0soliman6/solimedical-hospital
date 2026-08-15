@@ -40,6 +40,8 @@
   let app = null;
   let db = null;
   let auth = null;
+  let secondaryApp = null;
+  let secondaryAuth = null;
   let persistencePromise = null;
   let authReadyPromise = null;
 
@@ -135,7 +137,15 @@
   async function createAuthUserForUsername(username, password) {
     init();
     if (!auth) throw new Error('Firebase Authentication SDK is not loaded');
-    return auth.createUserWithEmailAndPassword(authEmailForUsername(username), password);
+    // Use a secondary Firebase app so creating a staff account does not replace
+    // the currently signed-in administrator session in the primary app.
+    if (!secondaryApp) secondaryApp = window.firebase.initializeApp(firebaseConfig, 'MitaliStaffAccountCreator');
+    if (!secondaryAuth) secondaryAuth = secondaryApp.auth();
+    try {
+      return await secondaryAuth.createUserWithEmailAndPassword(authEmailForUsername(username), password);
+    } finally {
+      try { await secondaryAuth.signOut(); } catch (e) { /* ignore */ }
+    }
   }
 
   async function signOut() {
@@ -153,6 +163,17 @@
     if (!auth || !auth.currentUser || auth.currentUser.uid !== uid) throw new Error('Firebase user is not authenticated');
     const snap = await db.collection('users').doc(String(uid)).get();
     return snap.exists ? Object.assign({ id: snap.id }, snap.data()) : null;
+  }
+
+  async function setUserProfile(uid, profile) {
+    await ready();
+    if (!auth || !auth.currentUser) throw new Error('Firebase administrator is not authenticated');
+    const data = cleanDocument(Object.assign({}, profile || {}));
+    delete data.id;
+    delete data.password;
+    delete data.firebaseUid;
+    await db.collection('users').doc(String(uid)).set(data, { merge: false });
+    return Object.assign({ id: String(uid) }, data);
   }
 
   async function getTable(key) {
@@ -261,6 +282,7 @@
     signOut,
     authUser,
     waitForAuth,
-    getUserProfile
+    getUserProfile,
+    setUserProfile
   });
 })();
