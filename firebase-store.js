@@ -176,6 +176,13 @@
     return Object.assign({ id: String(uid) }, data);
   }
 
+  async function deleteUserProfile(uid) {
+    await ready();
+    if (!auth || !auth.currentUser) throw new Error('Firebase administrator is not authenticated');
+    await db.collection('users').doc(String(uid)).delete();
+    return true;
+  }
+
   async function getTable(key) {
     await ready();
     const snap = await db.collection(collectionName(key)).get();
@@ -283,6 +290,7 @@
     authUser,
     waitForAuth,
     getUserProfile,
-    setUserProfile
+    setUserProfile,
+    deleteUserProfile
   });
 })();

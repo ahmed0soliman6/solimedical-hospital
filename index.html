@@ -6095,7 +6095,7 @@ function renderUsersPage() {
                 ${canEdit ? `<button class="btn sm ghost" data-edituser="${a.id}">تعديل</button>` : ""}
                 ${canEdit ? `<button class="btn sm ghost" data-resetpass="${a.id}">إعادة تعيين كلمة المرور</button>` : ""}
                 ${canEdit ? `<button class="btn sm ghost" data-toggleuser="${a.id}">${a.status === "موقوف" ? "تفعيل" : "إيقاف"}</button>` : ""}
-                ${canDelete ? `<button class="btn sm danger" data-deluser="${a.id}">حذف</button>` : ""}
+                ${canDelete ? `<button class="btn sm danger" data-deluser="${a.id}">${a.firebaseUid && (!currentUser || currentUser.id !== a.id) ? "حذف الحساب المكرر" : "حذف"}</button>` : ""}
               </td>
             </tr>`).join("")}
         </tbody>
@@ -6249,18 +6249,33 @@ function renderUsersPage() {
     if (!canDelete) { showToast("⚠️ ليس لديك صلاحية"); return; }
     const a = DB.staffAccounts.find(x => x.id === b.dataset.deluser);
     if (!a) return;
-    if (currentUser && currentUser.id === a.id) { showToast("⚠️ لا يمكنك حذف حسابك الحالي أثناء تسجيل الدخول به"); return; }
+    if (currentUser && (currentUser.id === a.id || (a.firebaseUid && currentUser.firebaseUid === a.firebaseUid))) { showToast("⚠️ لا يمكنك حذف حسابك الحالي أثناء تسجيل الدخول به"); return; }
     if (a.role === "مدير" && countActiveAdmins(a.id) === 0) { showToast("⚠️ لا يمكن حذف آخر مدير نشط فى النظام"); return; }
-    if (a.firebaseUid) { showToast("⚠️ هذا الحساب مرتبط بـ Firebase Authentication. استخدم إيقاف الحساب بدل الحذف النهائي.", 5000); return; }
-    if (!confirm(`حذف المستخدم "${a.displayName}"؟ لن يتمكن من تسجيل الدخول بعد الآن.`)) return;
-    DB.staffAccounts.splice(DB.staffAccounts.findIndex(x => x.id === a.id), 1);
-    logActivity("حذف مستخدم", "users", a.displayName, null);
+    const linkedFirebase = !!a.firebaseUid;
+    const confirmation = linkedFirebase
+      ? `سيتم حذف سجل المستخدم وصلاحياته من Firestore. حساب Authentication نفسه لا يمكن حذفه من المتصفح، لكنه لن يستطيع الدخول دون ملف الصلاحيات. حذف "${a.displayName}"؟`
+      : `حذف المستخدم "${a.displayName}"؟ لن يتمكن من تسجيل الدخول بعد الآن.`;
+    if (!confirm(confirmation)) return;
+    const idx = DB.staffAccounts.findIndex(x => x.id === a.id);
+    if (idx < 0) return;
+    let profileDeleted = false;
     try {
+      if (linkedFirebase && window.MitaliFirebase && window.MitaliFirebase.deleteUserProfile) {
+        await window.MitaliFirebase.deleteUserProfile(a.firebaseUid);
+        profileDeleted = true;
+      }
+      DB.staffAccounts.splice(idx, 1);
+      logActivity("حذف مستخدم مكرر", "users", { displayName: a.displayName, firebaseUid: a.firebaseUid || null }, null);
       await persist("staffAccounts");
-      showToast("تم الحذف");
+      showToast(linkedFirebase ? "تم حذف سجل الحساب المكرر من Firestore" : "تم الحذف");
     } catch (err) {
       console.error(err);
-      showToast("⚠️ تم الحذف محليًا فقط - تعذّر رفعه الآن، سيُعاد المحاولة تلقائيًا");
+      DB.staffAccounts.splice(idx, 0, a);
+      if (profileDeleted && window.MitaliFirebase && window.MitaliFirebase.setUserProfile) {
+        try { await window.MitaliFirebase.setUserProfile(a.firebaseUid, a); } catch (restoreError) { console.error("Could not restore deleted profile:", restoreError); }
+      }
+      try { await persist("staffAccounts"); } catch (restorePersistError) { console.error("Could not restore account list:", restorePersistError); }
+      showToast(`⚠️ لم يكتمل حذف الحساب: ${(err && (err.message || err.code)) || "تحقق من الاتصال والصلاحيات"}`, 6000);
     }
     route();
   }));
