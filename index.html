@@ -133,8 +133,17 @@
   .sidebar-account-actions{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:9px;}
   .sidebar-account-actions .btn{flex:1 1 auto; min-width:0; padding:6px 8px; font-size:11px; border-color:rgba(255,255,255,.18); color:#EAF1EF; background:rgba(255,255,255,.06);}
   .sidebar-account-actions .btn:hover{background:rgba(255,255,255,.13);}
-  .sidebar-connection{display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; color:#9FB6B9;}
-  .sidebar-connection #storageIndicator{padding:0; border:0; color:#BFE8D4;}
+  .sidebar-connection{display:flex; align-items:center; justify-content:flex-start; gap:8px; font-size:11px; color:#9FB6B9;}
+  .sidebar-connection #storageIndicator{padding:0; border:0; color:#BFE8D4; flex:1;}
+  .sidebar-connection .theme-toggle{width:30px; min-width:30px; height:28px; padding:0; display:inline-flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,.18); color:#EAF1EF; background:rgba(255,255,255,.06);}
+  .sidebar-connection .theme-toggle:hover{background:rgba(255,255,255,.13);}
+  .dashboard-link-card{cursor:pointer; transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;}
+  .dashboard-link-card:hover{transform:translateY(-2px); border-color:var(--teal); box-shadow:0 8px 22px rgba(15,102,116,.16);}
+  .dashboard-link-card:focus-visible{outline:3px solid color-mix(in srgb, var(--teal) 45%, transparent); outline-offset:2px;}
+  html[data-theme="dark"] .dashboard-link-card:hover{box-shadow:0 8px 24px rgba(0,0,0,.38);}
+  .card .label{color:var(--muted);}
+  .card input, .card select, .card textarea{background:var(--input-bg); color:var(--ink); border-color:var(--border);}
+  html[data-theme="dark"] .hint{color:#AFC0BD;}
 
   /* ---------- Main ---------- */
   #main{flex:1; min-width:0; display:flex; flex-direction:column;}
@@ -163,6 +172,9 @@
     #topbar > div:first-child{min-width:0; flex:1 1 45%;}
     #topbar > div:last-child{min-width:0; flex:1 1 45%; justify-content:flex-start; gap:5px; flex-wrap:wrap;}
     #topbar .title{font-size:14px; max-width:34vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    /* على الهاتف يكفي عرض الحالة داخل القائمة الجانبية؛ إبقاء الشارة هنا
+       كان يضغط عنوان الصفحة ويغطي أول جزء من لوحة القيادة. */
+    #topConnectionIndicator{display:none;}
     .top-connection-indicator{margin-inline-start:3px; padding:4px 7px; font-size:10px; gap:4px;}
     #topbar .btn.sm{padding:5px 7px; font-size:11px;}
     #content{padding:12px 10px 42px; width:100%; min-width:0;}
@@ -687,10 +699,15 @@ async function detectStorageMode() {
 
 
 
-async function storeGet(key, fallback) {
+async function storeGet(key, fallback, options = {}) {
   try {
     if (STORAGE_MODE === "firestore" && window.MitaliFirebase) {
       const cached = await readLocalCache(key, undefined);
+      if (options.preferCache && cached !== undefined) {
+        // إعادة التحميل لا تنتظر الشبكة إذا كانت نسخة محلية سليمة موجودة؛
+        // loadAll() اللاحق سيجلب أحدث نسخة ويعيد الرسم بعد اكتمالها.
+        return cached;
+      }
       try {
         const remote = await window.MitaliFirebase.getValue(key, fallback);
         if (remote !== undefined && remote !== null) {
@@ -1090,8 +1107,9 @@ function seedPayroll(doctors, employees) {
   return rows;
 }
 
-async function loadAll() {
+async function loadAll(options = {}) {
   await detectStorageMode();
+  const readTable = (key, fallback) => storeGet(key, fallback, { preferCache: !!options.preferCache });
   // كل هذه المفاتيح مستقلة عن بعضها فى القراءة (لا يعتمد أى منها على نتيجة الآخر)،
   // لذلك نجلبها جميعًا بالتوازى بدلًا من واحد تلو الآخر. هذا هو السبب الرئيسى فى
   // بطء تسجيل الدخول سابقًا: كانت كل عملية قراءة (خصوصًا مع Firestore عبر الشبكة)
@@ -1100,22 +1118,22 @@ async function loadAll() {
     doctorsRaw, employeesRaw, visitsClinicRaw, visitsDentalRaw, visitsOperationsRaw, visitsLabsRaw, visitsRadiologyRaw, incomeRaw, expenseRaw, payrollRaw,
     settingsRaw, staffAccountsRaw, categoriesRaw, specialtiesRaw, auditLogRaw, labExpensesRaw,
   ] = await Promise.all([
-    storeGet("doctors", null),
-    storeGet("employees", null),
-    storeGet("visitsClinic", null),
-    storeGet("visitsDental", null),
-    storeGet("visitsOperations", null),
-    storeGet("visitsLabs", null),
-    storeGet("visitsRadiology", null),
-    storeGet("income", null),
-    storeGet("expense", null),
-    storeGet("payroll", null),
-    storeGet("settings", { openingBalance: 10000 }),
-    storeGet("staffAccounts", null),
-    storeGet("categories", null),
-    storeGet("specialties", null),
-    storeGet("auditLog", []),
-    storeGet("labExpenses", []),
+    readTable("doctors", null),
+    readTable("employees", null),
+    readTable("visitsClinic", null),
+    readTable("visitsDental", null),
+    readTable("visitsOperations", null),
+    readTable("visitsLabs", null),
+    readTable("visitsRadiology", null),
+    readTable("income", null),
+    readTable("expense", null),
+    readTable("payroll", null),
+    readTable("settings", { openingBalance: 10000 }),
+    readTable("staffAccounts", null),
+    readTable("categories", null),
+    readTable("specialties", null),
+    readTable("auditLog", []),
+    readTable("labExpenses", []),
   ]);
 
   const isFirstRun = !doctorsRaw || doctorsRaw.length === 0;
@@ -1735,8 +1753,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.2";
-const APP_RELEASE_NOTES = "تحسين الهاتف • حساب المستخدم في القائمة • كلمات مرور Firebase";
+const APP_VERSION = "v1.3.3";
+const APP_RELEASE_NOTES = "إصلاح الزيارات الفورية • تفاعل لوحة القيادة • تحسين الهاتف والوضع الليلي";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -1873,11 +1891,12 @@ function renderSidebar() {
     <div class="sidebar-account">
       <div class="sidebar-account-user">👤 ${esc(currentUser.displayName)} <span class="role">— ${esc(currentUser.role)}</span></div>
       <div class="sidebar-account-actions">
-        <button class="btn ghost sm" id="sidebarThemeToggleBtn" title="تبديل الوضع الليلي/النهاري">${document.documentElement.getAttribute("data-theme") === "dark" ? "☀️" : "🌙"}</button>
         <button class="btn ghost sm" id="sidebarChangePasswordBtn" title="تغيير كلمة المرور">🔑 كلمة المرور</button>
         <button class="btn ghost sm" id="sidebarLogoutBtn">تسجيل الخروج</button>
       </div>
-      <div class="sidebar-connection"><span>الاتصال</span><div class="sidebar-foot" id="storageIndicator">جارٍ التحقق...</div></div>
+      <div class="sidebar-connection"><span>الاتصال</span><div class="sidebar-foot" id="storageIndicator">جارٍ التحقق...</div>
+        <button class="btn ghost sm theme-toggle" id="sidebarThemeToggleBtn" title="تبديل الوضع الليلي/النهاري" aria-label="تبديل الوضع الليلي/النهاري">${document.documentElement.getAttribute("data-theme") === "dark" ? "☀️" : "🌙"}</button>
+      </div>
     </div>` : `<div class="sidebar-foot" id="storageIndicator">جارٍ التحقق...</div>`}
   `;
   el.querySelectorAll(".nav-item").forEach(n => {
@@ -2338,12 +2357,12 @@ function renderDashboard() {
       <button class="btn sm" id="goToBackupBtn" style="background:#C79A3E; color:#fff;">الذهاب للإعدادات</button>
     </div>` : ""}
     <div class="grid grid-4" style="margin-bottom:16px;">
-      <div class="card kpi hero">
+      <div class="card kpi hero dashboard-link-card" data-dashboard-page="ledger" role="button" tabindex="0" title="فتح دفتر الخزينة">
         <div class="label">الرصيد الحالي بالخزينة</div>
         <div class="value">${fmt(balance)} <span style="font-size:13px;">ج.م</span></div>
         <div class="delta" style="color:#CFE4E1;">افتتاحي ${fmt(DB.settings.openingBalance)} ج.م</div>
       </div>
-      <div class="card kpi">
+      <div class="card kpi dashboard-link-card" data-dashboard-page="clinic" role="button" tabindex="0" title="فتح يومية العيادات">
         <div class="label" style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
           <span>إيرادات ${PERIOD_LABELS[state.dashboardPeriod] || "اليوم"}</span>
           <select id="dashboardPeriodSelect" style="font-size:11px; padding:2px 6px; border-radius:6px; border:1px solid var(--border,#ccc); background:var(--card); color:var(--ink);">
@@ -2356,12 +2375,12 @@ function renderDashboard() {
         <div class="value income">${fmt(periodStat.total)} ج.م</div>
         <div class="delta">${fmtInt(periodStat.count)} زيارة</div>
       </div>
-      <div class="card kpi">
+      <div class="card kpi dashboard-link-card" data-dashboard-page="expense" role="button" tabindex="0" title="فتح المصروفات">
         <div class="label">إجمالي المصروفات</div>
         <div class="value expense">${fmt(totalExpense)} ج.م</div>
         <div class="delta">${DB.expense.length} عملية صرف</div>
       </div>
-      <div class="card kpi">
+      <div class="card kpi dashboard-link-card" data-dashboard-page="outstandingBalancesClinic" role="button" tabindex="0" title="فتح المرضى المتأخرين بالسداد">
         <div class="label">مرضى متأخرون بالسداد</div>
         <div class="value" style="color:#8A6300;">${fmtInt(overdue)}</div>
         <div class="delta">من إجمالي ${fmtInt(visits.length)} زيارة</div>
@@ -2426,6 +2445,21 @@ function renderDashboard() {
   if (doctorSelect) doctorSelect.addEventListener("change", () => { state.dashboardDoctor = doctorSelect.value; route(); });
   const goToBackupBtn = document.getElementById("goToBackupBtn");
   if (goToBackupBtn) goToBackupBtn.addEventListener("click", () => { state.page = "settings"; route(); });
+  c.querySelectorAll("[data-dashboard-page]").forEach(card => {
+    const openLinkedPage = (event) => {
+      // لا نعتبر تغيير فترة الإيرادات نقرة على البطاقة نفسها.
+      if (event && event.target && event.target.closest("select")) return;
+      const page = card.dataset.dashboardPage;
+      if (!page || !isPageAccessible(page)) return;
+      state.page = page;
+      state.editId = null;
+      route();
+    };
+    card.addEventListener("click", openLinkedPage);
+    card.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openLinkedPage(event); }
+    });
+  });
 
   destroyCharts();
   const teal = "#0F6674", navy = "#173B4A", income = "#2E7D5B", expense = "#B5482F", gold = "#C79A3E";
@@ -2662,8 +2696,12 @@ function renderVisitsPage(kind) {
       list.push(rec);
       logActivity(isDental ? "إضافة حالة أسنان" : "إضافة زيارة", kind, null, rec);
     }
-    syncVisitIncomeLink(rec, kind);
+    // حدّث سجل الدخل المرتبط أولًا، لكن لا تطلق كتابة مستقلة في الخلفية؛
+    // سننتظر حفظ الدخل والزيارة بترتيب واضح حتى لا تعيد realtime أو طابور
+    // الكتابة نسخة قديمة فوق الزيارة الجديدة.
+    syncVisitIncomeLink(rec, kind, true);
     // إصلاح جوهري: ننتظر persist() فعليًا هنا (بدل إطلاقها بدون انتظار كما كان
+
     // سابقًا) قبل استدعاء route(). هذا يضمن أن أى تحديث خلفى آخر (مثلًا
     // backgroundRefreshAll أو سحب فورى بعد التنقل) لا يمكن أبدًا أن يبدأ ويقرأ
     // نسخة سحابية لم تصل إليها هذه الزيارة بعد - وهو السبب الجذرى وراء اختفاء
@@ -2671,6 +2709,8 @@ function renderVisitsPage(kind) {
     // > 0 طوال مدة هذا الانتظار، وهو ما يحمى منه backgroundRefreshAll أعلاه أيضًا.
     let pushFailedOnline = false;
     try {
+      const incomeChanged = Number(rec.paid) > 0 || !!(editing && editing.linkedIncomeId);
+      if (incomeChanged) await persist("income");
       await persist(isDental ? "visitsDental" : "visitsClinic");
     } catch (err) {
       // فشل الرفع الفورى للسحابة رغم وجود اتصال (خطأ شبكة عابر، رفض من الخادم...).
@@ -2930,9 +2970,13 @@ function renderServiceVisitsPage(kind) {
         list.push(rec);
         logActivity(cfg.addAction, kind, null, rec);
       }
-      syncVisitIncomeLink(rec, kind);
+      // نفس ترتيب الحفظ المضمون للعيادات: حدّث الدخل المرتبط محليًا ثم
+      // انتظر حفظه قبل حفظ سجل الزيارة وإعادة رسم الشاشة.
+      syncVisitIncomeLink(rec, kind, true);
       let pushFailedOnline = false;
       try {
+        const incomeChanged = Number(rec.paid) > 0 || !!(editing && editing.linkedIncomeId);
+        if (incomeChanged) await persist("income");
         await persist(cfg.listKey);
       } catch (err) {
         console.error("Service visit sync push failed (saved locally, will retry):", err);
@@ -4391,6 +4435,17 @@ function renderSettings() {
       <strong>إصدار ${esc(APP_VERSION)}</strong>
       <span>${esc(APP_RELEASE_NOTES)}</span>
     </div>
+    ${isAdminUser() ? `
+    <div class="card" style="margin-bottom:18px; border-inline-start:3px solid var(--gold);">
+      <div class="section-title">🔐 استعادة كلمة مرور المدير</div>
+      <p style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">
+        لا يخزّن التطبيق كلمات المرور ولا يستطيع عرضها أو إعادة تعيينها من جهة العميل. عند نسيان كلمة المرور، افتح Firebase Console ثم اختر Authentication ← Users، وحدد حساب المدير، واضبط كلمة مرور جديدة لا تقل عن 6 أحرف أو أرقام.
+      </p>
+      <p style="font-size:12px; color:var(--muted); margin-bottom:10px;">
+        بعد التعيين، استخدم كلمة المرور الجديدة في شاشة الدخول المعتادة. هذا المسار لا يحذف أي بيانات من Firestore ولا يغيّر الصلاحيات.
+      </p>
+      <a class="btn ghost" href="https://console.firebase.google.com/project/mitali-hospital/authentication/users" target="_blank" rel="noopener noreferrer">فتح مستخدمي Firebase Authentication</a>
+    </div>` : ""}
     ${can("demoData","view") ? `
     <div class="card" style="margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
       <div>
@@ -5795,7 +5850,9 @@ function renderLogin(errorMsg) {
       try { localStorage.setItem(FIRESTORE_MIGRATED_FLAG, "1"); } catch (e) { /* ignore */ }
       STORAGE_MODE = "firestore";
       try {
-        await loadAll();
+        // لا نعيد انتظار شبكة Firestore مرتين في مسار الدخول؛ نستخدم الكاش
+        // المحلي فورًا، ثم realtime/التحديث الخلفي يجلبان أحدث السجلات بعد عرض الواجهة.
+        await loadAll({ preferCache: true });
         account = (DB.staffAccounts || []).find(a => a.firebaseUid === firebaseAuthAccount.firebaseUid) || account;
       } catch (reloadError) {
         console.warn("Firestore account reload after login failed:", reloadError);
@@ -5940,7 +5997,9 @@ function subscribeFirestoreRealtime() {
 async function boot() {
   document.getElementById("content").innerHTML = `<div style="text-align:center; padding:80px; color:var(--muted);">جارٍ تحميل النظام...</div>`;
   try {
-    await loadAll();
+    // الجلسة المحفوظة تسمح بعرض آخر صفحة وبياناتها من IndexedDB فورًا؛
+    // أما من لا يملك جلسة فيبقى على قراءة Firestore الكاملة للتحقق من الحسابات.
+    await loadAll({ preferCache: !!getSession() });
   } catch (e) {
     console.error("Load error, using defaults:", e);
     DB.doctors = seedDoctors(); DB.employees = seedEmployees(); DB.settings = { openingBalance: 10000 };
@@ -5958,8 +6017,15 @@ async function boot() {
   const savedPage = getSavedPage();
   state.page = savedPage && isPageAccessible(savedPage) ? savedPage : firstAccessiblePage();
   resetIdleTimer();
+  // عند وجود كاش محلي، نعرض الصفحة فورًا ثم نجلب النسخة الأحدث من Firebase
+  // في الخلفية؛ لا نغيّر شاشة الدخول ولا جلسة المستخدم أثناء هذا التحديث.
   route();
   if (STORAGE_MODE === "firestore") subscribeFirestoreRealtime();
+  if (currentUser && STORAGE_MODE === "firestore") {
+    loadAll().then(() => {
+      if (currentUser && !isMidEdit() && !isUserActivelyTyping()) route();
+    }).catch(e => console.warn("Background startup refresh failed:", e));
+  }
 }
 boot();
 
