@@ -6356,17 +6356,31 @@ function renderLogin(errorMsg) {
     if (FIREBASE_MIGRATED_USERNAMES.has(username) && window.MitaliFirebase) {
       try {
         await window.MitaliFirebase.signInWithUsername(username, password);
+      } catch (firebaseError) {
+        const code = firebaseError && firebaseError.code;
+        console.warn("Firebase Auth login failed:", code || firebaseError.message || firebaseError);
+        const authMessage = code === "auth/user-not-found"
+          ? "حساب admin غير موجود في Firebase Authentication."
+          : (code === "auth/wrong-password" || code === "auth/invalid-credential")
+            ? "كلمة مرور Firebase غير صحيحة. استخدم كلمة المرور التي عيّنتها في Authentication."
+            : `تعذّر تسجيل الدخول إلى Firebase (${code || "خطأ غير معروف"}).`;
+        renderLogin(authMessage);
+        return;
+      }
+      try {
         const authUser = window.MitaliFirebase.authUser();
         const profile = authUser ? await window.MitaliFirebase.getUserProfile(authUser.uid) : null;
-        if (profile) {
-          firebaseAuthAccount = Object.assign({}, profile, { id: authUser.uid, firebaseUid: authUser.uid });
-          const oldIndex = (DB.staffAccounts || []).findIndex(a => a.username === username);
-          if (oldIndex > -1) DB.staffAccounts[oldIndex] = Object.assign({}, DB.staffAccounts[oldIndex], firebaseAuthAccount);
-          else DB.staffAccounts = [...(DB.staffAccounts || []), firebaseAuthAccount];
+        if (!profile) {
+          renderLogin("تم التحقق من كلمة المرور، لكن ملف صلاحيات admin غير موجود في Firestore.");
+          return;
         }
-      } catch (firebaseError) {
-        console.warn("Firebase login failed for migrated account:", firebaseError.code || firebaseError.message || firebaseError);
-        renderLogin("بيانات الدخول غير صحيحة أو لم يتم إعداد كلمة المرور الجديدة لهذا الحساب.");
+        firebaseAuthAccount = Object.assign({}, profile, { id: authUser.uid, firebaseUid: authUser.uid });
+        const oldIndex = (DB.staffAccounts || []).findIndex(a => a.username === username);
+        if (oldIndex > -1) DB.staffAccounts[oldIndex] = Object.assign({}, DB.staffAccounts[oldIndex], firebaseAuthAccount);
+        else DB.staffAccounts = [...(DB.staffAccounts || []), firebaseAuthAccount];
+      } catch (profileError) {
+        console.error("Firebase profile read failed:", profileError);
+        renderLogin("تم قبول كلمة المرور، لكن تعذر قراءة صلاحيات admin من Firestore. راجع قواعد Firestore وDocument ID.");
         return;
       }
     }
