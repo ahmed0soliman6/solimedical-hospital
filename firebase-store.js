@@ -36,6 +36,7 @@
 
   let app = null;
   let db = null;
+  let auth = null;
   let persistencePromise = null;
 
   function init() {
@@ -47,6 +48,7 @@
       ? window.firebase.app()
       : window.firebase.initializeApp(firebaseConfig);
     db = window.firebase.firestore(app);
+    auth = window.firebase.auth ? window.firebase.auth(app) : null;
     persistencePromise = db.enablePersistence({ synchronizeTabs: true }).catch((error) => {
       // Persistence may be unavailable when another tab owns the lease or when
       // the browser blocks IndexedDB. Firestore still works online in that case.
@@ -76,6 +78,34 @@
       if (item !== undefined) out[key] = cleanDocument(item);
     }
     return out;
+  }
+
+  function authEmailForUsername(username) {
+    const encoded = btoa(unescape(encodeURIComponent(String(username || '').trim().toLowerCase())))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    return `u-${encoded}@accounts.mitali-hospital.internal`;
+  }
+
+  async function signInWithUsername(username, password) {
+    init();
+    if (!auth) throw new Error('Firebase Authentication SDK is not loaded');
+    return auth.signInWithEmailAndPassword(authEmailForUsername(username), password);
+  }
+
+  async function createAuthUserForUsername(username, password) {
+    init();
+    if (!auth) throw new Error('Firebase Authentication SDK is not loaded');
+    return auth.createUserWithEmailAndPassword(authEmailForUsername(username), password);
+  }
+
+  async function signOut() {
+    init();
+    if (auth) await auth.signOut();
+  }
+
+  function authUser() {
+    init();
+    return auth ? auth.currentUser : null;
   }
 
   async function getTable(key) {
@@ -143,6 +173,11 @@
     setTable,
     upsertRecord,
     deleteRecords,
-    subscribe
+    subscribe,
+    authEmailForUsername,
+    signInWithUsername,
+    createAuthUserForUsername,
+    signOut,
+    authUser
   });
 })();
