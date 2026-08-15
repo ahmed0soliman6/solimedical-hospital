@@ -746,6 +746,9 @@ async function storeGet(key, fallback) {
       // ثم احتفظ بنسخة محلية منها. أى فشل أو انقطاع فى الاتصال يرجع فورًا لآخر نسخة محلية محفوظة
       // (Local-First) بدلًا من فقدان البيانات أو الرجوع للبيانات الافتراضية.
       if (navigator.onLine && !SYNC_PAUSED && !stillPending) {
+        // التقط جيل الجدول قبل طلب الشبكة. إذا بدأ حفظ محلى أثناء الانتظار،
+        // لا تسمح لنتيجة قديمة بأن تكتب فوق IndexedDB أو خط الأساس.
+        const readGeneration = TABLE_MUTATION_GENERATION[key] || 0;
         try {
           let result;
           if (key === "settings") result = await sbLoadSettings();
@@ -753,6 +756,11 @@ async function storeGet(key, fallback) {
           else if (key === "specialties") result = await sbLoadSpecialties();
           else if (SB_TABLES[key]) result = await sbLoadTable(key);
           if (result != null) {
+            const pendingAfterFetch = await getPendingQueueKeys();
+            const cachedAfterFetch = await readLocalCache(key, undefined);
+            if ((TABLE_MUTATION_GENERATION[key] || 0) !== readGeneration || pendingAfterFetch.includes(key)) {
+              return cachedAfterFetch !== undefined ? cachedAfterFetch : fallback;
+            }
             await cacheLocally(key, result);
             if (SB_TABLES[key]) await writeSyncBaseline(key, result); // نقطة توافق معروفة بين المحلى والسحابى
             return result;
@@ -1286,6 +1294,9 @@ async function stampChangedRecords(key, newArr) {
 // وهو أحد الأسباب المحتملة لفقدان تعديلات (خصوصًا الصلاحيات وبيانات المستخدمين)
 // كانت تظهر ناجحة فى الواجهة فورًا رغم أن الحفظ الفعلى غير متزامن ولم يكتمل بعد.
 let PENDING_WRITES = 0;
+// رقم جيل محلى لكل جدول؛ يتغير لحظة بدء أي حفظ، حتى نرفض نتيجة شبكة
+// بدأت قبل التعديل حتى لو اكتمل الحفظ أثناء انتظار طلب الشبكة.
+const TABLE_MUTATION_GENERATION = Object.create(null);
 window.addEventListener("beforeunload", (e) => {
   if (PENDING_WRITES > 0) { e.preventDefault(); e.returnValue = ""; }
 });
@@ -1307,7 +1318,15 @@ function memoize(fn) {
   };
 }
 async function persist(key) {
-  await stampChangedRecords(key, DB[key]);
+  TABLE_MUTATION_GENERATION[key] = (TABLE_MUTATION_GENERATION[key] || 0) + 1;
+  PENDING_WRITES++;
+  try {
+    await stampChangedRecords(key, DB[key]);
+  } catch (e) {
+    PENDING_WRITES--;
+    DATA_VERSION++;
+    throw e;
+  }
   const map = {
     doctors: DB.doctors, employees: DB.employees, visitsClinic: DB.visitsClinic,
     visitsDental: DB.visitsDental, visitsOperations: DB.visitsOperations, visitsLabs: DB.visitsLabs,
@@ -1317,7 +1336,6 @@ async function persist(key) {
     categories: DB.categories, specialties: DB.specialties, auditLog: DB.auditLog,
     labExpenses: DB.labExpenses,
   };
-  PENDING_WRITES++;
   try {
     // ننتظر اكتمال الحفظ فعليًا (بدل إطلاقه فى الخلفية دون انتظار) حتى تعكس نتيجته
     // الحقيقة: هل حُفظ محليًا فقط بانتظار المزامنة، أم فشل الحفظ تمامًا؟ هذا يسمح
@@ -2385,6 +2403,7 @@ async function backgroundRefreshAll() {
       if (PENDING_WRITES > 0) break; // بدأت عملية حفظ جديدة أثناء السحب نفسه - توقف فورًا ولا تكمل باقى الجداول
       try {
         const before = JSON.stringify(DB[key]);
+        const generationBefore = TABLE_MUTATION_GENERATION[key] || 0;
         const fresh = await storeGet(key, DB[key]);
         // إعادة تحقق فورية بعد انتظار الشبكة (وهذا هو الإصلاح الجوهري لمشكلة
         // اختفاء التعديل بعد ثوانٍ رغم الاتصال): الفحص الأول لـ PENDING_WRITES
@@ -2394,6 +2413,7 @@ async function backgroundRefreshAll() {
         // لأنها قد لا تعكس التعديل الجديد بشكل موثوق، فنتجاهلها كليًا هنا بدل
         // استبدال DB[key] بها والتسبب فى اختفاء تعديل المستخدم الذى نجح فعليًا.
         if (PENDING_WRITES > 0) break;
+        if ((TABLE_MUTATION_GENERATION[key] || 0) !== generationBefore) continue;
         const pendingAfter = await getPendingQueueKeys();
         if (pendingAfter.includes(key)) continue;
         if (fresh !== undefined && JSON.stringify(fresh) !== before) { DB[key] = fresh; changed = true; }
@@ -6308,11 +6328,13 @@ async function refreshTableFromRealtime(key) {
   if (PENDING_WRITES > 0 || isMidEdit() || isUserActivelyTyping()) return;
   const pendingBefore = await getPendingQueueKeys();
   if (pendingBefore.includes(key)) return;
+  const generationBefore = TABLE_MUTATION_GENERATION[key] || 0;
   realtimeRefreshInProgress.add(key);
   try {
     const fresh = await storeGet(key, DB[key]);
     // لا نستبدل الذاكرة بنتيجة قديمة إذا بدأ حفظ محلى أثناء طلب الشبكة.
     if (PENDING_WRITES > 0 || isMidEdit() || isUserActivelyTyping()) return;
+    if ((TABLE_MUTATION_GENERATION[key] || 0) !== generationBefore) return;
     const pendingAfter = await getPendingQueueKeys();
     if (pendingAfter.includes(key)) return;
     if (fresh !== undefined && JSON.stringify(fresh) !== JSON.stringify(DB[key])) {
