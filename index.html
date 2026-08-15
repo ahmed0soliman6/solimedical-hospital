@@ -126,7 +126,15 @@
     margin-inline-start:auto; background:var(--expense); color:#fff;
     font-size:10px; font-weight:700; border-radius:20px; padding:1px 7px;
   }
-  .sidebar-foot{padding:14px 16px; border-top:1px solid rgba(255,255,255,.08); font-size:12px; color:#8FA9A8;}
+  .sidebar-foot{padding:12px 14px; border-top:1px solid rgba(255,255,255,.08); font-size:12px; color:#8FA9A8;}
+  .sidebar-account{border-top:1px solid rgba(255,255,255,.08); padding:12px 14px 10px; color:#EAF1EF;}
+  .sidebar-account-user{font-size:12px; font-weight:800; line-height:1.55; margin-bottom:9px;}
+  .sidebar-account-user .role{font-size:11px; color:#9FB6B9; font-weight:600;}
+  .sidebar-account-actions{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:9px;}
+  .sidebar-account-actions .btn{flex:1 1 auto; min-width:0; padding:6px 8px; font-size:11px; border-color:rgba(255,255,255,.18); color:#EAF1EF; background:rgba(255,255,255,.06);}
+  .sidebar-account-actions .btn:hover{background:rgba(255,255,255,.13);}
+  .sidebar-connection{display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; color:#9FB6B9;}
+  .sidebar-connection #storageIndicator{padding:0; border:0; color:#BFE8D4;}
 
   /* ---------- Main ---------- */
   #main{flex:1; min-width:0; display:flex; flex-direction:column;}
@@ -151,6 +159,7 @@
   }
   @media (max-width:560px){
     #topbar{padding:8px 10px; gap:6px; align-items:center;}
+    .sidebar-account-actions .btn{font-size:11px; padding:7px 6px;}
     #topbar > div:first-child{min-width:0; flex:1 1 45%;}
     #topbar > div:last-child{min-width:0; flex:1 1 45%; justify-content:flex-start; gap:5px; flex-wrap:wrap;}
     #topbar .title{font-size:14px; max-width:34vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
@@ -1726,8 +1735,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.1";
-const APP_RELEASE_NOTES = "توافق الهاتف • مؤشر اتصال مختصر • تسريع الحفظ والحذف";
+const APP_VERSION = "v1.3.2";
+const APP_RELEASE_NOTES = "تحسين الهاتف • حساب المستخدم في القائمة • كلمات مرور Firebase";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -1860,13 +1869,35 @@ function renderSidebar() {
       `;
       }).join("")}
     </nav>
-    <div class="sidebar-foot" id="storageIndicator">جارٍ التحقق من التخزين...</div>
+    ${currentUser ? `
+    <div class="sidebar-account">
+      <div class="sidebar-account-user">👤 ${esc(currentUser.displayName)} <span class="role">— ${esc(currentUser.role)}</span></div>
+      <div class="sidebar-account-actions">
+        <button class="btn ghost sm" id="sidebarThemeToggleBtn" title="تبديل الوضع الليلي/النهاري">${document.documentElement.getAttribute("data-theme") === "dark" ? "☀️" : "🌙"}</button>
+        <button class="btn ghost sm" id="sidebarChangePasswordBtn" title="تغيير كلمة المرور">🔑 كلمة المرور</button>
+        <button class="btn ghost sm" id="sidebarLogoutBtn">تسجيل الخروج</button>
+      </div>
+      <div class="sidebar-connection"><span>الاتصال</span><div class="sidebar-foot" id="storageIndicator">جارٍ التحقق...</div></div>
+    </div>` : `<div class="sidebar-foot" id="storageIndicator">جارٍ التحقق...</div>`}
   `;
   el.querySelectorAll(".nav-item").forEach(n => {
     n.addEventListener("click", () => { state.page = n.dataset.page; state.editId = null; state.editDocId = null; state.editEmpId = null; state.showAnnualReport = false; document.body.classList.remove("sidebar-open"); route(); });
   });
   const newNav = el.querySelector("nav");
   if (newNav) newNav.scrollTop = prevScroll;
+  const sidebarThemeToggleBtn = document.getElementById("sidebarThemeToggleBtn");
+  if (sidebarThemeToggleBtn) sidebarThemeToggleBtn.addEventListener("click", () => {
+    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    applyTheme(next);
+    renderSidebar();
+  });
+  const sidebarChangePasswordBtn = document.getElementById("sidebarChangePasswordBtn");
+  if (sidebarChangePasswordBtn) sidebarChangePasswordBtn.addEventListener("click", openChangeMyPasswordModal);
+  const sidebarLogoutBtn = document.getElementById("sidebarLogoutBtn");
+  if (sidebarLogoutBtn) sidebarLogoutBtn.addEventListener("click", () => {
+    if (!confirm("تسجيل الخروج من النظام؟")) return;
+    logout();
+  });
   renderStorageIndicator();
 }
 
@@ -1947,32 +1978,10 @@ function renderTopbar() {
     </div>
     <div style="display:flex; align-items:center; gap:16px;">
       <div class="date">${dateStr}</div>
-      ${currentUser ? `
-        <div style="display:flex; align-items:center; gap:10px; padding-inline-start:14px; border-inline-start:1.5px solid var(--line);">
-          <span style="font-size:12.5px; font-weight:700; color:var(--navy);">👤 ${esc(currentUser.displayName)}</span>
-          <span class="pill">${esc(currentUser.role)}</span>
-          <button class="btn ghost sm" id="themeToggleBtn" title="تبديل الوضع الليلي/النهاري">${document.documentElement.getAttribute("data-theme") === "dark" ? "☀️" : "🌙"}</button>
-          <button class="btn ghost sm" id="changeMyPasswordBtn" title="تغيير كلمة المرور الخاصة بك">🔑 كلمة المرور</button>
-          <button class="btn ghost sm" id="logoutBtn">تسجيل الخروج</button>
-        </div>
-      ` : ""}
     </div>
   `;
   const hamburgerBtn = document.getElementById("hamburgerBtn");
   if (hamburgerBtn) hamburgerBtn.addEventListener("click", () => document.body.classList.toggle("sidebar-open"));
-  const themeToggleBtn = document.getElementById("themeToggleBtn");
-  if (themeToggleBtn) themeToggleBtn.addEventListener("click", () => {
-    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
-    applyTheme(next);
-    renderTopbar();
-  });
-  const changePassBtn = document.getElementById("changeMyPasswordBtn");
-  if (changePassBtn) changePassBtn.addEventListener("click", openChangeMyPasswordModal);
-  const logoutBtn = document.getElementById("logoutBtn");
-  if (logoutBtn) logoutBtn.addEventListener("click", () => {
-    if (!confirm("تسجيل الخروج من النظام؟")) return;
-    logout();
-  });
   renderStorageIndicator();
 }
 
@@ -2007,12 +2016,13 @@ function openChangeMyPasswordModal() {
         </div>
         <div class="field" style="margin-bottom:12px;">
           <label>كلمة المرور الجديدة</label>
-          <input type="password" name="new1" required minlength="3" autocomplete="new-password">
+          <input type="password" name="new1" required minlength="6" autocomplete="new-password">
         </div>
         <div class="field" style="margin-bottom:16px;">
           <label>تأكيد كلمة المرور الجديدة</label>
-          <input type="password" name="new2" required minlength="3" autocomplete="new-password">
+          <input type="password" name="new2" required minlength="6" autocomplete="new-password">
         </div>
+        <div class="hint" style="margin-bottom:12px;">لا يمكن عرض كلمات المرور أو استرجاعها؛ عند نسيانها يجب تعيين كلمة مرور جديدة.</div>
         <div id="changePassError" style="color:var(--expense,#B3261E); font-size:12.5px; margin-bottom:10px; display:none;"></div>
         <div style="display:flex; gap:8px; justify-content:flex-end;">
           <button type="button" class="btn ghost" id="changePassCancel">إلغاء</button>
@@ -2036,17 +2046,39 @@ function openChangeMyPasswordModal() {
     // المرور من جهاز آخر ثم وصلت هذه المزامنة لهذا الجهاز بعد تسجيل الدخول).
     const account = getCurrentAccount();
     if (!account) { errBox.textContent = "تعذّر العثور على الحساب."; errBox.style.display = "block"; return; }
-    if (account.password !== current) { errBox.textContent = "كلمة المرور الحالية غير صحيحة."; errBox.style.display = "block"; return; }
+    if (new1.length < 6) { errBox.textContent = "كلمة المرور الجديدة يجب أن تكون 6 أحرف أو أرقام على الأقل."; errBox.style.display = "block"; return; }
     if (new1 !== new2) { errBox.textContent = "كلمة المرور الجديدة وتأكيدها غير متطابقين."; errBox.style.display = "block"; return; }
     if (new1 === current) { errBox.textContent = "كلمة المرور الجديدة مطابقة للحالية - اختر كلمة مرور مختلفة."; errBox.style.display = "block"; return; }
-    account.password = new1;
-    account.updatedAt = nowISO(); // نفس آلية الدمج الذكى المستخدمة فى كل تعديلات حسابات المستخدمين
-    currentUser.password = new1;
-    setSession(currentUser); // حدّث الجلسة المحلية لتبقى متسقة مع الحساب
-    persist("staffAccounts");
-    logActivity("تغيير كلمة المرور الشخصية", "settings");
-    saveToast("تم تغيير كلمة المرور بنجاح");
-    closeModal();
+    const submit = e.target.querySelector('button[type="submit"]');
+    if (submit) { submit.disabled = true; submit.textContent = "جارٍ التحديث..."; }
+    try {
+      if (account.firebaseUid && window.MitaliFirebase && window.MitaliFirebase.changePassword) {
+        if (!navigator.onLine) throw new Error("offline");
+        await window.MitaliFirebase.changePassword(account.username, current, new1);
+        account.password = "";
+      } else {
+        account.password = new1;
+      }
+      account.updatedAt = nowISO();
+      currentUser.password = account.password;
+      setSession(currentUser);
+      await persist("staffAccounts");
+      logActivity("تغيير كلمة المرور الشخصية", "settings");
+      saveToast("تم تغيير كلمة المرور في Firebase بنجاح");
+      closeModal();
+    } catch (error) {
+      console.error("Password change failed:", error);
+      const code = error && (error.code || error.message);
+      errBox.textContent = code === "auth/wrong-password" || code === "auth/invalid-credential"
+        ? "كلمة المرور الحالية غير صحيحة."
+        : code === "auth/requires-recent-login"
+          ? "لأسباب أمنية، سجّل الخروج ثم ادخل مرة أخرى قبل تغيير كلمة المرور."
+          : code === "offline"
+            ? "لا يوجد اتصال بالإنترنت؛ لا يمكن تغيير كلمة مرور Firebase أثناء عدم الاتصال."
+            : "تعذّر تغيير كلمة المرور في Firebase. حاول مرة أخرى.";
+      errBox.style.display = "block";
+      if (submit) { submit.disabled = false; submit.textContent = "حفظ كلمة المرور"; }
+    }
   });
 }
 // رسالة تأكيد حفظ تعكس الحالة الحقيقية: لو أوفلاين (أو المزامنة موقوفة مؤقتًا أو
@@ -5373,28 +5405,11 @@ function renderUsersPage() {
   if (cancelBtn) cancelBtn.addEventListener("click", () => { state.editUserId = null; route(); });
 
   c.querySelectorAll("[data-edituser]").forEach(b => b.addEventListener("click", () => { state.editUserId = b.dataset.edituser; route(); }));
-  c.querySelectorAll("[data-resetpass]").forEach(b => b.addEventListener("click", async () => {
+  c.querySelectorAll("[data-resetpass]").forEach(b => b.addEventListener("click", () => {
     if (!canEdit) { showToast("⚠️ ليس لديك صلاحية"); return; }
     const a = DB.staffAccounts.find(x => x.id === b.dataset.resetpass);
     if (!a) return;
-    const newPass = prompt(`كلمة مرور جديدة للمستخدم "${a.displayName}":`, "");
-    if (newPass === null) return;
-    if (!newPass.trim()) { showToast("لم يتم تغيير كلمة المرور"); return; }
-    if (a.firebaseUid) {
-      showToast("⚠️ الحساب مرتبط بـ Firebase Authentication. استخدم كلمة مرور Firebase الحالية أو تدفق إعادة التعيين.", 6000);
-      return;
-    }
-    a.password = newPass.trim();
-    a.updatedAt = nowISO(); // نفس إصلاح تحديث المستخدم أعلاه - ضرورى لصحة الدمج الذكي بين الأجهزة
-    logActivity("إعادة تعيين كلمة مرور", "users", null, a.displayName);
-    try {
-      await persist("staffAccounts");
-      showToast(STORAGE_MODE === "firestore" && !navigator.onLine ? "تم الحفظ محليًا - سيُرفع عند توفر الاتصال" : "تم تعيين كلمة مرور جديدة");
-    } catch (err) {
-      console.error(err);
-      showToast("⚠️ تم الحفظ محليًا فقط - تعذّر رفع كلمة المرور الجديدة الآن");
-    }
-    route();
+    showToast("⚠️ لا يمكن عرض كلمات مرور Firebase. اطلب من الموظف تغييرها من حسابه، أو أوقف الحساب وأنشئ حساب Firebase جديدًا له.", 7000);
   }));
   c.querySelectorAll("[data-toggleuser]").forEach(b => b.addEventListener("click", async () => {
     if (!canEdit) { showToast("⚠️ ليس لديك صلاحية"); return; }

@@ -148,6 +148,17 @@
     }
   }
 
+  async function changePassword(username, currentPassword, newPassword) {
+    await ready();
+    if (!auth || !auth.currentUser) throw new Error('Firebase user is not authenticated');
+    if (!currentPassword || !newPassword || String(newPassword).length < 6) throw new Error('auth/weak-password');
+    const email = authEmailForUsername(username);
+    const credential = window.firebase.auth.EmailAuthProvider.credential(email, currentPassword);
+    await auth.currentUser.reauthenticateWithCredential(credential);
+    await auth.currentUser.updatePassword(String(newPassword));
+    return true;
+  }
+
   async function signOut() {
     init();
     if (auth) await auth.signOut();
@@ -299,6 +310,7 @@
     authEmailForUsername,
     signInWithUsername,
     createAuthUserForUsername,
+    changePassword,
     signOut,
     authUser,
     waitForAuth,
