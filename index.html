@@ -1777,12 +1777,13 @@ const SB_CRED_KEY = APP_PREFIX + "supabase_credentials";
 // على أي جهاز أو متصفح دون الحاجة لإدخالها يدويًا فى كل مرة.
 // رقم إصدار النظام - يُحدَّث يدويًا مع كل تعديل حقيقى فى الكود، ليسهل معرفة
 // هل الهاتف شغّال بأحدث نسخة أم لا بمجرد النظر لصفحة الإعدادات، بدل تخمين ذلك.
-const APP_VERSION = "v1.2.4 — إصلاح باق خطير: شاشة الدخول كانت تمسح حسابات المستخدمين المحلية (بما فيها admin الافتراضي) لو رجع جدول Supabase فارغًا، فيفشل تسجيل الدخول دائمًا فى هذه الحالة رغم صحة البيانات (2026-08-09)";
+const APP_VERSION = "v1.2.5 — إصلاح مزامنة Realtime العامة وإعادة الاتصال الآمن بالطابور (2026-08-15)";
 
 // بيانات اتصال Supabase الخاصة بمستشفى ميت على
 const DEFAULT_SB_URL = "https://uorxtilwjrvwvlnnamop.supabase.co";
 const DEFAULT_SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVvcnh0aWx3anJ2d3Zsbm5hbW9wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYwOTA4NzcsImV4cCI6MjEwMTY2Njg3N30.bG7siKVHMSQxo68E-3mUggTutNMIzSCsGVa8uSVhbKs";
 let sbClient = null;
+let sbClientCredentialsFingerprint = null;
 
 const SB_TABLES = {
   doctors: "doctors", employees: "employees", visitsClinic: "visits_clinic",
@@ -1861,14 +1862,22 @@ let SB_LAST_CONNECT_ERROR = null;
 // البقاء فى وضع "supabase" (Local-First الصحيح المبنى على IndexedDB وطابور
 // المزامنة) بدل السقوط لوضع محلى منفصل تمامًا (راجع تعليق detectStorageMode أدناه).
 function ensureSbClient() {
-  if (sbClient) return true;
   try {
     if (typeof window.supabase === "undefined" || typeof window.supabase.createClient !== "function") return false;
     const cred = getSavedCredentials();
     if (!cred || !cred.url || !cred.key) return false;
+    const fingerprint = cred.url + "\n" + cred.key;
+    if (sbClient && sbClientCredentialsFingerprint === fingerprint) return true;
+    // عند تغيير بيانات الاتصال لا تترك قنوات Realtime القديمة مرتبطة بالعميل السابق.
+    if (sbClient && typeof cleanupRealtimeChannels === "function") cleanupRealtimeChannels("supabase-client-replaced");
     sbClient = window.supabase.createClient(cred.url, cred.key);
+    sbClientCredentialsFingerprint = fingerprint;
     return true;
-  } catch (e) { return false; }
+  } catch (e) {
+    sbClient = null;
+    sbClientCredentialsFingerprint = null;
+    return false;
+  }
 }
 async function tryInitSupabase() {
   SB_LAST_CONNECT_ERROR = null;
@@ -1891,7 +1900,7 @@ async function tryInitSupabase() {
     return false;
   }
   try {
-    sbClient = window.supabase.createClient(cred.url, cred.key);
+    if (!ensureSbClient()) { SB_LAST_CONNECT_ERROR = "library-not-loaded"; return false; }
     // سقف زمنى صارم (6 ثوانٍ) لمحاولة الاتصال، حتى لو أظهر المتصفح أنه "متصل"
     // فعليًا (حالة شائعة: متصل بشبكة واى فاى بدون إنترنت فعلى) فلا يتجمّد النظام طويلًا.
     const probe = sbClient.from("settings").select("id").limit(1);
@@ -1902,7 +1911,9 @@ async function tryInitSupabase() {
   } catch (e) {
     console.error("Supabase connection failed:", e);
     SB_LAST_CONNECT_ERROR = (e && (e.message || e.details || e.hint)) || String(e);
+    if (typeof cleanupRealtimeChannels === "function") cleanupRealtimeChannels("supabase-probe-failed");
     sbClient = null;
+    sbClientCredentialsFingerprint = null;
     return false;
   }
 }
@@ -5148,7 +5159,9 @@ function renderSettings() {
       });
       logActivity("قطع الاتصال بـ Supabase (سيُسجَّل محليًا)", "settings");
       clearCredentials();
+      cleanupRealtimeChannels("manual-disconnect");
       sbClient = null;
+      sbClientCredentialsFingerprint = null;
       STORAGE_MODE = "local";
       persist("auditLog");
       showToast("✅ تم حفظ كل بياناتك محليًا وقطع الاتصال بنجاح");
@@ -6268,39 +6281,102 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && cu
 // ======================================================================
 // التشغيل
 // ======================================================================
-// اشتراك لحظي (Realtime) فى تغييرات جدول حسابات المستخدمين تحديدًا، حتى يصل أي
-// تعديل فى اسم مستخدم/كلمة مرور/صلاحيات لباقي الأجهزة فورًا بدل انتظار الاستطلاع
-// الدورى كل 45 ثانية أو إعادة فتح الصفحة. آمن تمامًا حتى لو فشل (مثلًا Realtime
-// غير مفعّل على الجدول من لوحة Supabase) - النظام يستمر بالاستطلاع الدورى كخط دفاع ثانٍ.
-let staffRealtimeChannel = null;
-function subscribeStaffAccountsRealtime() {
-  if (!sbClient || STORAGE_MODE !== "supabase" || staffRealtimeChannel) return;
+// اشتراك Realtime عام لكل الجداول المهمة بدل مراقبة staff_accounts فقط.
+// Realtime تحسين فوري وليس مصدر الحقيقة الوحيد؛ يبقى backgroundRefreshAll كخط دفاع
+// احتياطى لأن بعض جداول Supabase قد لا تكون مضافة إلى publication أو قد ينقطع الاتصال.
+const REALTIME_TABLES = [
+  ...Object.entries(SB_TABLES).filter(([key]) => key !== "auditLog"),
+  ["settings", "settings"], ["categories", "settings"], ["specialties", "settings"],
+];
+let realtimeChannel = null;
+let realtimeReconnectTimer = null;
+let realtimeSubscriptionGeneration = 0;
+const realtimeRefreshInProgress = new Set();
+
+function cleanupRealtimeChannels(reason) {
+  realtimeSubscriptionGeneration++;
+  if (realtimeReconnectTimer) { clearTimeout(realtimeReconnectTimer); realtimeReconnectTimer = null; }
+  const old = realtimeChannel;
+  realtimeChannel = null;
+  if (old && sbClient) {
+    try { sbClient.removeChannel(old); } catch (e) { console.warn("Realtime channel cleanup failed:", reason, e); }
+  }
+}
+
+async function refreshTableFromRealtime(key) {
+  if (realtimeRefreshInProgress.has(key) || !sbClient || STORAGE_MODE !== "supabase" || SYNC_PAUSED || !navigator.onLine) return;
+  if (PENDING_WRITES > 0 || isMidEdit() || isUserActivelyTyping()) return;
+  const pendingBefore = await getPendingQueueKeys();
+  if (pendingBefore.includes(key)) return;
+  realtimeRefreshInProgress.add(key);
   try {
-    staffRealtimeChannel = sbClient
-      .channel("staff_accounts_live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "staff_accounts" }, async () => {
-        if (!navigator.onLine || SYNC_PAUSED) return;
-        if (PENDING_WRITES > 0) return; // نفس حماية backgroundRefreshAll: لا تسحب أثناء حفظ جارٍ
-        try {
-          const pendingNow = await getPendingQueueKeys();
-          if (pendingNow.includes("staffAccounts")) return; // لا تسحب فوق تعديل محلى لم يُرفَع بعد
-          const fresh = await storeGet("staffAccounts", DB.staffAccounts);
-          // نفس إصلاح فجوة السباق فى backgroundRefreshAll: تحقق تانى بعد انتظار
-          // الشبكة مباشرة قبل استبدال DB.staffAccounts - المستخدم ممكن يكون
-          // بدأ (أو أنهى) حفظ تغيير كلمة السر أثناء انتظار storeGet نفسها.
-          if (PENDING_WRITES > 0) return;
-          const pendingAfter = await getPendingQueueKeys();
-          if (pendingAfter.includes("staffAccounts")) return;
-          DB.staffAccounts = fresh;
-          if (currentUser) {
-            const me = DB.staffAccounts.find(a => a.id === currentUser.id);
-            if (!me || me.status === "موقوف") { clearSession(); renderLogin("تم إيقاف هذا الحساب أو حذفه."); return; }
-          }
-          if (!isMidEdit() && !isUserActivelyTyping()) route();
-        } catch (e) { console.error("Realtime staffAccounts refresh failed:", e); }
-      })
-      .subscribe();
-  } catch (e) { console.error("Realtime subscribe failed:", e); staffRealtimeChannel = null; }
+    const fresh = await storeGet(key, DB[key]);
+    // لا نستبدل الذاكرة بنتيجة قديمة إذا بدأ حفظ محلى أثناء طلب الشبكة.
+    if (PENDING_WRITES > 0 || isMidEdit() || isUserActivelyTyping()) return;
+    const pendingAfter = await getPendingQueueKeys();
+    if (pendingAfter.includes(key)) return;
+    if (fresh !== undefined && JSON.stringify(fresh) !== JSON.stringify(DB[key])) {
+      DB[key] = fresh;
+      DATA_VERSION++;
+      if (key === "staffAccounts" && currentUser) {
+        const me = DB.staffAccounts.find(a => a.id === currentUser.id);
+        if (!me || me.status === "موقوف") {
+          clearSession();
+          renderLogin("تم إيقاف هذا الحساب أو حذفه.");
+          return;
+        }
+      }
+      if (currentUser && !isMidEdit() && !isUserActivelyTyping()) route();
+    }
+  } catch (e) {
+    console.error("Realtime refresh failed for", key, e);
+  } finally {
+    realtimeRefreshInProgress.delete(key);
+  }
+}
+
+function scheduleRealtimeReconnect(generation) {
+  if (realtimeReconnectTimer || generation !== realtimeSubscriptionGeneration) return;
+  realtimeReconnectTimer = setTimeout(() => {
+    realtimeReconnectTimer = null;
+    if (generation === realtimeSubscriptionGeneration && STORAGE_MODE === "supabase" && !SYNC_PAUSED && navigator.onLine) {
+      subscribeStaffAccountsRealtime();
+    }
+  }, 5000);
+}
+
+function subscribeStaffAccountsRealtime() {
+  if (!sbClient || STORAGE_MODE !== "supabase" || SYNC_PAUSED || !navigator.onLine) return;
+  if (realtimeChannel) return;
+  const generation = ++realtimeSubscriptionGeneration;
+  try {
+    let channel = sbClient.channel("hospital_data_live");
+    for (const [key, table] of REALTIME_TABLES) {
+      channel = channel.on("postgres_changes", { event: "*", schema: "public", table }, () => {
+        refreshTableFromRealtime(key);
+      });
+    }
+    realtimeChannel = channel;
+    channel.subscribe(status => {
+      if (generation !== realtimeSubscriptionGeneration) return;
+      if (status === "SUBSCRIBED") {
+        console.log("Supabase Realtime subscribed:", REALTIME_TABLES.map(([, table]) => table).join(", "));
+        return;
+      }
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        console.warn("Supabase Realtime status:", status);
+        if (realtimeChannel === channel) {
+          realtimeChannel = null;
+          try { sbClient.removeChannel(channel); } catch (e) { /* ignore */ }
+        }
+        scheduleRealtimeReconnect(generation);
+      }
+    });
+  } catch (e) {
+    console.error("Realtime subscribe failed:", e);
+    realtimeChannel = null;
+    scheduleRealtimeReconnect(generation);
+  }
 }
 async function boot() {
   document.getElementById("content").innerHTML = `<div style="text-align:center; padding:80px; color:var(--muted);">جارٍ تحميل النظام...</div>`;
