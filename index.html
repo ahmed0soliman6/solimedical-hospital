@@ -1970,7 +1970,7 @@ async function migrateCurrentDataToFirestore() {
   const payloads = {
     settings: [{ id: "app", ...(DB.settings || {}) }],
     categories: [{ id: "app", ...(DB.categories || {}) }],
-    specialties: [{ id: "app", ...(DB.specialties || {}) }]
+    specialties: [{ id: "app", value: Array.isArray(DB.specialties) ? DB.specialties : [] }]
   };
   const summary = [];
   for (const key of FIRESTORE_MIGRATION_KEYS) {

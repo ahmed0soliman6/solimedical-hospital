@@ -163,17 +163,31 @@
 
   async function getValue(key, fallback) {
     const records = await getTable(key);
-    if (key === "settings" || key === "categories" || key === "specialties") {
-      if (!records.length) return fallback;
+    if (!records.length) return fallback;
+    if (key === "specialties") {
+      const raw = Object.assign({}, records[0]);
+      delete raw.id;
+      if (Array.isArray(raw.value)) return raw.value;
+      // Support the first migration format, which spread an array into
+      // numeric document fields ("0", "1", ...).
+      const numericKeys = Object.keys(raw)
+        .filter((field) => /^\\d+$/.test(field))
+        .sort((a, b) => Number(a) - Number(b));
+      return numericKeys.length ? numericKeys.map((field) => raw[field]) : fallback;
+    }
+    if (key === "settings" || key === "categories") {
       const value = Object.assign({}, records[0]);
       delete value.id;
       return value;
     }
-    return records.length ? records : fallback;
+    return records;
   }
 
   async function setValue(key, value) {
-    if (key === "settings" || key === "categories" || key === "specialties") {
+    if (key === "specialties") {
+      return setTable(key, [{ id: "app", value: Array.isArray(value) ? value : [] }]);
+    }
+    if (key === "settings" || key === "categories") {
       return setTable(key, [{ id: "app", ...(value || {}) }]);
     }
     return setTable(key, Array.isArray(value) ? value : []);
