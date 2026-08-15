@@ -1910,6 +1910,7 @@ function isMidEdit() {
 }
 async function backgroundRefreshAll() {
   if (BACKGROUND_REFRESH_IN_PROGRESS || STORAGE_MODE !== "firestore" || !navigator.onLine || !currentUser) return;
+  if (firestoreRealtimeUnsubs && firestoreRealtimeUnsubs.size) return;
   if (isMidEdit() || isUserActivelyTyping()) return;
   if (PENDING_WRITES > 0) return;
   BACKGROUND_REFRESH_IN_PROGRESS = true;
@@ -1932,7 +1933,7 @@ async function backgroundRefreshAll() {
     BACKGROUND_REFRESH_IN_PROGRESS = false;
   }
 }
-setInterval(backgroundRefreshAll, 60000);setInterval(backgroundRefreshAll, 60000);
+setInterval(backgroundRefreshAll, 300000);
 
 function renderTopbar() {
   const el = document.getElementById("topbar");
@@ -5860,13 +5861,30 @@ function cleanupRealtimeChannels(reason) {
   firestoreRealtimeUnsubs.clear();
 }
 
-async function refreshTableFromFirestore(key) {
+async function refreshTableFromFirestore(key, changes) {
   if (STORAGE_MODE !== "firestore" || !window.MitaliFirebase || realtimeRefreshInProgress.has("fs:" + key)) return;
   realtimeRefreshInProgress.add("fs:" + key);
   try {
-    const fresh = await window.MitaliFirebase.getValue(key, DB[key]);
-    if (fresh === undefined || fresh === null) return;
-    const safeFresh = Array.isArray(fresh) ? mergeRemoteSnapshot(key, fresh) : fresh;
+    let safeFresh;
+    if (["settings", "categories", "specialties"].includes(key)) {
+      safeFresh = await window.MitaliFirebase.getValue(key, DB[key]);
+    } else {
+      const next = Array.isArray(DB[key]) ? DB[key].slice() : [];
+      for (const change of (Array.isArray(changes) ? changes : [])) {
+        const record = change && change.record;
+        if (!record || record.id == null) continue;
+        const index = next.findIndex(item => item && String(item.id) === String(record.id));
+        if (change.type === "removed") {
+          if (index >= 0) next.splice(index, 1);
+        } else if (index >= 0) {
+          next[index] = record;
+        } else {
+          next.push(record);
+        }
+      }
+      safeFresh = next;
+    }
+    if (safeFresh === undefined || safeFresh === null) return;
     if (JSON.stringify(safeFresh) === JSON.stringify(DB[key])) return;
     DB[key] = safeFresh;
     await cacheLocally(key, safeFresh);
@@ -5893,8 +5911,9 @@ function subscribeFirestoreRealtime() {
   if (firestoreRealtimeUnsubs.size) return;
   FIRESTORE_REALTIME_KEYS.forEach((key) => {
     try {
-      const unsubscribe = window.MitaliFirebase.subscribe(key, () => refreshTableFromFirestore(key), (error) => {
+      const unsubscribe = window.MitaliFirebase.subscribe(key, (changes) => refreshTableFromFirestore(key, changes), (error) => {
         console.warn("Firestore listener error for", key, error);
+        firestoreRealtimeUnsubs.delete(key);
       });
       if (typeof unsubscribe === "function") firestoreRealtimeUnsubs.set(key, unsubscribe);
     } catch (e) {
