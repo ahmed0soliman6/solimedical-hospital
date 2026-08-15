@@ -31,7 +31,10 @@
     payroll: "payroll",
     staffAccounts: "staff_accounts",
     auditLog: "audit_log",
-    labExpenses: "lab_expenses"
+    labExpenses: "lab_expenses",
+    categories: "categories",
+    specialties: "specialties",
+    settings: "settings"
   };
 
   let app = null;
@@ -78,6 +81,26 @@
       if (item !== undefined) out[key] = cleanDocument(item);
     }
     return out;
+  }
+
+  function safeRecord(key, record) {
+    const data = Object.assign({}, record || {});
+    // Passwords belong only to Firebase Authentication and must never be copied
+    // into Firestore during the migration.
+    if (key === "staffAccounts") delete data.password;
+    return cleanDocument(data);
+  }
+
+  async function commitOperations(operations) {
+    const CHUNK = 400;
+    for (let i = 0; i < operations.length; i += CHUNK) {
+      const batch = db.batch();
+      operations.slice(i, i + CHUNK).forEach((operation) => {
+        if (operation.type === "delete") batch.delete(operation.ref);
+        else batch.set(operation.ref, operation.data, { merge: false });
+      });
+      await batch.commit();
+    }
   }
 
   function authEmailForUsername(username) {
@@ -127,27 +150,27 @@
     const collection = db.collection(collectionName(key));
     const existing = await collection.get();
     const nextIds = new Set(records.map((record) => String(record.id)));
-    const batch = db.batch();
+    const operations = [];
 
-    // Replace the collection atomically from the application's point of view.
-    // Deletions are included so records deleted in the app do not return later.
+    // Replace the collection from the application's point of view. Operations
+    // are chunked below Firestore's batch limit so large hospital tables migrate.
     existing.docs.forEach((doc) => {
-      if (!nextIds.has(doc.id)) batch.delete(doc.ref);
+      if (!nextIds.has(doc.id)) operations.push({ type: "delete", ref: doc.ref });
     });
     records.forEach((record) => {
       if (!record || !record.id) throw new Error(`Firestore record has no id: ${key}`);
-      const data = cleanDocument(Object.assign({}, record));
+      const data = safeRecord(key, record);
       delete data.id;
-      batch.set(collection.doc(String(record.id)), data, { merge: false });
+      operations.push({ type: "set", ref: collection.doc(String(record.id)), data });
     });
-    await batch.commit();
+    await commitOperations(operations);
     return records;
   }
 
   async function upsertRecord(key, record) {
     await ready();
     if (!record || !record.id) throw new Error(`Firestore record has no id: ${key}`);
-    const data = cleanDocument(Object.assign({}, record));
+    const data = safeRecord(key, record);
     delete data.id;
     await db.collection(collectionName(key)).doc(String(record.id)).set(data, { merge: false });
     return record;

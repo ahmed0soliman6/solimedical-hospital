@@ -1917,6 +1917,23 @@ function sbFromRow(key, row) {
   return obj;
 }
 
+const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
+async function migrateCurrentDataToFirestore() {
+  if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
+  const payloads = {
+    settings: [{ id: "app", ...(DB.settings || {}) }],
+    categories: [{ id: "app", ...(DB.categories || {}) }],
+    specialties: [{ id: "app", ...(DB.specialties || {}) }]
+  };
+  const summary = [];
+  for (const key of FIRESTORE_MIGRATION_KEYS) {
+    const records = payloads[key] || (Array.isArray(DB[key]) ? DB[key] : []);
+    await window.MitaliFirebase.setTable(key, records);
+    summary.push(`${key}:${records.length}`);
+  }
+  return summary;
+}
+
 const SB_DISCONNECT_FLAG = APP_PREFIX + "supabase_disconnected";
 
 function getSavedCredentials() {
@@ -4970,6 +4987,13 @@ function renderSettings() {
       ` : `<p class="hint">لا تملك صلاحية الاتصال بقاعدة البيانات.</p>`)}
     </div>` : ""}
 
+    ${isAdminUser() && window.MitaliFirebase ? `
+    <div class="card" style="margin-bottom:18px; border-color:var(--gold);">
+      <div class="section-title">🔥 ترحيل نسخة إلى Firebase Firestore</div>
+      <p style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">ينقل نسخة من البيانات الحالية إلى Firestore للاختبار فقط. لا يوقف Supabase ولا يغيّر مصدر البيانات الرئيسي، ولا ينقل كلمات مرور الحسابات.</p>
+      <button class="btn" id="migrateToFirebase">بدء ترحيل نسخة إلى Firestore</button>
+      <span id="firebaseMigrationStatus" style="font-size:12px; margin-inline-start:10px;"></span>
+    </div>` : ""}
     ${STORAGE_MODE === "supabase" && canSettingsEdit ? `
     <div class="card" style="margin-bottom:18px;">
       <div class="section-title">⚖️ حل تعارضات البيانات بين الأجهزة</div>
@@ -5275,6 +5299,29 @@ function renderSettings() {
       }
     });
   }
+  const migrateFirebaseBtn = document.getElementById("migrateToFirebase");
+  if (migrateFirebaseBtn) {
+    migrateFirebaseBtn.addEventListener("click", async () => {
+      if (!isAdminUser()) { showToast("⚠️ الترحيل متاح للمدير فقط"); return; }
+      if (!confirm("سيتم نسخ البيانات الحالية إلى Firestore للاختبار فقط، مع إبقاء Supabase كما هو. كلمات المرور لن تُنقل. متابعة؟")) return;
+      const statusEl = document.getElementById("firebaseMigrationStatus");
+      migrateFirebaseBtn.disabled = true; migrateFirebaseBtn.textContent = "جارٍ ترحيل النسخة...";
+      if (statusEl) statusEl.textContent = "قد يستغرق ذلك وقتاً حسب عدد السجلات...";
+      try {
+        const summary = await migrateCurrentDataToFirestore();
+        if (statusEl) statusEl.textContent = "تم بنجاح";
+        showToast("✅ تم نسخ البيانات إلى Firestore للاختبار — Supabase ما زال المصدر الرئيسي");
+        console.info("Firestore migration completed:", summary);
+      } catch (error) {
+        console.error("Firestore migration failed:", error);
+        if (statusEl) statusEl.textContent = "فشل الترحيل";
+        showToast(`⚠️ فشل ترحيل Firestore: ${(error && (error.message || error.code)) || error}`);
+      } finally {
+        migrateFirebaseBtn.disabled = false; migrateFirebaseBtn.textContent = "بدء ترحيل نسخة إلى Firestore";
+      }
+    });
+  }
+
   const disconnectBtn = document.getElementById("disconnectSb");
   if (disconnectBtn) {
     disconnectBtn.addEventListener("click", async () => {
