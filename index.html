@@ -422,9 +422,13 @@ function fullPermissions() {
   return p;
 }
 // المدير يملك كل الصلاحيات دائمًا بغض النظر عن أي تخصيص مخزَّن.
+function getCurrentAccount() {
+  if (!currentUser) return null;
+  return (DB.staffAccounts || []).find(a => a.id === currentUser.id || (currentUser.username && a.username === currentUser.username)) || null;
+}
 function can(moduleKey, actionKey) {
   if (!currentUser) return false;
-  const account = (DB.staffAccounts || []).find(a => a.id === currentUser.id);
+  const account = getCurrentAccount();
   if (!account) return false;
   if (account.status === "موقوف") return false;
   if (account.role === "مدير") return true;
@@ -432,7 +436,7 @@ function can(moduleKey, actionKey) {
 }
 function hasAnySettingsAccess() {
   if (!currentUser) return false;
-  const account = (DB.staffAccounts || []).find(a => a.id === currentUser.id);
+  const account = getCurrentAccount();
   if (!account) return false;
   if (account.role === "مدير") return true;
   const s = ["edit","backup","restore","supabaseConnect","supabaseDisconnect","sync"].some(a => can("settings", a));
@@ -2620,7 +2624,7 @@ function openChangeMyPasswordModal() {
     // التحقق دائمًا من أحدث نسخة محلية متاحة لحساب المستخدم الحالى (وليس من
     // currentUser المخزَّن وقت تسجيل الدخول، والذى قد يكون أقدم لو تغيّرت كلمة
     // المرور من جهاز آخر ثم وصلت هذه المزامنة لهذا الجهاز بعد تسجيل الدخول).
-    const account = DB.staffAccounts.find(a => a.id === currentUser.id);
+    const account = getCurrentAccount();
     if (!account) { errBox.textContent = "تعذّر العثور على الحساب."; errBox.style.display = "block"; return; }
     if (account.password !== current) { errBox.textContent = "كلمة المرور الحالية غير صحيحة."; errBox.style.display = "block"; return; }
     if (new1 !== new2) { errBox.textContent = "كلمة المرور الجديدة وتأكيدها غير متطابقين."; errBox.style.display = "block"; return; }
@@ -6487,7 +6491,7 @@ async function refreshTableFromRealtime(key) {
       DB[key] = fresh;
       DATA_VERSION++;
       if (key === "staffAccounts" && currentUser) {
-        const me = DB.staffAccounts.find(a => a.id === currentUser.id);
+        const me = getCurrentAccount();
         if (!me || me.status === "موقوف") {
           clearSession();
           renderLogin("تم إيقاف هذا الحساب أو حذفه.");
