@@ -253,6 +253,18 @@
     return record;
   }
 
+  async function upsertRecords(key, records) {
+    await ready();
+    if (!Array.isArray(records) || !records.length) return;
+    const operations = records.map((record) => {
+      if (!record || !record.id) throw new Error(`Firestore record has no id: ${key}`);
+      const data = safeRecord(key, record);
+      delete data.id;
+      return { type: "set", ref: db.collection(collectionName(key)).doc(String(record.id)), data };
+    });
+    await commitOperations(operations);
+  }
+
   async function deleteRecords(key, ids) {
     await ready();
     const batch = db.batch();
@@ -281,6 +293,7 @@
     getValue,
     setValue,
     upsertRecord,
+    upsertRecords,
     deleteRecords,
     subscribe,
     authEmailForUsername,

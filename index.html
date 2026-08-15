@@ -137,8 +137,11 @@
   }
   #topbar .title{font-family:'Tajawal'; font-weight:700; font-size:19px;}
   #topbar .date{font-size:12.5px; color:var(--muted);}
-  .top-connection-indicator{display:inline-flex; align-items:center; gap:6px; margin-inline-start:12px; padding:5px 10px; border-radius:999px; background:var(--income-soft); color:var(--income); font-size:11px; font-weight:800; white-space:nowrap;}
-  .top-connection-indicator .connection-dot{font-size:10px;}
+  .top-connection-indicator{display:inline-flex; align-items:center; gap:5px; margin-inline-start:12px; padding:5px 9px; border-radius:999px; background:var(--income-soft); color:var(--income); font-size:11px; font-weight:800; white-space:nowrap;}
+  .top-connection-indicator.is-offline{background:var(--expense-soft); color:var(--expense);}
+  .top-connection-indicator .connection-dot{font-size:10px; width:8px; height:8px; border-radius:50%; background:currentColor; display:inline-block;}
+  .release-card{display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:12px; padding:8px 11px; border:1px solid var(--line); border-inline-start:3px solid var(--teal); border-radius:10px; background:var(--card); color:var(--muted); font-size:11px; box-shadow:var(--shadow);}
+  .release-card strong{color:var(--navy); font-size:12px; white-space:nowrap;}
   @media (max-width:880px){
     #topbar{ padding:10px 14px; flex-wrap:wrap; row-gap:8px; }
     #topbar .date{ display:none; }
@@ -146,7 +149,21 @@
     #topbar .pill{ display:none; }
     #topbar .btn.sm{ padding:6px 9px; font-size:12px; }
   }
-  #content{padding:22px 26px 60px; flex:1;}
+  @media (max-width:560px){
+    #topbar{padding:8px 10px; gap:6px; align-items:center;}
+    #topbar > div:first-child{min-width:0; flex:1 1 45%;}
+    #topbar > div:last-child{min-width:0; flex:1 1 45%; justify-content:flex-start; gap:5px; flex-wrap:wrap;}
+    #topbar .title{font-size:14px; max-width:34vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    .top-connection-indicator{margin-inline-start:3px; padding:4px 7px; font-size:10px; gap:4px;}
+    #topbar .btn.sm{padding:5px 7px; font-size:11px;}
+    #content{padding:12px 10px 42px; width:100%; min-width:0;}
+    .form-grid{grid-template-columns:1fr !important; gap:10px;}
+    .two-col{grid-template-columns:1fr; gap:10px;}
+    .table-wrap{width:100%; max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch;}
+    .table-wrap table{min-width:620px;}
+    .section-title{font-size:14px;}
+  }
+  #content{padding:22px 26px 60px; flex:1; min-width:0;}
 
   /* ---------- Cards / grid ---------- */
   .grid{display:grid; gap:12px;}
@@ -711,12 +728,21 @@ async function storeSetInner(key, value) {
   try {
     if (STORAGE_MODE === "firestore" && window.MitaliFirebase) {
       await cacheLocally(key, value);
-      await window.MitaliFirebase.setValue(key, value);
+      if (Array.isArray(value) && !["settings", "categories", "specialties"].includes(key) && window.MitaliFirebase.upsertRecords) {
+        const previous = await readSyncBaseline(key);
+        const previousMap = new Map((previous || []).filter(r => r && r.id != null).map(r => [String(r.id), r]));
+        const nextMap = new Map(value.filter(r => r && r.id != null).map(r => [String(r.id), r]));
+        const changed = value.filter(r => r && r.id != null && (!previousMap.has(String(r.id)) || !syncRecordsEqual(key, previousMap.get(String(r.id)), r)));
+        const deleted = (previous || []).filter(r => r && r.id != null && !nextMap.has(String(r.id))).map(r => String(r.id));
+        if (changed.length) await window.MitaliFirebase.upsertRecords(key, changed);
+        if (deleted.length && window.MitaliFirebase.deleteRecords) await window.MitaliFirebase.deleteRecords(key, deleted);
+      } else {
+        await window.MitaliFirebase.setValue(key, value);
+      }
       if (key === "staffAccounts" && Array.isArray(value) && window.MitaliFirebase.setUserProfile) {
-        for (const account of value) {
-          if (!account || !account.firebaseUid) continue;
-          await window.MitaliFirebase.setUserProfile(account.firebaseUid, account);
-        }
+        await Promise.all(value.filter(account => account && account.firebaseUid).map(account =>
+          window.MitaliFirebase.setUserProfile(account.firebaseUid, account)
+        ));
       }
       if (Array.isArray(value)) await writeSyncBaseline(key, value);
       renderStorageIndicator();
@@ -1700,7 +1726,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.0 — Firebase Firestore فقط (2026-08-15)";
+const APP_VERSION = "v1.3.1";
+const APP_RELEASE_NOTES = "توافق الهاتف • مؤشر اتصال مختصر • تسريع الحفظ والحذف";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -1844,15 +1871,11 @@ function renderSidebar() {
 }
 
 async function renderStorageIndicator() {
-  const label = navigator.onLine
-    ? "متصل بـ Firebase / Firestore — القراءة والكتابة من المصدر الرئيسي"
-    : "غير متصل — Firestore سيحفظ التعديلات محليًا ويرفعها عند عودة الاتصال";
-  const dot = navigator.onLine ? "🟢" : "🟡";
-  const html = `<span class="connection-dot">${dot}</span><span>${label}</span>`;
+  const html = `<span class="connection-dot"></span><span>${navigator.onLine ? "متصل" : "غير متصل"}</span>`;
   const side = document.getElementById("storageIndicator");
   if (side) side.innerHTML = html;
   const top = document.getElementById("topConnectionIndicator");
-  if (top) top.innerHTML = html;
+  if (top) { top.classList.toggle("is-offline", !navigator.onLine); top.innerHTML = html; }
 }
 
 window.addEventListener("online", async () => {
@@ -4331,14 +4354,9 @@ function renderSettings() {
   const editingDoc = state.editDocId ? DB.doctors.find(d => d.id === state.editDocId) : null;
   const canSettingsEdit = can("settings", "edit");
   c.innerHTML = `
-    <div class="card" style="margin-bottom:18px; border-color:var(--gold);">
-      <div class="section-title">🔥 قاعدة بيانات Firebase Firestore
-        <span class="hint">${STORAGE_MODE === "firestore" ? "المصدر الرئيسي الآن ✅" : "بانتظار تسجيل دخول Firebase"}</span>
-      </div>
-      <p style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">
-        Firestore هو مصدر البيانات الوحيد للنظام، والمصادقة تتم عبر Firebase Authentication. تُحفظ نسخة محلية مؤقتة للعمل عند ضعف الاتصال.
-      </p>
-      <div id="firestoreConnectionStatus" class="hint">${navigator.onLine ? "🟢 الاتصال بالإنترنت متاح" : "🟡 لا يوجد اتصال بالإنترنت — سيُحفظ العمل محليًا"}</div>
+    <div class="release-card" role="status">
+      <strong>إصدار ${esc(APP_VERSION)}</strong>
+      <span>${esc(APP_RELEASE_NOTES)}</span>
     </div>
     ${can("demoData","view") ? `
     <div class="card" style="margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
