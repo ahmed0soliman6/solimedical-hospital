@@ -108,6 +108,13 @@
     return auth ? auth.currentUser : null;
   }
 
+  async function getUserProfile(uid) {
+    await ready();
+    if (!auth || !auth.currentUser || auth.currentUser.uid !== uid) throw new Error('Firebase user is not authenticated');
+    const snap = await db.collection('users').doc(String(uid)).get();
+    return snap.exists ? Object.assign({ id: snap.id }, snap.data()) : null;
+  }
+
   async function getTable(key) {
     await ready();
     const snap = await db.collection(collectionName(key)).get();
@@ -178,6 +185,7 @@
     signInWithUsername,
     createAuthUserForUsername,
     signOut,
-    authUser
+    authUser,
+    getUserProfile
   });
 })();

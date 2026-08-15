@@ -6253,6 +6253,9 @@ function renderAuditLogPage() {
 // تسجيل الدخول
 // ======================================================================
 const SESSION_KEY = APP_PREFIX + "session_user";
+// حسابات نُقلت إلى Firebase Auth. تبقى بقية الحسابات على المسار القديم مؤقتاً
+// حتى يعيّن أصحابها كلمات مرور جديدة وتُنقل صلاحياتهم بأمان.
+const FIREBASE_MIGRATED_USERNAMES = new Set(["admin"]);
 let currentUser = null;
 
 // إصلاح جوهري: كانت الجلسة تُحفظ فى sessionStorage، وهو نوع تخزين يُمسَح تلقائيًا
@@ -6348,12 +6351,32 @@ function renderLogin(errorMsg) {
         if (freshAccounts && freshAccounts.length) DB.staffAccounts = freshAccounts;
       }
     } catch (err) { /* تعذّر التحديث الآن - نكمل بالتحقق من أحدث نسخة متاحة محليًا */ }
-    const account = (DB.staffAccounts || []).find(a => a.username === username && a.password === password);
+    let account = null;
+    let firebaseAuthAccount = null;
+    if (FIREBASE_MIGRATED_USERNAMES.has(username) && window.MitaliFirebase) {
+      try {
+        await window.MitaliFirebase.signInWithUsername(username, password);
+        const authUser = window.MitaliFirebase.authUser();
+        const profile = authUser ? await window.MitaliFirebase.getUserProfile(authUser.uid) : null;
+        if (profile) {
+          firebaseAuthAccount = Object.assign({}, profile, { id: authUser.uid, firebaseUid: authUser.uid });
+          const oldIndex = (DB.staffAccounts || []).findIndex(a => a.username === username);
+          if (oldIndex > -1) DB.staffAccounts[oldIndex] = Object.assign({}, DB.staffAccounts[oldIndex], firebaseAuthAccount);
+          else DB.staffAccounts = [...(DB.staffAccounts || []), firebaseAuthAccount];
+        }
+      } catch (firebaseError) {
+        console.warn("Firebase login failed for migrated account:", firebaseError.code || firebaseError.message || firebaseError);
+        renderLogin("بيانات الدخول غير صحيحة أو لم يتم إعداد كلمة المرور الجديدة لهذا الحساب.");
+        return;
+      }
+    }
+    if (firebaseAuthAccount) account = firebaseAuthAccount;
+    else account = (DB.staffAccounts || []).find(a => a.username === username && a.password === password);
     if (!account) { renderLogin("اسم المستخدم أو كلمة المرور غير صحيحة."); return; }
     if (account.status === "موقوف") { renderLogin("هذا الحساب موقوف حاليًا. تواصل مع مدير النظام."); return; }
     account.lastLogin = new Date().toISOString();
-    persist("staffAccounts");
-    setSession({ id: account.id, username: account.username, displayName: account.displayName, role: account.role });
+    if (!firebaseAuthAccount) persist("staffAccounts");
+    setSession({ id: account.id, username: account.username, displayName: account.displayName, role: account.role, firebaseUid: account.firebaseUid || null });
     logActivity("تسجيل دخول", "login");
     state.page = firstAccessiblePage(); state.editId = null;
     resetIdleTimer();
@@ -6363,6 +6386,9 @@ function renderLogin(errorMsg) {
 
 async function logout() {
   logActivity("تسجيل خروج", "login");
+  if (window.MitaliFirebase && window.MitaliFirebase.authUser()) {
+    try { await window.MitaliFirebase.signOut(); } catch (e) { console.warn("Firebase sign-out failed:", e); }
+  }
   stopIdleTimer();
   clearSession();
   // أعد تحميل كل البيانات من السحابة عند الخروج (وليس الحسابات فقط) حتى تكون
@@ -6518,8 +6544,12 @@ async function boot() {
   currentUser = getSession();
   if (!currentUser) { renderLogin(); return; }
   // تأكد أن المستخدم لا يزال حسابًا صالحًا (لم يُحذف)
-  const sessionAccount = (DB.staffAccounts || []).find(a => a.id === currentUser.id);
+  const sessionAccount = (DB.staffAccounts || []).find(a => a.id === currentUser.id || (currentUser.username && a.username === currentUser.username));
   if (!sessionAccount || sessionAccount.status === "موقوف") { clearSession(); renderLogin(); return; }
+  if (currentUser.firebaseUid && window.MitaliFirebase && !window.MitaliFirebase.authUser()) {
+    // لا تعتمد على localStorage وحده لجلسة Firebase؛ أعد المستخدم للدخول إذا انتهت جلسة Auth.
+    clearSession(); renderLogin(); return;
+  }
   // نفس إصلاح firstAccessiblePage عند تسجيل الدخول: state.page يبدأ دائمًا بقيمة
   // "dashboard" الافتراضية عند كل تحميل جديد للصفحة (JS متغيّر فى الذاكرة، لا يُحفَظ
   // بين إعادة التحميل) - فحتى مستخدم مسجّل دخوله بالفعل من قبل كان يقابل شاشة رفض
