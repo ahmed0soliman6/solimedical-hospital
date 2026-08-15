@@ -6536,7 +6536,6 @@ function renderLogin(errorMsg) {
 
 async function logout() {
   logActivity("تسجيل خروج", "login");
-  cleanupRealtimeChannels("logout");
   if (window.MitaliFirebase && window.MitaliFirebase.authUser()) {
     try { await window.MitaliFirebase.signOut(); } catch (e) { console.warn("Firebase sign-out failed:", e); }
   }
@@ -6595,8 +6594,6 @@ let realtimeChannel = null;
 let realtimeReconnectTimer = null;
 let realtimeSubscriptionGeneration = 0;
 const realtimeRefreshInProgress = new Set();
-const firestoreRealtimeUnsubs = new Map();
-const FIRESTORE_REALTIME_KEYS = [...FIRESTORE_MIGRATION_KEYS];
 
 function cleanupRealtimeChannels(reason) {
   realtimeSubscriptionGeneration++;
@@ -6606,10 +6603,6 @@ function cleanupRealtimeChannels(reason) {
   if (old && sbClient) {
     try { sbClient.removeChannel(old); } catch (e) { console.warn("Realtime channel cleanup failed:", reason, e); }
   }
-  firestoreRealtimeUnsubs.forEach((unsubscribe) => {
-    try { unsubscribe(); } catch (e) { console.warn("Firestore listener cleanup failed:", reason, e); }
-  });
-  firestoreRealtimeUnsubs.clear();
 }
 
 async function refreshTableFromRealtime(key) {
@@ -6654,49 +6647,6 @@ function scheduleRealtimeReconnect(generation) {
       subscribeStaffAccountsRealtime();
     }
   }, 5000);
-}
-
-async function refreshTableFromFirestore(key) {
-  if (STORAGE_MODE !== "firestore" || !window.MitaliFirebase || realtimeRefreshInProgress.has("fs:" + key)) return;
-  realtimeRefreshInProgress.add("fs:" + key);
-  try {
-    const fresh = await window.MitaliFirebase.getValue(key, DB[key]);
-    if (fresh === undefined || fresh === null) return;
-    const safeFresh = Array.isArray(fresh) ? mergeRemoteSnapshot(key, fresh) : fresh;
-    if (JSON.stringify(safeFresh) === JSON.stringify(DB[key])) return;
-    DB[key] = safeFresh;
-    await cacheLocally(key, safeFresh);
-    if (Array.isArray(safeFresh)) await writeSyncBaseline(key, safeFresh);
-    DATA_VERSION++;
-    if (key === "staffAccounts" && currentUser) {
-      const me = getCurrentAccount();
-      if (!me || me.status === "موقوف") {
-        clearSession();
-        renderLogin("تم إيقاف هذا الحساب أو حذفه.");
-        return;
-      }
-    }
-    if (currentUser && !isMidEdit() && !isUserActivelyTyping()) route();
-  } catch (e) {
-    console.error("Firestore realtime refresh failed for", key, e);
-  } finally {
-    realtimeRefreshInProgress.delete("fs:" + key);
-  }
-}
-
-function subscribeFirestoreRealtime() {
-  if (STORAGE_MODE !== "firestore" || !window.MitaliFirebase || !window.MitaliFirebase.authUser()) return;
-  if (firestoreRealtimeUnsubs.size) return;
-  FIRESTORE_REALTIME_KEYS.forEach((key) => {
-    try {
-      const unsubscribe = window.MitaliFirebase.subscribe(key, () => refreshTableFromFirestore(key), (error) => {
-        console.warn("Firestore listener error for", key, error);
-      });
-      if (typeof unsubscribe === "function") firestoreRealtimeUnsubs.set(key, unsubscribe);
-    } catch (e) {
-      console.error("Firestore subscribe failed for", key, e);
-    }
-  });
 }
 
 function subscribeStaffAccountsRealtime() {
@@ -6761,7 +6711,6 @@ async function boot() {
   // المتصفح أثناء انقطاع الاتصال)، حاول رفعها الآن فى الخلفية دون تعطيل الواجهة.
   if (STORAGE_MODE === "supabase" && !SYNC_PAUSED) flushPendingSync();
   if (STORAGE_MODE === "supabase" && navigator.onLine) subscribeStaffAccountsRealtime();
-  if (STORAGE_MODE === "firestore") subscribeFirestoreRealtime();
 }
 boot();
 
