@@ -2288,7 +2288,7 @@ const NAV = [
 ];
 function isAdminUser() {
   if (!currentUser) return false;
-  const account = (DB.staffAccounts || []).find(a => a.id === currentUser.id);
+  const account = getCurrentAccount();
   return !!account && account.role === "مدير" && account.status !== "موقوف";
 }
 function navItemVisible(it) {
