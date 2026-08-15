@@ -761,9 +761,10 @@ async function storeGet(key, fallback) {
             if ((TABLE_MUTATION_GENERATION[key] || 0) !== readGeneration || pendingAfterFetch.includes(key)) {
               return cachedAfterFetch !== undefined ? cachedAfterFetch : fallback;
             }
-            await cacheLocally(key, result);
-            if (SB_TABLES[key]) await writeSyncBaseline(key, result); // نقطة توافق معروفة بين المحلى والسحابى
-            return result;
+            const safeResult = mergeRemoteSnapshot(key, result);
+            await cacheLocally(key, safeResult);
+            if (SB_TABLES[key]) await writeSyncBaseline(key, safeResult); // نقطة توافق معروفة بين المحلى والسحابى
+            return safeResult;
           }
         } catch (e) { /* تعذّر السحب - نكمل بالنسخة المحلية أدناه */ }
       }
@@ -1297,6 +1298,32 @@ let PENDING_WRITES = 0;
 // رقم جيل محلى لكل جدول؛ يتغير لحظة بدء أي حفظ، حتى نرفض نتيجة شبكة
 // بدأت قبل التعديل حتى لو اكتمل الحفظ أثناء انتظار طلب الشبكة.
 const TABLE_MUTATION_GENERATION = Object.create(null);
+const TABLE_MUTATION_AT = Object.create(null);
+function mergeRemoteSnapshot(key, remoteValue) {
+  if (!Array.isArray(remoteValue) || !Array.isArray(DB[key])) return remoteValue;
+  const local = DB[key] || [];
+  const remote = remoteValue || [];
+  const localMap = new Map(local.filter(r => r && r.id != null).map(r => [r.id, r]));
+  const remoteMap = new Map(remote.filter(r => r && r.id != null).map(r => [r.id, r]));
+  const recentMutation = (TABLE_MUTATION_AT[key] || 0) > Date.now() - 120000;
+  const merged = remote.map(remoteRecord => {
+    const localRecord = localMap.get(remoteRecord.id);
+    if (!localRecord) return remoteRecord;
+    const localTime = localRecord.updatedAt || "";
+    const remoteTime = remoteRecord.updatedAt || "";
+    // لا تسمح لنسخة سحابية أقدم أن تمحو تعديل الجهاز الحالي.
+    if (localTime && remoteTime && localTime > remoteTime) return localRecord;
+    if (recentMutation && (!localTime || !remoteTime) && !recordsEqual(localRecord, remoteRecord)) return localRecord;
+    return remoteRecord;
+  });
+  // سجل جديد لم يظهر في لقطة السحابة بعد: احتفظ به خلال نافذة الحماية.
+  if (recentMutation) {
+    for (const localRecord of local) {
+      if (localRecord && localRecord.id != null && !remoteMap.has(localRecord.id)) merged.push(localRecord);
+    }
+  }
+  return merged;
+}
 window.addEventListener("beforeunload", (e) => {
   if (PENDING_WRITES > 0) { e.preventDefault(); e.returnValue = ""; }
 });
@@ -1319,6 +1346,7 @@ function memoize(fn) {
 }
 async function persist(key) {
   TABLE_MUTATION_GENERATION[key] = (TABLE_MUTATION_GENERATION[key] || 0) + 1;
+  TABLE_MUTATION_AT[key] = Date.now();
   PENDING_WRITES++;
   try {
     await stampChangedRecords(key, DB[key]);
