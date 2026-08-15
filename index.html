@@ -6581,8 +6581,25 @@ function renderLogin(errorMsg) {
     else account = (DB.staffAccounts || []).find(a => a.username === username && a.password === password);
     if (!account) { renderLogin("اسم المستخدم أو كلمة المرور غير صحيحة."); return; }
     if (account.status === "موقوف") { renderLogin("هذا الحساب موقوف حاليًا. تواصل مع مدير النظام."); return; }
+    // الموظف الجديد قد يبدأ من شاشة الدخول قبل وجود جلسة Firebase، لذلك يكون
+    // loadAll الأول على Supabase الاحتياطي. بعد نجاح Auth نحوله فوراً إلى Firestore
+    // حتى تكون كل عملياته وصلاحياته على المصدر الرئيسي نفسه.
+    if (firebaseAuthAccount && isFirestoreEnabled() && isFirestoreMigrated()) {
+      STORAGE_MODE = "firestore";
+      try {
+        await loadAll();
+        account = (DB.staffAccounts || []).find(a => a.firebaseUid === firebaseAuthAccount.firebaseUid) || account;
+      } catch (reloadError) {
+        console.warn("Firestore account reload after login failed:", reloadError);
+      }
+    }
     account.lastLogin = new Date().toISOString();
-    if (!firebaseAuthAccount) persist("staffAccounts");
+    try {
+      if (firebaseAuthAccount && STORAGE_MODE === "firestore") await persist("staffAccounts");
+      else if (!firebaseAuthAccount) await persist("staffAccounts");
+    } catch (persistError) {
+      console.warn("Could not persist login metadata:", persistError);
+    }
     setSession({ id: account.id, username: account.username, displayName: account.displayName, role: account.role, firebaseUid: account.firebaseUid || null });
     logActivity("تسجيل دخول", "login");
     state.page = firstAccessiblePage(); state.editId = null;
