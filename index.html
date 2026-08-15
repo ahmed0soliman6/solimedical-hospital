@@ -12,7 +12,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@500;700;900&family=Cairo:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -138,6 +137,8 @@
   }
   #topbar .title{font-family:'Tajawal'; font-weight:700; font-size:19px;}
   #topbar .date{font-size:12.5px; color:var(--muted);}
+  .top-connection-indicator{display:inline-flex; align-items:center; gap:6px; margin-inline-start:12px; padding:5px 10px; border-radius:999px; background:var(--income-soft); color:var(--income); font-size:11px; font-weight:800; white-space:nowrap;}
+  .top-connection-indicator .connection-dot{font-size:10px;}
   @media (max-width:880px){
     #topbar{ padding:10px 14px; flex-wrap:wrap; row-gap:8px; }
     #topbar .date{ display:none; }
@@ -405,7 +406,6 @@ const PERMISSION_MODULES = [
   ]},
   { key: "settings", label: "الإعدادات العامة", actions: [
     { key: "edit", label: "تعديل الإعدادات" }, { key: "backup", label: "النسخ الاحتياطي" }, { key: "restore", label: "استعادة النسخة الاحتياطية" },
-    { key: "Connect", label: "الاتصال بـ " }, { key: "supabaseDisconnect", label: "فصل الاتصال" }, { key: "sync", label: "مزامنة البيانات" },
   ]},
   { key: "demoData", label: "البيانات التجريبية للتوضيح", actions: [
     { key: "view", label: "عرض/إدارة (توليد أو مسح)" },
@@ -439,21 +439,21 @@ function hasAnySettingsAccess() {
   const account = getCurrentAccount();
   if (!account) return false;
   if (account.role === "مدير") return true;
-  const s = ["edit","backup","restore","supabaseConnect","supabaseDisconnect","sync"].some(a => can("settings", a));
+  const s = ["edit","backup","restore"].some(a => can("settings", a));
   const sub = ["doctors","employees","categories"].some(k => ["view","add","edit","delete"].some(a => can(k, a)));
   return s || sub;
 }
 
 function seedStaffAccounts() {
   return [
-    { id: uid(), username: "admin",   password: "1234", displayName: "مدير النظام", role: "مدير",  status: "نشط", createdAt: todayISO(), lastLogin: null, permissions: fullPermissions() },
+    { id: "firebase-admin", username: "admin", password: "", displayName: "مدير النظام", role: "مدير", status: "نشط", createdAt: todayISO(), lastLogin: null, firebaseUid: "akvBRlYmxveNlqrSWAbzLlkXIIR2", permissions: fullPermissions() },
   ];
 }
 
 let STORAGE_OK = true;
 
 const APP_PREFIX = "mitali_zakat_hospital_";
-let STORAGE_MODE = "memory"; // "cloud" | "local" | "memory" | "supabase" | "firestore"
+let STORAGE_MODE = "memory"; // "local" | "memory" | "firestore"
 const MEMORY_STORE = {};
 const FIRESTORE_ACTIVE_FLAG = APP_PREFIX + "firestore_active";
 const FIRESTORE_MIGRATED_FLAG = APP_PREFIX + "firestore_migrated";
@@ -471,13 +471,11 @@ function setFirestoreEnabled(enabled) {
 }
 
 // ======================================================================
-// طبقة العمل بدون إنترنت (Local-First) — IndexedDB + طابور مزامنة معلّق
+// طبقة العمل بدون إنترنت (Local-First) — IndexedDB + ذاكرة محلية مؤقتة
 // ======================================================================
 // المبدأ: القاعدة المحلية (IndexedDB، وبديلها localStorage عند تعذّره) هى
-// دائمًا المصدر الفوري لكل قراءة وكتابة. عندما يكون وضع التخزين "supabase"
-// يُكتب كل تغيير محليًا أولًا (فورى، بدون انتظار الشبكة)، ثم يُرفَع للسحابة
-// فى الخلفية إن توفّر الاتصال، وإلا يُسجَّل اسم الجدول فى طابور معلّق داخل
-// IndexedDB (ينجو من إغلاق المتصفح) ليُرفَع لاحقًا تلقائيًا عند عودة الاتصال.
+// دائمًا المصدر الفوري لكل قراءة وكتابة. تُحفظ البيانات في Firestore، مع
+// استخدام IndexedDB وlocalStorage ككاش محلي مؤقت عند ضعف الاتصال.
 const IDB_NAME = APP_PREFIX + "idb";
 const IDB_VERSION = 2;
 const IDB_STORE_DATA = "tables";     // نسخة محلية كاملة من كل جدول (key = اسم الجدول)
@@ -541,31 +539,6 @@ async function readLocalCache(key, fallback) {
     return v ? JSON.parse(v) : fallback;
   } catch (e) { return fallback; }
 }
-async function queueTableForSync(key) {
-  if (IDB_OK) { await idbSet(IDB_STORE_QUEUE, key, { table: key, queuedAt: nowISO() }); return; }
-  try {
-    const raw = localStorage.getItem(APP_PREFIX + "pendingQueue");
-    const list = raw ? JSON.parse(raw) : [];
-    if (!list.includes(key)) list.push(key);
-    localStorage.setItem(APP_PREFIX + "pendingQueue", JSON.stringify(list));
-  } catch (e) { /* ignore */ }
-}
-async function unqueueTable(key) {
-  if (IDB_OK) { await idbDeleteKey(IDB_STORE_QUEUE, key); return; }
-  try {
-    const raw = localStorage.getItem(APP_PREFIX + "pendingQueue");
-    const list = raw ? JSON.parse(raw).filter(k => k !== key) : [];
-    localStorage.setItem(APP_PREFIX + "pendingQueue", JSON.stringify(list));
-  } catch (e) { /* ignore */ }
-}
-async function getPendingQueueKeys() {
-  if (IDB_OK) return (await idbGetAllKeys(IDB_STORE_QUEUE)) || [];
-  try {
-    const raw = localStorage.getItem(APP_PREFIX + "pendingQueue");
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) { return []; }
-}
-
 // "خط الأساس" (Sync Baseline): آخر نسخة من كل جدول كانت معروفة أنها متطابقة
 // بين المحلي والسحابي. يُستخدم فقط لمعرفة: (1) هل تغيّر سجل معيّن محليًا فعلًا
 // منذ آخر مزامنة (لتفادى وسم كل السجلات بطابع زمنى جديد دون داعٍ)، و(2) هل
@@ -661,134 +634,36 @@ async function resolveConflict(table, id, winner) {
     if (idx > -1) arr[idx] = chosen; else arr.push(chosen);
   }
   await removeConflict(table, id);
-  logActivity("حل تعارض بيانات (" + (winner === "local" ? "اعتماد النسخة المحلية" : "اعتماد النسخة السحابية") + ")", "settings");
+  logActivity("حل تعارض بيانات (" + (winner === "local" ? "اعتماد النسخة المحلية" : "اعتماد النسخة البعيدة") + ")", "settings");
   persist(table);
-}
-
-// "العمل محليًا فقط": يوقف المزامنة التلقائية مؤقتًا دون قطع بيانات اتصال Supabase المحفوظة
-const SYNC_PAUSE_FLAG = APP_PREFIX + "sync_paused";
-let SYNC_PAUSED = false;
-try { SYNC_PAUSED = localStorage.getItem(SYNC_PAUSE_FLAG) === "1"; } catch (e) { /* ignore */ }
-let SYNC_IN_PROGRESS = false;
-// إصلاح: كان سبب فشل رفع كل جدول معلّق يُطبَع فى الـ console فقط ولا يظهر
-// للمستخدم فى أى مكان بالواجهة - على الموبايل تحديدًا لا توجد وسيلة سهلة لفتح
-// الـ console، فكان الفشل يبدو "صامتًا": المؤشر يستمر يقول "يعمل محليًا الآن"
-// بلا أى تفسير. الآن يُحفَظ آخر خطأ حقيقى لكل جدول هنا ليُعرَض فى مؤشر التخزين
-// وفى نتيجة "مزامنة الآن" بدل رسالة عامة واحدة لا تفيد فى التشخيص.
-let SYNC_LAST_ERRORS = {};
-
-// يرفع كل الجداول المعلّقة فى الطابور إلى Supabase بالترتيب، بدون تجميد الواجهة.
-// يُستخدم هذا فى الخلفية عند عودة الاتصال، وأيضًا يدويًا عبر زر "مزامنة الآن".
-// إصلاح: إعادة المحاولة كانت بفاصل زمني ثابت (45 ثانية) دائمًا، حتى مع فشل
-// متكرر (مثلًا انقطاع كامل أو خطأ فى الخادم يستمر لدقائق) - يعني محاولات مستمرة
-// بلا فائدة تستهلك طاقة الجهاز والشبكة. الآن يتصاعد وقت الانتظار مع كل فشل
-// متتالٍ (45 ثانية ← 90 ← 180 ...) بحد أقصى 10 دقائق، ويعود فورًا لـ45 ثانية
-// بمجرد نجاح أي محاولة.
-let SYNC_FAIL_STREAK = 0;
-let SYNC_NEXT_RETRY_AT = 0;
-async function flushPendingSync() {
-  if (SYNC_IN_PROGRESS || STORAGE_MODE !== "supabase" || !navigator.onLine || SYNC_PAUSED) return;
-  if (Date.now() < SYNC_NEXT_RETRY_AT) return;
-  const pending = await getPendingQueueKeys();
-  if (!pending.length) { SYNC_FAIL_STREAK = 0; return; }
-  SYNC_IN_PROGRESS = true;
-  let anyFailure = false;
-  try {
-    for (const key of pending) {
-      try {
-        const value = await readLocalCache(key, undefined);
-        if (value === undefined) { await unqueueTable(key); delete SYNC_LAST_ERRORS[key]; continue; }
-        // إصلاح جوهري (سباق بين المزامنة الدورية وحفظ المستخدم الفورى): كان هذا
-        // المسار ينادي pushTableSmart/sbSave* مباشرة، بمعزل تمامًا عن طابور
-        // storeSet (STORE_SET_QUEUES) المستخدَم عند حفظ المستخدم مباشرة لنفس
-        // الجدول. لو حصل الاثنان معًا على نفس الجدول (تعديل معلّق من قبل + حفظ
-        // جديد فى نفس اللحظة تقريبًا)، كانا يتسابقان فى قراءة/كتابة نفس السجلات
-        // السحابية وخط الأساس (baseline)، وقد يكتب أحدهما فوق نتيجة الآخر بصمت
-        // دون أى تحذير. الحل: تمرير هذا المسار أيضًا عبر storeSet() نفسه، فيصبح
-        // كل رفع لنفس الجدول (سواء فورى من المستخدم أو إعادة محاولة تلقائية هنا)
-        // منضبطًا بنفس القفل التسلسلى الموحّد لكل جدول، فلا يحدث تسابق بينهما
-        // أبدًا مهما تقاربت لحظة التنفيذ. storeSet نفسها تتكفّل داخليًا بالحفظ
-        // المحلى وخط الأساس والرفع السحابى (بنفس المنطق الذى كان هنا سابقًا).
-        await storeSet(key, value);
-        delete SYNC_LAST_ERRORS[key]; // نجح الرفع هذه المرة - امسح أى خطأ سابق مسجَّل لهذا الجدول
-      } catch (e) {
-        console.error("Sync push failed for", key, e);
-        SYNC_LAST_ERRORS[key] = (e && (e.message || e.details || e.hint)) || String(e);
-        anyFailure = true;
-        // اترك الجدول فى الطابور لإعادة المحاولة عند الفرصة القادمة
-      }
-    }
-  } finally {
-    SYNC_IN_PROGRESS = false;
-    if (anyFailure) {
-      SYNC_FAIL_STREAK++;
-      const delay = Math.min(45000 * Math.pow(2, SYNC_FAIL_STREAK - 1), 600000); // سقف 10 دقائق
-      SYNC_NEXT_RETRY_AT = Date.now() + delay;
-    } else {
-      SYNC_FAIL_STREAK = 0;
-      SYNC_NEXT_RETRY_AT = 0;
-    }
-    renderStorageIndicator();
-  }
 }
 
 async function detectStorageMode() {
   await initIDB();
-  // Firestore لا يُفعّل إلا بعد ترحيل النسخة ووجود جلسة Firebase Auth.
-  // قبل تسجيل الدخول نستخدم Supabase كمسار احتياطي حتى نستطيع قراءة حسابات الدخول.
-  if (isFirestoreEnabled() && isFirestoreMigrated() && window.MitaliFirebase) {
+  if (window.MitaliFirebase) {
     try {
       await window.MitaliFirebase.init();
       const firebaseUser = await window.MitaliFirebase.waitForAuth();
-      if (firebaseUser) { STORAGE_MODE = "firestore"; return; }
+      if (firebaseUser) {
+        STORAGE_MODE = "firestore";
+        try {
+          localStorage.setItem(FIRESTORE_ACTIVE_FLAG, "1");
+          localStorage.setItem(FIRESTORE_MIGRATED_FLAG, "1");
+        } catch (e) { /* ignore */ }
+        return;
+      }
     } catch (e) {
-      console.warn("Firestore mode unavailable; falling back to Supabase:", e);
+      console.warn("Firestore unavailable; using local cache until login:", e);
     }
   }
-  let disconnected = false;
-  try { disconnected = localStorage.getItem(SB_DISCONNECT_FLAG) === "1"; } catch (e) { /* ignore */ }
-  if (!disconnected) {
-    // إصلاح جوهري: لو الجهاز غير متصل بالإنترنت أصلًا وقت فتح النظام (مش انقطاع
-    // أثناء الاستخدام، لكن فتح فعلى بدون شبكة)، كان الكود القديم يسقط لوضع "local"
-    // - وهو تخزين منفصل تمامًا فى localStorage لا علاقة له بكاش IndexedDB الذى
-    // يستخدمه وضع supabase وطابور المزامنة. يعنى: أى إضافة أو تعديل يتم أثناء
-    // انقطاع الاتصال كان يُكتب فى "جزيرة" تخزين معزولة؛ وبمجرد عودة الاتصال
-    // (عادة فى جلسة/فتح تالٍ للصفحة) يتصل النظام فعليًا بـ Supabase من جديد
-    // ويعرض بيانات IndexedDB/السحابة المحدَّثة - فتبدو تعديلات وضع عدم الاتصال
-    // وكأنها اختفت تمامًا أو استُبدلت ببيانات مختلفة (هى فى الحقيقة لم تُفقَد، لكنها
-    // محبوسة فى localStorage بلا أى طريق للرفع لأن وضع "local" لا يستخدم طابور
-    // المزامنة إطلاقًا). نفس السبب وراء ظهور كلمة مرور قديمة جدًا (محفوظة من أول
-    // مرة فُتح فيها النظام قبل أن يوجد حتى جدول staff_accounts) عند الدخول
-    // بدون إنترنت. الحل: طالما توجد بيانات اتصال صالحة ولم يقطع المستخدم الاتصال
-    // يدويًا، ابقَ دائمًا فى وضع supabase (وهو Local-First الصحيح فعليًا: يعمل
-    // بكامل كفاءته من كاش IndexedDB ويُزامن الفروقات تلقائيًا عند عودة الاتصال)،
-    // بدل اختبار الشبكة أصلًا وأنت تعلم مسبقًا أنك offline.
-    if (typeof navigator !== "undefined" && navigator.onLine === false) {
-      if (ensureSbClient()) { STORAGE_MODE = "supabase"; SB_LAST_CONNECT_ERROR = "offline"; return; }
-    }
-    const sbOk = await tryInitSupabase();
-    if (sbOk) { STORAGE_MODE = "supabase"; return; }
-  }
-  try {
-    if (window.storage && typeof window.storage.get === "function") {
-      await window.storage.get("__probe__", false);
-      STORAGE_MODE = "cloud";
-      return;
-    }
-  } catch (e) { /* fall through */ }
-  try {
-    localStorage.setItem(APP_PREFIX + "__probe__", "1");
-    localStorage.removeItem(APP_PREFIX + "__probe__");
-    STORAGE_MODE = "local";
-  } catch (e) {
-    STORAGE_MODE = "memory";
-  }
+  STORAGE_MODE = "local";
 }
+
 
 
 async function storeGet(key, fallback) {
   try {
-    if (STORAGE_MODE === "firestore") {
+    if (STORAGE_MODE === "firestore" && window.MitaliFirebase) {
       const cached = await readLocalCache(key, undefined);
       try {
         const remote = await window.MitaliFirebase.getValue(key, fallback);
@@ -803,59 +678,6 @@ async function storeGet(key, fallback) {
       }
       return cached !== undefined ? cached : fallback;
     }
-    if (STORAGE_MODE === "supabase") {
-      // إصلاح مشكلة "فقدان تعديلات وضع عدم الاتصال بعد تسجيل الدخول من جديد":
-      // لو كان هذا الجدول بالذات لا يزال بداخل طابور المزامنة المعلّق (تعديل تم
-      // محليًا وقت انقطاع الاتصال ولم يُرفَع للسحابة بعد)، يجب رفعه أولًا قبل أى
-      // محاولة سحب مباشر من السحابة أدناه. السحب المباشر يستبدل الكاش المحلى
-      // بالكامل (cacheLocally) بنسخة السحابة القديمة، فلو حدث هذا قبل رفع التعديل
-      // المعلّق فإنه يُطمَس نهائيًا: يختفى من الكاش المحلى، ثم عندما يحاول طابور
-      // المزامنة (flushPendingSync) رفعه لاحقًا يجد فى الكاش نفس النسخة القديمة
-      // المطموسة فيرفعها كما هى (لا شىء تغيّر فعليًا) ويُعلِّم الجدول "تم" رغم أن
-      // التعديل الحقيقى (مثلًا طبيب جديد أو تعديل مهلة الإغلاق) ضاع تمامًا. هذا
-      // بالضبط ما كان يحدث عند تسجيل الخروج ثم الدخول من نفس الجهاز بعد عودة الاتصال.
-      if (navigator.onLine && !SYNC_PAUSED) {
-        const pendingNow = await getPendingQueueKeys();
-        if (pendingNow.includes(key)) await flushPendingSync();
-      }
-      // إن كان الجدول ما زال معلّقًا فى الطابور (فشل الرفع أعلاه رغم وجود اتصال:
-      // خطأ شبكة عابر، رفض من الخادم...)، لا تسحب نسخة السحابة مباشرة إطلاقًا -
-      // فهذا سيُعيد إنتاج نفس مشكلة الطمس. اكتفِ بإرجاع النسخة المحلية الحالية
-      // (التى تحمل التعديل المعلّق فعليًا) بدلًا من ذلك.
-      const stillPending = navigator.onLine ? (await getPendingQueueKeys()).includes(key) : true;
-      // إن كان هناك اتصال ولم تكن المزامنة موقوفة يدويًا ولم يعد الجدول معلّقًا، حاول السحب من Supabase مباشرة
-      // ثم احتفظ بنسخة محلية منها. أى فشل أو انقطاع فى الاتصال يرجع فورًا لآخر نسخة محلية محفوظة
-      // (Local-First) بدلًا من فقدان البيانات أو الرجوع للبيانات الافتراضية.
-      if (navigator.onLine && !SYNC_PAUSED && !stillPending) {
-        // التقط جيل الجدول قبل طلب الشبكة. إذا بدأ حفظ محلى أثناء الانتظار،
-        // لا تسمح لنتيجة قديمة بأن تكتب فوق IndexedDB أو خط الأساس.
-        const readGeneration = TABLE_MUTATION_GENERATION[key] || 0;
-        try {
-          let result;
-          if (key === "settings") result = await sbLoadSettings();
-          else if (key === "categories") result = await sbLoadCategories();
-          else if (key === "specialties") result = await sbLoadSpecialties();
-          else if (SB_TABLES[key]) result = await sbLoadTable(key);
-          if (result != null) {
-            const pendingAfterFetch = await getPendingQueueKeys();
-            const cachedAfterFetch = await readLocalCache(key, undefined);
-            if ((TABLE_MUTATION_GENERATION[key] || 0) !== readGeneration || pendingAfterFetch.includes(key)) {
-              return cachedAfterFetch !== undefined ? cachedAfterFetch : fallback;
-            }
-            const safeResult = mergeRemoteSnapshot(key, result);
-            await cacheLocally(key, safeResult);
-            if (SB_TABLES[key]) await writeSyncBaseline(key, safeResult); // نقطة توافق معروفة بين المحلى والسحابى
-            return safeResult;
-          }
-        } catch (e) { /* تعذّر السحب - نكمل بالنسخة المحلية أدناه */ }
-      }
-      const cached = await readLocalCache(key, undefined);
-      return cached !== undefined ? cached : fallback;
-    }
-    if (STORAGE_MODE === "cloud") {
-      const r = await window.storage.get(key, false);
-      return r ? JSON.parse(r.value) : fallback;
-    }
     if (STORAGE_MODE === "local") {
       const v = localStorage.getItem(APP_PREFIX + key);
       return v ? JSON.parse(v) : fallback;
@@ -865,6 +687,7 @@ async function storeGet(key, fallback) {
     return fallback;
   }
 }
+
 // إصلاح جوهري (السبب الحقيقي وراء "اختفاء" الزيارة الثانية عند التسجيل السريع
 // وأنت متصل بالإنترنت تحديدًا): كان storeSet لجدول واحد يمكن أن يُستدعى مرتين
 // متتاليتين بسرعة (زيارة، ثم زيارة تانية بعدها بثوانٍ) بدون أى تسلسل - فيبدأ
@@ -886,7 +709,7 @@ function storeSet(key, value) {
 }
 async function storeSetInner(key, value) {
   try {
-    if (STORAGE_MODE === "firestore") {
+    if (STORAGE_MODE === "firestore" && window.MitaliFirebase) {
       await cacheLocally(key, value);
       await window.MitaliFirebase.setValue(key, value);
       if (key === "staffAccounts" && Array.isArray(value) && window.MitaliFirebase.setUserProfile) {
@@ -899,49 +722,15 @@ async function storeSetInner(key, value) {
       renderStorageIndicator();
       return;
     }
-    if (STORAGE_MODE === "supabase") {
-      // اكتب النسخة المحلية فورًا أولًا - هذا ما يجعل النظام يشعر بالسرعة دائمًا
-      // بغض النظر عن حالة الاتصال، وهو ما يضمن عدم فقدان أى تعديل عند الإغلاق المفاجئ.
-      await cacheLocally(key, value);
-      if (!navigator.onLine || SYNC_PAUSED) {
-        await queueTableForSync(key);
-        renderStorageIndicator();
-        return;
-      }
-      try {
-        if (key === "settings") await sbSaveSettings(value);
-        else if (key === "categories") await sbSaveCategories(value);
-        else if (key === "specialties") await sbSaveSpecialties(value);
-        else if (SB_TABLES[key]) {
-          const merged = await pushTableSmart(key, value);
-          DB[key] = merged;
-          await cacheLocally(key, merged);
-          await writeSyncBaseline(key, merged);
-        }
-        await unqueueTable(key);
-      } catch (e) {
-        // فشل الرفع الآن رغم وجود اتصال (خطأ شبكة عابر، أو رفض من الخادم...).
-        // البيانات محفوظة محليًا بالفعل (أعلاه) وستُعاد المحاولة تلقائيًا لاحقًا،
-        // لكن يجب إخبار من ينتظر storeSet() أن الرفع الفعلى لم يكتمل بعد، بدل
-        // ادّعاء نجاح كامل رغم أن التغيير لم يصل للسحابة (وهو ما كان يُخفى مشاكل
-        // مزامنة حقيقية مثل عدم وصول تعديل اسم مستخدم/كلمة مرور لجهاز آخر).
-        await queueTableForSync(key);
-        renderStorageIndicator();
-        throw e;
-      }
-      renderStorageIndicator();
-      return;
-    }
-    if (STORAGE_MODE === "cloud") {
-      await window.storage.set(key, JSON.stringify(value), false);
-    } else if (STORAGE_MODE === "local") {
+    if (STORAGE_MODE === "local") {
       localStorage.setItem(APP_PREFIX + key, JSON.stringify(value));
     } else {
       MEMORY_STORE[key] = value;
     }
+    renderStorageIndicator();
   } catch (e) {
     STORAGE_OK = false;
-    throw e; // اسمح لمن ينتظر storeSet()/persist() بمعرفة أن الحفظ فشل فعليًا
+    throw e;
   }
 }
 
@@ -1270,7 +1059,7 @@ async function loadAll() {
   await detectStorageMode();
   // كل هذه المفاتيح مستقلة عن بعضها فى القراءة (لا يعتمد أى منها على نتيجة الآخر)،
   // لذلك نجلبها جميعًا بالتوازى بدلًا من واحد تلو الآخر. هذا هو السبب الرئيسى فى
-  // بطء تسجيل الدخول سابقًا: كانت كل عملية قراءة (خصوصًا مع Supabase عبر الشبكة)
+  // بطء تسجيل الدخول سابقًا: كانت كل عملية قراءة (خصوصًا مع Firestore عبر الشبكة)
   // تنتظر انتهاء التى قبلها، فيتراكم زمن الانتظار بدل أن يحدث معًا فى نفس الوقت.
   const [
     doctorsRaw, employeesRaw, visitsClinicRaw, visitsDentalRaw, visitsOperationsRaw, visitsLabsRaw, visitsRadiologyRaw, incomeRaw, expenseRaw, payrollRaw,
@@ -1307,7 +1096,6 @@ async function loadAll() {
   DB.expense = or(expenseRaw, isFirstRun ? seedExpense() : []);
   DB.payroll = or(payrollRaw, isFirstRun ? seedPayroll(DB.doctors, DB.employees) : []);
   DB.settings = settingsRaw || { openingBalance: 10000 };
-  if (DB.settings.manualConflictReview === undefined) DB.settings.manualConflictReview = false;
   // مهلة الإغلاق التلقائى بعد عدم الاستخدام (بالدقائق) - افتراضيًا 5 دقائق، ويمكن للمدير
   // تعديلها أو تعطيلها (0) من صفحة الإعدادات. لا نُعيد ضبطها هنا إن كانت محفوظة مسبقًا حتى
   // لو كانت صفرًا (معطّلة) حتى نحترم اختيار المدير.
@@ -1910,66 +1698,9 @@ function isInRange(dateStr, from, to) {
 
 console.log("Computation layer ready.");
 // ======================================================================
-// تكامل Supabase (قاعدة بيانات حقيقية مشتركة)
+// تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const SB_CRED_KEY = APP_PREFIX + "supabase_credentials";
-// بيانات اتصال Supabase الافتراضية - مضمّنة مسبقًا بحيث يعمل النظام فورًا
-// على أي جهاز أو متصفح دون الحاجة لإدخالها يدويًا فى كل مرة.
-// رقم إصدار النظام - يُحدَّث يدويًا مع كل تعديل حقيقى فى الكود، ليسهل معرفة
-// هل الهاتف شغّال بأحدث نسخة أم لا بمجرد النظر لصفحة الإعدادات، بدل تخمين ذلك.
-const APP_VERSION = "v1.2.5 — إصلاح مزامنة Realtime العامة وإعادة الاتصال الآمن بالطابور (2026-08-15)";
-
-// بيانات اتصال Supabase الخاصة بمستشفى ميت على
-const DEFAULT_SB_URL = "https://uorxtilwjrvwvlnnamop.supabase.co";
-const DEFAULT_SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVvcnh0aWx3anJ2d3Zsbm5hbW9wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYwOTA4NzcsImV4cCI6MjEwMTY2Njg3N30.bG7siKVHMSQxo68E-3mUggTutNMIzSCsGVa8uSVhbKs";
-let sbClient = null;
-let sbClientCredentialsFingerprint = null;
-
-const SB_TABLES = {
-  doctors: "doctors", employees: "employees", visitsClinic: "visits_clinic",
-  visitsDental: "visits_dental", visitsOperations: "visits_operations", visitsLabs: "visits_labs",
-  visitsRadiology: "visits_radiology",
-  income: "income", expense: "expense", payroll: "payroll",
-  staffAccounts: "staff_accounts", auditLog: "audit_log", labExpenses: "lab_expenses",
-};
-
-const SB_FIELD_MAPS = {
-  doctors: { id:"id", name:"name", specialty:"specialty", type:"type", docPct:"doc_pct", clinicPct:"clinic_pct", feeMode:"fee_mode", checkupPrice:"checkup_price", checkupClinicFee:"checkup_clinic_fee", followupPrice:"followup_price", followupClinicFee:"followup_clinic_fee", dailyFixedAmount:"daily_fixed_amount", status:"status", phone:"phone", workDays:"work_days", workHours:"work_hours", notes:"notes", order:"order_index", updatedAt:"updated_at" },
-  employees: { id:"id", name:"name", job:"job", salary:"salary", status:"status", updatedAt:"updated_at" },
-  visitsClinic: { id:"id", date:"date", fileNo:"file_no", patient:"patient", phone:"phone", doctorId:"doctor_id", examType:"exam_type", xray:"xray", lab:"lab", services:"services", total:"total", paid:"paid", paymentMethod:"payment_method", status:"status", notes:"notes", nextVisitDate:"next_visit_date", linkedIncomeId:"linked_income_id", clinicFeeSnapshot:"clinic_fee_snapshot", createdAt:"created_at", updatedAt:"updated_at" },
-  visitsDental: { id:"id", date:"date", fileNo:"file_no", patient:"patient", phone:"phone", doctorId:"doctor_id", examType:"exam_type", xray:"xray", lab:"lab", services:"services", total:"total", paid:"paid", paymentMethod:"payment_method", status:"status", notes:"notes", nextVisitDate:"next_visit_date", linkedIncomeId:"linked_income_id", createdAt:"created_at", updatedAt:"updated_at" },
-  visitsOperations: { id:"id", date:"date", fileNo:"file_no", patient:"patient", phone:"phone", serviceName:"service_name", total:"total", paid:"paid", paymentMethod:"payment_method", status:"status", notes:"notes", nextVisitDate:"next_visit_date", linkedIncomeId:"linked_income_id", createdAt:"created_at", updatedAt:"updated_at" },
-  visitsLabs: { id:"id", date:"date", fileNo:"file_no", patient:"patient", phone:"phone", serviceName:"service_name", total:"total", paid:"paid", paymentMethod:"payment_method", status:"status", notes:"notes", nextVisitDate:"next_visit_date", linkedIncomeId:"linked_income_id", createdAt:"created_at", updatedAt:"updated_at" },
-  visitsRadiology: { id:"id", date:"date", fileNo:"file_no", patient:"patient", phone:"phone", serviceName:"service_name", total:"total", paid:"paid", paymentMethod:"payment_method", status:"status", notes:"notes", nextVisitDate:"next_visit_date", linkedIncomeId:"linked_income_id", createdAt:"created_at", updatedAt:"updated_at" },
-  income: { id:"id", date:"date", receiptNo:"receipt_no", party:"party", category:"category", desc:"description", paymentMethod:"payment_method", amount:"amount", receiver:"receiver", notes:"notes", createdAt:"created_at", updatedAt:"updated_at", doctorId:"doctor_id", docShare:"doc_share", clinicShare:"clinic_share" },
-  expense: { id:"id", date:"date", voucherNo:"voucher_no", party:"party", category:"category", desc:"description", paymentMethod:"payment_method", amount:"amount", responsible:"responsible", notes:"notes", createdAt:"created_at", updatedAt:"updated_at" },
-  payroll: { id:"id", month:"month", day:"day", name:"name", type:"type", amount:"amount", status:"status", paidAmount:"paid_amount", notes:"notes", linkedExpenseId:"linked_expense_id", createdAt:"created_at", updatedAt:"updated_at" },
-  staffAccounts: { id:"id", username:"username", password:"password", displayName:"display_name", role:"role", status:"status", createdAt:"created_at", lastLogin:"last_login", permissions:"permissions_json", updatedAt:"updated_at" },
-  labExpenses: { id:"id", doctorId:"doctor_id", month:"month", amount:"amount", notes:"notes", updatedAt:"updated_at" },
-  auditLog: { id:"id", userId:"user_id", userName:"user_name", action:"action", page:"page", date:"date", time:"time", device:"device", oldValue:"old_value", newValue:"new_value", timestamp:"created_at" },
-};
-
-// أعمدة من النوع date فى قاعدة البيانات - لا تقبل نص فارغ "" (على عكس أعمدة
-// النصوص العادية)، فيجب أن تتحول أي قيمة فارغة فيها إلى null قبل الرفع، وإلا
-// فشلت المزامنة برسالة "invalid input syntax for type date".
-const SB_DATE_COLUMNS = new Set(["date", "next_visit_date"]);
-function sbToRow(key, obj) {
-  const map = SB_FIELD_MAPS[key];
-  const row = {};
-  for (const [jsField, sqlField] of Object.entries(map)) {
-    let v = obj[jsField] ?? null;
-    if (v === "" && SB_DATE_COLUMNS.has(sqlField)) v = null;
-    row[sqlField] = v;
-  }
-  return row;
-}
-function sbFromRow(key, row) {
-  const map = SB_FIELD_MAPS[key];
-  const obj = {};
-  for (const [jsField, sqlField] of Object.entries(map)) obj[jsField] = row[sqlField];
-  return obj;
-}
-
+const APP_VERSION = "v1.3.0 — Firebase Firestore فقط (2026-08-15)";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -1987,341 +1718,9 @@ async function migrateCurrentDataToFirestore() {
   return summary;
 }
 
-const SB_DISCONNECT_FLAG = APP_PREFIX + "supabase_disconnected";
-
-function getSavedCredentials() {
-  try {
-    const raw = localStorage.getItem(SB_CRED_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) { /* ignore */ }
-  // إن لم يوجد اتصال محفوظ يدويًا، ولم يقم المستخدم بقطع الاتصال صراحةً،
-  // استخدم بيانات Supabase المضمّنة افتراضيًا كى يعمل النظام فورًا.
-  try {
-    if (localStorage.getItem(SB_DISCONNECT_FLAG) === "1") return null;
-  } catch (e) { /* ignore */ }
-  return { url: DEFAULT_SB_URL, key: DEFAULT_SB_KEY };
-}
-function saveCredentials(url, key) {
-  localStorage.setItem(SB_CRED_KEY, JSON.stringify({ url, key }));
-  try { localStorage.removeItem(SB_DISCONNECT_FLAG); } catch (e) { /* ignore */ }
-}
-function clearCredentials() {
-  localStorage.removeItem(SB_CRED_KEY);
-  try { localStorage.setItem(SB_DISCONNECT_FLAG, "1"); } catch (e) { /* ignore */ }
-}
-
-// آخر سبب فعلى لفشل الاتصال بـ Supabase (لأغراض عرض رسالة تشخيصية دقيقة للمستخدم
-// بدل رسالة عامة واحدة لكل الحالات - راجع استخدامه فى شاشة الإعدادات أدناه).
-let SB_LAST_CONNECT_ERROR = null;
-// ينشئ كائن sbClient محليًا فقط (createClient لا يقوم بأى اتصال شبكة فعلى - هى
-// عملية محلية بحتة تجهّز الكائن ليكون جاهزًا للاستخدام لاحقًا)، بدون أى فحص شبكة.
-// يُستخدم هذا تحديدًا فى حالة فتح النظام أثناء انقطاع الإنترنت، حتى يظل بالإمكان
-// البقاء فى وضع "supabase" (Local-First الصحيح المبنى على IndexedDB وطابور
-// المزامنة) بدل السقوط لوضع محلى منفصل تمامًا (راجع تعليق detectStorageMode أدناه).
-function ensureSbClient() {
-  try {
-    if (typeof window.supabase === "undefined" || typeof window.supabase.createClient !== "function") return false;
-    const cred = getSavedCredentials();
-    if (!cred || !cred.url || !cred.key) return false;
-    const fingerprint = cred.url + "\n" + cred.key;
-    if (sbClient && sbClientCredentialsFingerprint === fingerprint) return true;
-    // عند تغيير بيانات الاتصال لا تترك قنوات Realtime القديمة مرتبطة بالعميل السابق.
-    if (sbClient && typeof cleanupRealtimeChannels === "function") cleanupRealtimeChannels("supabase-client-replaced");
-    sbClient = window.supabase.createClient(cred.url, cred.key);
-    sbClientCredentialsFingerprint = fingerprint;
-    return true;
-  } catch (e) {
-    sbClient = null;
-    sbClientCredentialsFingerprint = null;
-    return false;
-  }
-}
-async function tryInitSupabase() {
-  SB_LAST_CONNECT_ERROR = null;
-  const cred = getSavedCredentials();
-  if (!cred || !cred.url || !cred.key) { SB_LAST_CONNECT_ERROR = "no-credentials"; return false; }
-  // فحص سريع وفورى (بدون شبكة) قبل أى محاولة اتصال. لو الجهاز يعرف أصلًا أنه غير
-  // متصل بالإنترنت (مثلًا وضع الطيران أو الواى فاى مطفأ) لا داعى إطلاقًا لمحاولة
-  // الاتصال بـ Supabase، فهذا كان السبب الرئيسى فى البطء الشديد عند فتح النظام
-  // بدون إنترنت: كان ينتظر مهلة الشبكة الكاملة (قد تصل لعشرات الثوانى) قبل أن
-  // يتراجع للعمل محليًا.
-  if (typeof navigator !== "undefined" && navigator.onLine === false) { SB_LAST_CONNECT_ERROR = "offline"; return false; }
-  // مكتبة supabase-js نفسها تُحمَّل من CDN خارجى (jsdelivr) عبر وسم <script> منفصل
-  // فى رأس الصفحة. لو هذا الطلب فشل أو تم حجبه (مثلًا بواسطة VPN أو جدار حماية
-  // الشبكة أو مانع إعلانات)، تبقى window.supabase غير معرَّفة تمامًا، وأى محاولة
-  // اتصال بعدها كانت تفشل فورًا برسالة عامة مضلِّلة ("تحقق من الرابط والمفتاح")
-  // رغم أن الرابط والمفتاح صحيحان والمشكلة فعليًا فى تحميل المكتبة نفسها لا فى
-  // بيانات الاتصال. نفرّق هذه الحالة بوضوح هنا.
-  if (typeof window.supabase === "undefined" || typeof window.supabase.createClient !== "function") {
-    SB_LAST_CONNECT_ERROR = "library-not-loaded";
-    return false;
-  }
-  try {
-    if (!ensureSbClient()) { SB_LAST_CONNECT_ERROR = "library-not-loaded"; return false; }
-    // سقف زمنى صارم (6 ثوانٍ) لمحاولة الاتصال، حتى لو أظهر المتصفح أنه "متصل"
-    // فعليًا (حالة شائعة: متصل بشبكة واى فاى بدون إنترنت فعلى) فلا يتجمّد النظام طويلًا.
-    const probe = sbClient.from("settings").select("id").limit(1);
-    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 6000));
-    const { error } = await Promise.race([probe, timeout]);
-    if (error) throw error;
-    return true;
-  } catch (e) {
-    console.error("Supabase connection failed:", e);
-    SB_LAST_CONNECT_ERROR = (e && (e.message || e.details || e.hint)) || String(e);
-    if (typeof cleanupRealtimeChannels === "function") cleanupRealtimeChannels("supabase-probe-failed");
-    sbClient = null;
-    sbClientCredentialsFingerprint = null;
-    return false;
-  }
-}
-
-
-// يحوّل السبب التقنى الخام لفشل الاتصال (SB_LAST_CONNECT_ERROR) إلى رسالة عربية
-// واضحة وقابلة للتصرف، بدل رسالة واحدة عامة تظهر لكل أسباب الفشل المختلفة
-// (شبكة مقطوعة، مكتبة لم تُحمَّل، جدول غير موجود، مفتاح خاطئ، صلاحيات RLS...).
-function explainConnectError(reason) {
-  if (!reason) return "تعذّر الاتصال — تحقق من الرابط والمفتاح وأن الجداول أُنشئت بالفعل.";
-  if (reason === "offline") return "لا يوجد اتصال بالإنترنت على هذا الجهاز الآن. تأكد من الشبكة وحاول مرة أخرى.";
-  if (reason === "library-not-loaded") return "تعذّر تحميل مكتبة الاتصال بقاعدة البيانات (من jsdelivr.net) - غالبًا محجوبة عبر الشبكة أو الـ VPN المستخدم. جرّب إيقاف الـ VPN أو تغيير الشبكة، ثم أعد تحميل الصفحة بالكامل.";
-  if (reason === "timeout") return "انتهت مهلة الاتصال (6 ثوانٍ) دون رد من الخادم - الشبكة بطيئة أو تمنع الوصول لـ Supabase (تحقق من الـ VPN إن وُجد). حاول مرة أخرى.";
-  if (reason === "no-credentials") return "يرجى إدخال الرابط والمفتاح.";
-  const r = String(reason);
-  if (/relation .* does not exist/i.test(r) || /schema cache/i.test(r)) return "تعذّر الاتصال — الجداول غير موجودة فعليًا فى قاعدة البيانات. نفّذ كود إنشاء الجداول (SQL) من صفحة Supabase أولًا. (" + r + ")";
-  if (/JWT|invalid signature|invalid api key|apikey/i.test(r)) return "تعذّر الاتصال — مفتاح الـ API غير صحيح أو لا يخص هذا المشروع. تحقق من نسخه بالكامل من Project Settings ← API. (" + r + ")";
-  if (/permission denied|RLS|policy/i.test(r)) return "تعذّر الاتصال — قاعدة البيانات موجودة لكن صلاحيات الوصول (RLS) تمنع القراءة بمفتاح anon. راجع سياسات RLS للجداول فى Supabase. (" + r + ")";
-  if (/fetch|network|Failed to fetch/i.test(r)) return "تعذّر الوصول لعنوان المشروع عبر الشبكة - تأكد من صحة الرابط، وأن المشروع ليس متوقفًا (paused) على supabase.com، وجرّب تعطيل الـ VPN. (" + r + ")";
-  return "تعذّر الاتصال — تحقق من الرابط والمفتاح وأن الجداول أُنشئت بالفعل. (" + r + ")";
-}
-async function sbLoadTable(key) {
-  const table = SB_TABLES[key];
-  const { data, error } = await sbClient.from(table).select("*");
-  if (error) { console.error(error); return null; }
-  return data.map(row => sbFromRow(key, row));
-}
-// دفع "ذكى" واعٍ بالتعارضات (مرحلة ج): بدلًا من استبدال الجدول السحابى بالكامل
-// بنسخة الجهاز الحالى (وهو ما قد يحذف سجلات أضافها جهاز آخر لم تصل بعد لهذا
-// الجهاز)، يقارن هذا الدفع كل سجل بنظيره السحابى، ويحسم أى اختلاف بالطابع
-// الزمنى (الأحدث يفوز تلقائيًا)، أو يوقف القرار لمراجعة المدير يدويًا إن كان
-// خيار "مراجعة التعارضات يدويًا" مفعّلًا. يُرجع النسخة المحلية المدمَجة النهائية.
-async function pushTableSmart(key, localArr) {
-  const table = SB_TABLES[key];
-  const baseline = await readSyncBaseline(key);
-  const baseMap = new Map((baseline || []).map(r => [r.id, r]));
-  // بعض الجداول (سجل النشاط تحديدًا) سجلات ثابتة لا تُعدَّل أبدًا بعد إنشائها
-  // ولا تملك عمود updated_at أصلًا (تستخدم created_at بدلًا منه) - المزامنة
-  // بالفارق الزمني غير مجدية لها على أي حال (كل سجل جديد فقط، لا تعديلات)،
-  // فنكتفي لها بالسلوك الكامل القديم (جلب كل شىء) لتفادى خطأ استعلام عمود غير موجود.
-  const supportsDelta = !!(SB_FIELD_MAPS[key] && SB_FIELD_MAPS[key].updatedAt);
-  let remoteArr;
-  if (!supportsDelta) {
-    const { data: remoteRows, error: fullErr0 } = await sbClient.from(table).select("*");
-    if (fullErr0) throw fullErr0;
-    remoteArr = (remoteRows || []).map(row => sbFromRow(key, row));
-  } else {
-  const { data: idRows, error: idErr } = await sbClient.from(table).select("id, updated_at");
-  if (idErr) throw idErr;
-  const remoteIdMap = new Map((idRows || []).map(r => [r.id, r.updated_at || ""]));
-  const knownIds = new Set((baseline || []).map(r => r.id));
-  const idsNeedingFullFetch = [];
-  for (const [id, remoteUpdatedAt] of remoteIdMap) {
-    const baseRec = baseMap.get(id);
-    if (!knownIds.has(id) || !baseRec || (baseRec.updatedAt || "") !== remoteUpdatedAt) idsNeedingFullFetch.push(id);
-  }
-  remoteArr = [];
-  if (idsNeedingFullFetch.length) {
-    const CHUNK_FETCH = 200;
-    for (let i = 0; i < idsNeedingFullFetch.length; i += CHUNK_FETCH) {
-      const batch = idsNeedingFullFetch.slice(i, i + CHUNK_FETCH);
-      const { data: fullRows, error: fullErr } = await sbClient.from(table).select("*").in("id", batch);
-      if (fullErr) throw fullErr;
-      remoteArr.push(...(fullRows || []).map(row => sbFromRow(key, row)));
-    }
-  }
-  // السجلات التى لم تتغيّر أصلًا (نفس updated_at المعروف سابقًا) نعيد استخدام
-  // نسختها المخزَّنة محليًا بدل إعادة تنزيلها، فهى مطابقة للسحابة بالتعريف.
-  for (const [id] of remoteIdMap) {
-    if (!idsNeedingFullFetch.includes(id)) {
-      const baseRec = baseMap.get(id);
-      if (baseRec) remoteArr.push(baseRec);
-    }
-  }
-  }
-  const remoteMap = new Map(remoteArr.map(r => [r.id, r]));
-  const localMap = new Map(localArr.map(r => [r.id, r]));
-  const manualReview = !!(DB.settings && DB.settings.manualConflictReview);
-
-  const toUpsert = [], toDelete = [], conflicts = [], mergedLocal = [];
-
-  for (const local of localArr) {
-    const remote = remoteMap.get(local.id);
-    if (!remote) { toUpsert.push(local); mergedLocal.push(local); continue; }
-    if (syncRecordsEqual(key, local, remote)) { mergedLocal.push(local); continue; }
-    // لا نقارن ساعة الجهاز بساعة Supabase لحسم تعديل محلي صريح؛ فرق التوقيت أو
-    // تقريب الطوابع قد يجعل remote.updated_at أحدث رغم أن المستخدم عدّل السجل الآن.
-    // خط الأساس هو المرجع الصحيح: إذا تغيّر السجل محليًا منذ آخر تطابق، فالتعديل
-    // المحلي هو المقصود ويجب رفعه، خصوصًا تغيير كلمة المرور والصلاحيات.
-    const base = baseMap.get(local.id);
-    const localChangedSinceBase = !base || !syncRecordsEqual(key, base, local);
-    if (localChangedSinceBase) {
-      if (manualReview && base && !syncRecordsEqual(key, base, remote)) {
-        conflicts.push({ table: key, id: local.id, local, remote, detectedAt: nowISO() });
-        mergedLocal.push(local); // احتفظ بتعديل المستخدم لحين قرار المدير
-      } else {
-        toUpsert.push(local);
-        mergedLocal.push(local);
-      }
-    } else {
-      mergedLocal.push(remote); // الجهاز لم يغيّر السجل؛ اعتمد النسخة السحابية المختلفة
-    }
-  }
-  // حذف حقيقى فقط: كان معروفًا محليًا فى آخر مزامنة، وأصبح غائبًا محليًا الآن (حُذف فعليًا)،
-  // وما زال موجودًا سحابيًا. أما السجلات "غير المعروفة" محليًا فلا تُحذف أبدًا حتى لا نفقد بيانات جهاز آخر.
-  for (const base of (baseline || [])) {
-    if (!localMap.has(base.id) && remoteMap.has(base.id)) toDelete.push(base.id);
-  }
-  const toDeleteSet = new Set(toDelete);
-  // سجلات موجودة سحابيًا فقط تُضاف محليًا، باستثناء ما حذفه المستخدم صراحةً؛
-  // كان هذا الاستثناء مفقودًا، فكان الكود يحذف السجل من Supabase ثم يضيفه مباشرة
-  // إلى mergedLocal ويعيده إلى الشاشة والكاش.
-  for (const remote of remoteArr) {
-    if (!localMap.has(remote.id) && !toDeleteSet.has(remote.id)) mergedLocal.push(remote);
-  }
-
-  // إصلاح جوهري: مكتبة Supabase لا ترمي استثناء عند فشل upsert/delete، بل
-  // تُرجع { data, error } فقط. كان الكود هنا لا يتحقق من error إطلاقًا، فأي
-  // فشل فعلي فى الرفع (RLS يمنع INSERT رغم سماحه بـ SELECT، عمود مفقود،
-  // قيد فريد...) كان يُعامَل كنجاح تام: يُشال الجدول من طابور الانتظار،
-  // وتُحدَّث القاعدة (baseline) كأن التعديل وصل فعليًا للسحابة رغم أنه لم يصل.
-  // النتيجة: أول قراءة تالية من Supabase (تحديث خلفى أو فتح الصفحة من جديد)
-  // كانت تجلب النسخة السحابية الناقصة وتمحو السجل المُضاف محليًا من الشاشة -
-  // وهو بالضبط سبب اختفاء الإضافات الجديدة (أطباء، قيود وارد...) تلقائيًا.
-  // إصلاح: إرسال آلاف السجلات فى طلب delete/upsert واحد (يحدث بسهولة بعد توليد
-  // بيانات تجريبية لسنة كاملة أو مسحها دفعة واحدة) قد يتجاوز حدود حجم الطلب/الرابط
-  // لدى Supabase/PostgREST فيفشل الطلب بالكامل أو جزئيًا. نقسّم أى عملية كبيرة إلى
-  // دفعات صغيرة (200 سجل لكل دفعة) لضمان اكتمالها دائمًا مهما كان حجم البيانات.
-  const CHUNK = 200;
-  const chunkArray = (arr, size) => { const out = []; for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size)); return out; };
-  if (toDelete.length) {
-    for (const batch of chunkArray(toDelete, CHUNK)) {
-      const { error: delErr } = await sbClient.from(table).delete().in("id", batch);
-      if (delErr) throw delErr;
-    }
-  }
-  if (toUpsert.length) {
-    const rows = toUpsert.map(o => sbToRow(key, o));
-    for (const batch of chunkArray(rows, CHUNK)) {
-      const { error: upsertErr } = await sbClient.from(table).upsert(batch, { onConflict: "id" });
-      if (upsertErr) throw upsertErr;
-    }
-  }
-  // لا تعتبر العملية ناجحة لمجرد أن PostgREST لم يُرجع exception؛ بعض سياسات
-  // RLS قد تسمح بالطلب شكلياً وتعيد صفر صفوف. أعد القراءة والتحقق قبل إزالة الجدول
-  // من الطابور أو تحديث baseline، وإلا ستعود النسخة القديمة بعد أول Realtime/refresh.
-  if (toDelete.length) {
-    for (const batch of chunkArray(toDelete, CHUNK)) {
-      const { data: remaining, error: verifyDeleteErr } = await sbClient.from(table).select("id").in("id", batch);
-      if (verifyDeleteErr) throw verifyDeleteErr;
-      if ((remaining || []).length) {
-        throw new Error(`Supabase delete not confirmed for ${table}: ${(remaining || []).map(r => r.id).join(",")}`);
-      }
-    }
-  }
-  if (toUpsert.length) {
-    const ids = toUpsert.map(o => o.id);
-    const verified = [];
-    for (const batch of chunkArray(ids, CHUNK)) {
-      const { data: rows, error: verifyUpsertErr } = await sbClient.from(table).select("*").in("id", batch);
-      if (verifyUpsertErr) throw verifyUpsertErr;
-      verified.push(...(rows || []).map(row => sbFromRow(key, row)));
-    }
-    const verifiedMap = new Map(verified.map(r => [r.id, r]));
-    for (const local of toUpsert) {
-      const remote = verifiedMap.get(local.id);
-      if (!remote || !syncRecordsEqual(key, local, remote)) {
-        throw new Error(`Supabase upsert not confirmed for ${table}:${local.id}`);
-      }
-    }
-  }
-  if (conflicts.length) await stashConflicts(conflicts);
-  return mergedLocal;
-}
-// استعادة كاملة وصريحة عند استخدام "استعادة نسخة احتياطية": بخلاف pushTableSmart
-// العادية (التى تقارن بآخر ما يعرفه هذا الجهاز تحديدًا لتفادى حذف بيانات أجهزة
-// أخرى لم تصل بعد)، هذه الدالة تقارن مباشرة مع الصورة الحقيقية الحالية للسحابة
-// وتحذف أى سجل غير موجود فى النسخة الاحتياطية - تمامًا كما يتوقع المستخدم من
-// "استعادة" حقيقية. تعمل فقط أثناء الاتصال بالإنترنت عمدًا: أوفلاين لا يمكننا
-// معرفة الصورة الحقيقية للسحابة، فيبقى الحذف غير منفَّذ حتى تُعاد الاستعادة يدويًا
-// وأنت متصل - سلوكان واضحان ومنفصلان بلا أى إكمال تلقائى لاحق قد يفاجئ المستخدم.
-async function restoreTableFully(key, keepIds) {
-  const table = SB_TABLES[key];
-  if (!table || !sbClient || STORAGE_MODE !== "supabase" || !navigator.onLine) return { deleted: 0, applied: false };
-  const { data: remoteRows, error } = await sbClient.from(table).select("id");
-  if (error) throw error;
-  const keepSet = new Set(keepIds);
-  const idsToDelete = (remoteRows || []).map(r => r.id).filter(id => !keepSet.has(id));
-  const CHUNK = 200;
-  const chunkArray = (arr, size) => { const out = []; for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size)); return out; };
-  for (const batch of chunkArray(idsToDelete, CHUNK)) {
-    const { error: delErr } = await sbClient.from(table).delete().in("id", batch);
-    if (delErr) throw delErr;
-  }
-  return { deleted: idsToDelete.length, applied: true };
-}
-async function sbLoadSettings() {
-  const { data, error } = await sbClient.from("settings").select("*").eq("id", 1).maybeSingle();
-  if (error || !data) return null;
-  return {
-    openingBalance: data.opening_balance,
-    idleTimeoutMinutes: data.idle_timeout_minutes,
-    manualConflictReview: data.manual_conflict_review,
-    xrayTypes: data.xray_types_json,
-    labTestTypes: data.lab_test_types_json,
-  };
-}
-async function sbSaveSettings(s) {
-  // ملاحظة إصلاح: كانت هذه الدالة "تبتلع" أى خطأ فعلى (شبكة، RLS، عمود غير
-  // موجود...) وتكتفى بطباعته فى الـ console دون إعلام الطرف المستدعى (storeSet)
-  // بالفشل. النتيجة: storeSet كان يظن أن الحفظ نجح فيزيل الجدول من طابور
-  // إعادة المحاولة (unqueueTable) ويعرض توست "تم الحفظ" رغم أن التعديل لم
-  // يصل فعليًا لـ Supabase - فشل صامت كان يمنع بعض تعديلات الإعدادات من
-  // الظهور على الأجهزة الأخرى. الآن تُعاد رمى الخطأ ليتعامل معه storeSet
-  // بشكل صحيح: يُبقيه فى الطابور لإعادة المحاولة ويُظهر الفشل الحقيقى.
-  const { error } = await sbClient.from("settings").upsert({
-    id: 1, opening_balance: s.openingBalance,
-    idle_timeout_minutes: s.idleTimeoutMinutes, manual_conflict_review: s.manualConflictReview,
-    xray_types_json: s.xrayTypes || [], lab_test_types_json: s.labTestTypes || [],
-  }, { onConflict: "id" });
-  if (error) { console.error("sbSaveSettings failed:", error); throw error; }
-}
-// تصنيفات الوارد/المنصرف تُخزّن كـ JSON فى نفس جدول settings (صف واحد ثابت id=1)
-async function sbLoadCategories() {
-  try {
-    const { data, error } = await sbClient.from("settings").select("categories_json").eq("id", 1).maybeSingle();
-    if (error || !data || !data.categories_json) return null;
-    return typeof data.categories_json === "string" ? JSON.parse(data.categories_json) : data.categories_json;
-  } catch (e) { return null; }
-}
-async function sbSaveCategories(cts) {
-  // نفس إصلاح sbSaveSettings أعلاه: رمى الخطأ الفعلى بدل ابتلاعه صامتًا.
-  const { error } = await sbClient.from("settings").upsert({ id: 1, categories_json: cts }, { onConflict: "id" });
-  if (error) { console.error("sbSaveCategories failed:", error); throw error; }
-}
-// تخصصات الأطباء تُخزّن كـ JSON فى نفس جدول settings (صف واحد ثابت id=1)،
-// بنفس أسلوب التصنيفات، حتى لا نحتاج لإنشاء جدول جديد فى Supabase.
-async function sbLoadSpecialties() {
-  try {
-    const { data, error } = await sbClient.from("settings").select("specialties_json").eq("id", 1).maybeSingle();
-    if (error || !data || !data.specialties_json) return null;
-    return typeof data.specialties_json === "string" ? JSON.parse(data.specialties_json) : data.specialties_json;
-  } catch (e) { return null; }
-}
-async function sbSaveSpecialties(sp) {
-  // نفس إصلاح sbSaveSettings أعلاه: رمى الخطأ الفعلى بدل ابتلاعه صامتًا.
-  const { error } = await sbClient.from("settings").upsert({ id: 1, specialties_json: sp }, { onConflict: "id" });
-  if (error) { console.error("sbSaveSpecialties failed:", error); throw error; }
-}
-
-console.log("Supabase layer ready.");
+// ======================================================================
+// التنقل والإطار العام
+// ======================================================================
 // ======================================================================
 // التنقل والإطار العام
 // ======================================================================
@@ -2392,6 +1791,20 @@ const PAGE_TITLES = {
 };
 
 let state = { page: "dashboard", editId: null, editDocId: null, editUserId: null, editEmpId: null, dashboardPeriod: "today", dashboardDoctor: "", patientSearch: "", patientSearchOpen: false, selectedPatientKey: null, closingMonth: null, ledgerSearch: "", ledgerReceipt: null, incomeMonth: null, expenseMonth: null, ledgerMonth: null, payrollMonth: null, tablePage: {} };
+const PAGE_KEY = APP_PREFIX + "current_page";
+function saveCurrentPage(page) {
+  try { localStorage.setItem(PAGE_KEY, page); } catch (e) { /* ignore */ }
+}
+function getSavedPage() {
+  try { return localStorage.getItem(PAGE_KEY); } catch (e) { return null; }
+}
+function isPageAccessible(page) {
+  if (!page) return false;
+  if (page === "settings") return hasAnySettingsAccess();
+  if (page === "auditlog" || page === "users" || page === "permissions") return isAdminUser();
+  const guard = PAGE_GUARD[page];
+  return !guard || can(guard[0], guard[1]);
+}
 
 function renderSidebar() {
   const el = document.getElementById("sidebar");
@@ -2431,120 +1844,34 @@ function renderSidebar() {
 }
 
 async function renderStorageIndicator() {
-  const indicator = document.getElementById("storageIndicator");
-  if (!indicator) return;
-  const online = navigator.onLine;
-  const pendingKeys = STORAGE_MODE === "supabase" ? await getPendingQueueKeys() : [];
-  const pendingCount = pendingKeys.length;
-  const conflictsList = STORAGE_MODE === "supabase" ? await getAllConflicts() : [];
-  const conflictsCount = conflictsList.length;
-  let dot, label;
-  if (STORAGE_MODE === "firestore") {
-    dot = online ? "🟢" : "🟡";
-    label = online
-      ? "متصل بـ Firestore — القراءة والكتابة من المصدر الرئيسي"
-      : "غير متصل الآن — Firestore سيحتفظ بالتعديلات محليًا ويرفعها عند عودة الاتصال";
-  } else if (STORAGE_MODE === "supabase" && SYNC_PAUSED) {
-    dot = "🟡"; label = `⏸️ العمل محليًا فقط — المزامنة التلقائية موقوفة مؤقتًا${pendingCount ? ` (${pendingCount} عملية بانتظار الرفع)` : ""}`;
-  } else if (STORAGE_MODE === "supabase" && online && pendingCount === 0) {
-    dot = "🟢"; label = "متصل وتمت المزامنة — يُقرأ ويُكتب مباشرة على القاعدة السحابية";
-  } else if (STORAGE_MODE === "supabase" && online && pendingCount > 0) {
-    // إظهار سبب فشل آخر محاولة رفع فعليًا (إن وُجد) بدل الاكتفاء بالعدد فقط،
-    // حتى يعرف المستخدم - خصوصًا على الموبايل حيث لا يمكن فتح الـ console - أين
-    // المشكلة الحقيقية (RLS، جدول مفقود، خطأ شبكة...).
-    const firstReason = Object.values(SYNC_LAST_ERRORS)[0];
-    const retryInSec = SYNC_NEXT_RETRY_AT > Date.now() ? Math.ceil((SYNC_NEXT_RETRY_AT - Date.now()) / 1000) : 0;
-    dot = "🟡"; label = `يعمل محليًا الآن — ${pendingCount} عملية بانتظار الرفع${firstReason ? ` (السبب: ${firstReason})` : ""}${retryInSec > 0 ? ` — إعادة المحاولة تلقائيًا خلال ${retryInSec} ثانية` : ""}`;
-  } else if (STORAGE_MODE === "supabase" && !online) {
-    dot = "🔴"; label = `غير متصل بالإنترنت الآن${pendingCount ? ` — ${pendingCount} عملية محفوظة محليًا بانتظار الرفع` : ""}`;
-  } else if (STORAGE_MODE === "cloud") {
-    dot = "🟢"; label = "☁️ البيانات محفوظة تلقائيًا";
-  } else if (STORAGE_MODE === "local") {
-    dot = "🔴"; label = "💾 يعمل محليًا فى هذا المتصفح فقط";
-  } else {
-    dot = "🔴"; label = "⚠️ غير محفوظة — ستُفقد عند الإغلاق";
-  }
-  const canSync = can("settings","sync");
-  indicator.innerHTML = `
-    <div style="display:flex; align-items:center; gap:6px;">${dot} <span>${label}</span></div>
-    ${conflictsCount > 0 && can("settings","edit") ? `<button class="btn danger sm" id="conflictsBtn" style="margin-top:6px; width:100%; justify-content:center;">⚠️ ${conflictsCount} تعارض بانتظار المراجعة</button>` : ""}
-    ${STORAGE_MODE === "supabase" && canSync ? `<button class="btn ghost sm" id="syncNowBtn" style="margin-top:6px; width:100%; justify-content:center;">🔄 مزامنة الآن</button>` : ""}
-    ${STORAGE_MODE === "supabase" && canSync ? (SYNC_PAUSED
-      ? `<button class="btn ghost sm" id="resumeSyncBtn" style="margin-top:6px; width:100%; justify-content:center;">▶️ إعادة الاتصال بـ Supabase</button>`
-      : `<button class="btn ghost sm" id="pauseSyncBtn" style="margin-top:6px; width:100%; justify-content:center;">⏸️ العمل محليًا فقط</button>`) : ""}
-  `;
-  const conflictsBtn = document.getElementById("conflictsBtn");
-  if (conflictsBtn) conflictsBtn.addEventListener("click", () => { state.page = "dataConflicts"; route(); });
-  const syncBtn = document.getElementById("syncNowBtn");
-  if (syncBtn) syncBtn.addEventListener("click", async () => {
-    syncBtn.textContent = "جارٍ المزامنة...";
-    SYNC_NEXT_RETRY_AT = 0; // ضغطة يدوية من المستخدم تتجاوز فترة الانتظار التصاعدي التلقائي دائمًا
-    try {
-      await flushPendingSync(); // ارفع كل ما هو معلّق أولًا
-      // إصلاح: flushPendingSync لا يرمى استثناء أبدًا (يترك الجدول الفاشل فى
-      // الطابور ويكمل البقية بصمت)، فكان try/catch هنا لا يلتقط شيئًا أبدًا
-      // ويعرض "تمت المزامنة بنجاح" حتى لو ظلت عمليات عالقة فعليًا فى الطابور.
-      // الآن نتحقق من الطابور فعليًا بعد الرفع ونعرض السبب الحقيقى إن بقى شىء معلّقًا.
-      const stillPending = await getPendingQueueKeys();
-      await loadAll(); // اسحب أحدث نسخة من Supabase
-      if (stillPending.length) {
-        const reason = Object.values(SYNC_LAST_ERRORS)[0];
-        logActivity("مزامنة يدوية جزئية - عمليات لا تزال معلّقة", "settings");
-        showToast(`⚠️ تعذّر رفع ${stillPending.length} عملية${reason ? ` — السبب: ${reason}` : ""}`);
-      } else {
-        logActivity("مزامنة يدوية مع Supabase", "settings");
-        showToast("تمت المزامنة بنجاح");
-      }
-    } catch (e) {
-      console.error("Manual sync failed:", e);
-      showToast(`⚠️ تعذّرت المزامنة — ${(e && e.message) || "تحقّق من الاتصال"}`);
-    }
-    route();
-  });
-  const pauseBtn = document.getElementById("pauseSyncBtn");
-  if (pauseBtn) pauseBtn.addEventListener("click", () => {
-    SYNC_PAUSED = true;
-    try { localStorage.setItem(SYNC_PAUSE_FLAG, "1"); } catch (e) { /* ignore */ }
-    showToast("تم إيقاف المزامنة التلقائية مؤقتًا — البيانات تُحفظ محليًا فقط الآن");
-    renderStorageIndicator();
-  });
-  const resumeBtn = document.getElementById("resumeSyncBtn");
-  if (resumeBtn) resumeBtn.addEventListener("click", async () => {
-    SYNC_PAUSED = false;
-    try { localStorage.removeItem(SYNC_PAUSE_FLAG); } catch (e) { /* ignore */ }
-    showToast("تمت إعادة تفعيل المزامنة — جارٍ الرفع والسحب...");
-    renderStorageIndicator();
-    await flushPendingSync();
-    await loadAll();
-    route();
-  });
+  const label = navigator.onLine
+    ? "متصل بـ Firebase / Firestore — القراءة والكتابة من المصدر الرئيسي"
+    : "غير متصل — Firestore سيحفظ التعديلات محليًا ويرفعها عند عودة الاتصال";
+  const dot = navigator.onLine ? "🟢" : "🟡";
+  const html = `<span class="connection-dot">${dot}</span><span>${label}</span>`;
+  const side = document.getElementById("storageIndicator");
+  if (side) side.innerHTML = html;
+  const top = document.getElementById("topConnectionIndicator");
+  if (top) top.innerHTML = html;
 }
+
 window.addEventListener("online", async () => {
   renderStorageIndicator();
-  if (STORAGE_MODE === "supabase" && !SYNC_PAUSED) {
-    SYNC_NEXT_RETRY_AT = 0; // عودة اتصال حقيقية = فرصة جديدة، تتجاوز فترة الانتظار التصاعدي
-    await flushPendingSync();
-    await loadAll();
-    subscribeStaffAccountsRealtime();
-    // لا تُعِد رسم الشاشة لو المستخدم وسط تعديل سجل قائم أو كتابة نشطة فى فورم
-    // مفتوح الآن - فقد يمحو ذلك أى بيانات مكتوبة لم تُحفظ بعد. البيانات نفسها
-    // تحدّثت فى الذاكرة بالفعل أعلاه، وستظهر تلقائيًا عند أقرب تنقّل أو حفظ.
+  if (STORAGE_MODE === "firestore" && currentUser) {
+    subscribeFirestoreRealtime();
     if (!isMidEdit() && !isUserActivelyTyping()) route();
   }
 });
 window.addEventListener("offline", renderStorageIndicator);
+
 document.getElementById("sidebarOverlay").addEventListener("click", () => document.body.classList.remove("sidebar-open"));
-// مزامنة دورية فى الخلفية كل 45 ثانية بدون تجميد الواجهة، تحسبًا لأى عمليات
-// معلّقة لم تُرفَع بعد (مثلًا بعد فشل مؤقت فى الشبكة رغم ظهور "متصل").
-setInterval(() => { if (STORAGE_MODE === "supabase" && !SYNC_PAUSED) flushPendingSync(); }, 45000);
 
 // ======================================================================
-// تحديث دورى صامت فى الخلفية (بدون تسجيل خروج): يسحب أحدث نسخة من كل الجداول
-// من Supabase كل دقيقة تقريبًا، حتى تظهر تعديلات الأجهزة الأخرى (طبيب جديد،
-// تغيير إعداد...) تلقائيًا لمن ترك الجلسة مفتوحة طويلًا دون تسجيل خروج/دخول.
+// تحديث دورى صامت من Firestore كل دقيقة، حتى تظهر تعديلات الأجهزة الأخرى
+// تلقائيًا لمن ترك الجلسة مفتوحة طويلًا دون تسجيل خروج/دخول.
 // بحذر شديد: لا يلمس أى جدول لا يزال بداخل طابور المزامنة المعلّق (يتركه
-// لـ flushPendingSync كى لا يطمس تعديلًا محليًا لم يُرفَع بعد - نفس منطق الحماية
-// المطبَّق فى storeGet)، ولا يُعيد رسم الشاشة إطلاقًا أثناء تعديل سجل قائم أو
+// لتجنب استبدال تعديل محلي أثناء القراءة الخلفية - نفس منطق الحماية
+// المطبَّق في storeGet - ولا يُعيد رسم الشاشة أثناء تعديل سجل قائم أو
 // كتابة نشطة فى أى حقل إدخال، تجنبًا لفقدان أى بيانات لم تُحفظ بعد.
 // ======================================================================
 const BACKGROUND_REFRESH_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","categories","specialties","settings","labExpenses"];
@@ -2559,48 +1886,30 @@ function isMidEdit() {
   return !!(state.editId || state.editDocId || state.editUserId || state.editEmpId);
 }
 async function backgroundRefreshAll() {
-  if (BACKGROUND_REFRESH_IN_PROGRESS || STORAGE_MODE !== "supabase" || !navigator.onLine || SYNC_PAUSED || !currentUser) return;
-  if (isMidEdit() || isUserActivelyTyping()) return; // لا تلمس شيئًا أثناء تعديل نشط
-  // إصلاح جوهري (سبب اختفاء الزيارة الجديدة مؤقتًا وأنت متصل بالإنترنت): لا تبدأ
-  // أى سحب خلفى للبيانات إن كانت هناك عملية حفظ (persist) قيد التنفيذ فعليًا هذه
-  // اللحظة فى مكان آخر من النظام (PENDING_WRITES > 0) - مثلًا تسجيل زيارة جديدة
-  // لسه بترفع للسحابة ولم تكتمل بعد. لو بدأنا السحب هنا، النسخة السحابية التى
-  // سنحصل عليها قد لا تحتوي بعد على التعديل الجديد (لأن رفعه لم يكتمل)، فنستبدل
-  // بها الذاكرة المحلية ويختفى التعديل الجديد مؤقتًا حتى إعادة رسم تالية تعيد
-  // قراءته من جديد. تأجيل السحب لحين اكتمال كل عمليات الحفظ الجارية يمنع هذا التضارب.
+  if (BACKGROUND_REFRESH_IN_PROGRESS || STORAGE_MODE !== "firestore" || !navigator.onLine || !currentUser) return;
+  if (isMidEdit() || isUserActivelyTyping()) return;
   if (PENDING_WRITES > 0) return;
   BACKGROUND_REFRESH_IN_PROGRESS = true;
   try {
-    const pending = await getPendingQueueKeys();
     let changed = false;
     for (const key of BACKGROUND_REFRESH_KEYS) {
-      if (pending.includes(key)) continue; // موجود بالفعل فى طابور الرفع - اتركه له كى لا يُطمَس
-      if (PENDING_WRITES > 0) break; // بدأت عملية حفظ جديدة أثناء السحب نفسه - توقف فورًا ولا تكمل باقى الجداول
+      if (PENDING_WRITES > 0 || isMidEdit() || isUserActivelyTyping()) break;
       try {
         const before = JSON.stringify(DB[key]);
-        const generationBefore = TABLE_MUTATION_GENERATION[key] || 0;
         const fresh = await storeGet(key, DB[key]);
-        // إعادة تحقق فورية بعد انتظار الشبكة (وهذا هو الإصلاح الجوهري لمشكلة
-        // اختفاء التعديل بعد ثوانٍ رغم الاتصال): الفحص الأول لـ PENDING_WRITES
-        // فى بداية الحلقة لا يكفى، لأن المستخدم قد يبدأ (أو حتى ينهي) حفظ تعديل
-        // جديد لنفس هذا الجدول بالكامل أثناء فترة انتظار storeGet نفسها (طلب
-        // شبكة يستغرق وقتًا). النتيجة "fresh" فى هذه الحالة لا يمكن الوثوق بها
-        // لأنها قد لا تعكس التعديل الجديد بشكل موثوق، فنتجاهلها كليًا هنا بدل
-        // استبدال DB[key] بها والتسبب فى اختفاء تعديل المستخدم الذى نجح فعليًا.
-        if (PENDING_WRITES > 0) break;
-        if ((TABLE_MUTATION_GENERATION[key] || 0) !== generationBefore) continue;
-        const pendingAfter = await getPendingQueueKeys();
-        if (pendingAfter.includes(key)) continue;
-        if (fresh !== undefined && JSON.stringify(fresh) !== before) { DB[key] = fresh; changed = true; }
-      } catch (e) { /* تجاهل فشل جدول واحد ولا يوقف تحديث الباقى */ }
+        if (PENDING_WRITES > 0 || isMidEdit() || isUserActivelyTyping()) break;
+        if (fresh !== undefined && JSON.stringify(fresh) !== before) {
+          DB[key] = fresh;
+          changed = true;
+        }
+      } catch (e) { /* continue with the remaining collections */ }
     }
-    // أعد التحقق مباشرة قبل إعادة الرسم: قد يكون المستخدم بدأ الكتابة أو حفظ تعديل جديد أثناء عملية السحب نفسها
     if (changed && currentUser && !isMidEdit() && !isUserActivelyTyping() && PENDING_WRITES === 0) route();
   } finally {
     BACKGROUND_REFRESH_IN_PROGRESS = false;
   }
 }
-setInterval(backgroundRefreshAll, 60000);
+setInterval(backgroundRefreshAll, 60000);setInterval(backgroundRefreshAll, 60000);
 
 function renderTopbar() {
   const el = document.getElementById("topbar");
@@ -2610,6 +1919,7 @@ function renderTopbar() {
     <div style="display:flex; align-items:center; gap:10px;">
       <button id="hamburgerBtn" title="القائمة" style="display:none; align-items:center; justify-content:center; width:38px; height:38px; border-radius:10px; border:1px solid var(--border,#ccc); background:var(--card); font-size:18px; cursor:pointer; flex-shrink:0;">☰</button>
       <div class="title">${PAGE_TITLES[state.page]}</div>
+      <div id="topConnectionIndicator" class="top-connection-indicator" aria-live="polite">جارٍ التحقق من الاتصال...</div>
     </div>
     <div style="display:flex; align-items:center; gap:16px;">
       <div class="date">${dateStr}</div>
@@ -2639,6 +1949,7 @@ function renderTopbar() {
     if (!confirm("تسجيل الخروج من النظام؟")) return;
     logout();
   });
+  renderStorageIndicator();
 }
 
 function showToast(msg, duration) {
@@ -2719,9 +2030,9 @@ function openChangeMyPasswordModal() {
 // تلقائيًا بمجرد عودة الاتصال - بدل رسالة عامة "تم الحفظ" قد تجعل المستخدم غير
 // متأكد هل البيانات فعلًا بأمان أم لا وهو غير متصل بالإنترنت.
 function saveToast(entityMsg) {
-  const savedOnlyLocally = !(STORAGE_MODE === "supabase" && navigator.onLine && !SYNC_PAUSED);
+  const savedOnlyLocally = !(STORAGE_MODE === "firestore" && navigator.onLine);
   if (savedOnlyLocally) {
-    showToast(`💾 ${entityMsg} — محفوظ على هذا الجهاز بأمان، وسيُرفع تلقائيًا لباقي الأجهزة بمجرد عودة الاتصال بالإنترنت`, 3800);
+    showToast(`💾 ${entityMsg} — محفوظ محليًا وسيُرفع تلقائيًا عند عودة الاتصال`, 3800);
   } else {
     showToast(`✅ ${entityMsg}`);
   }
@@ -2748,6 +2059,7 @@ function renderAccessDenied() {
     </div>`;
 }
 function route() {
+  saveCurrentPage(state.page);
   renderSidebar();
   renderTopbar();
   const c = document.getElementById("content");
@@ -5016,64 +4328,18 @@ function sortedDoctors() {
 }
 function renderSettings() {
   const c = document.getElementById("content");
-  const cred = getSavedCredentials();
   const editingDoc = state.editDocId ? DB.doctors.find(d => d.id === state.editDocId) : null;
   const canSettingsEdit = can("settings", "edit");
-  const canConnect = can("settings", "supabaseConnect");
-  const canDisconnect = can("settings", "supabaseDisconnect");
   c.innerHTML = `
-    ${(canConnect || canDisconnect) ? `
-    <div class="card" style="margin-bottom:18px;">
-      <div class="section-title">🗄️ ربط قاعدة بيانات Supabase
-        <span class="hint">${STORAGE_MODE === "supabase" ? "متصل الآن ✅" : "غير متصل"}</span>
-      </div>
-      <p style="font-size:11px; color:var(--muted); margin:-6px 0 10px;">إصدار النظام: ${esc(APP_VERSION)}</p>
-      ${STORAGE_MODE === "supabase" ? (canDisconnect ? `
-        <p style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">النظام متصل بقاعدة البيانات ويقرأ ويكتب منها مباشرة. كل من يفتح هذا الملف بنفس بيانات الاتصال يرى نفس البيانات فورًا.</p>
-        <button class="btn ghost" id="disconnectSb">قطع الاتصال والعودة للتخزين المحلي</button>
-      ` : `<p class="hint">النظام متصل حاليًا بقاعدة البيانات. لا تملك صلاحية قطع الاتصال.</p>`) : (canConnect ? `
-        <p style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">
-          أنشئ مشروعًا مجانيًا على <b>supabase.com</b>، نفّذ كود إنشاء الجداول (SQL) المرفق، ثم الصق بيانات الاتصال من
-          Project Settings ← API هنا:
-        </p>
-        <div class="form-grid" style="grid-template-columns:1fr 1fr;">
-          <div class="field"><label>Project URL</label><input type="text" id="sbUrl" placeholder="https://xxxx.supabase.co" value="${esc(cred?.url)}"></div>
-          <div class="field"><label>anon public API Key</label><input type="text" id="sbKey" placeholder="eyJhbGciOi..." value="${esc(cred?.key)}"></div>
-        </div>
-        <button class="btn" id="connectSb" style="margin-top:10px;">اتصال</button>
-        <span id="sbStatus" style="font-size:12px; margin-inline-start:10px;"></span>
-      ` : `<p class="hint">لا تملك صلاحية الاتصال بقاعدة البيانات.</p>`)}
-    </div>` : ""}
-
-    ${isAdminUser() && window.MitaliFirebase ? `
     <div class="card" style="margin-bottom:18px; border-color:var(--gold);">
       <div class="section-title">🔥 قاعدة بيانات Firebase Firestore
-        <span class="hint">${STORAGE_MODE === "firestore" ? "المصدر الرئيسي الآن ✅" : "نسخة احتياطية جاهزة"}</span>
+        <span class="hint">${STORAGE_MODE === "firestore" ? "المصدر الرئيسي الآن ✅" : "بانتظار تسجيل دخول Firebase"}</span>
       </div>
       <p style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">
-        يتم الاحتفاظ بـ Supabase كنسخة احتياطية أثناء الانتقال. لا تُنقل كلمات المرور إلى Firestore؛ المصادقة تتم عبر Firebase Authentication.
+        Firestore هو مصدر البيانات الوحيد للنظام، والمصادقة تتم عبر Firebase Authentication. تُحفظ نسخة محلية مؤقتة للعمل عند ضعف الاتصال.
       </p>
-      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-        <button class="btn ghost" id="migrateToFirebase">${isFirestoreMigrated() ? "إعادة مزامنة نسخة إلى Firestore" : "نقل جميع البيانات إلى Firestore"}</button>
-        ${isFirestoreMigrated() && STORAGE_MODE !== "firestore" ? `<button class="btn" id="activateFirestore">تفعيل Firestore كمصدر رئيسي</button>` : ""}
-        ${STORAGE_MODE === "firestore" ? `<button class="btn ghost" id="deactivateFirestore">الرجوع إلى Supabase مؤقتًا</button>` : ""}
-        <span id="firebaseMigrationStatus" style="font-size:12px;"></span>
-      </div>
-    </div>` : ""}
-    ${STORAGE_MODE === "supabase" && canSettingsEdit ? `
-    <div class="card" style="margin-bottom:18px;">
-      <div class="section-title">⚖️ حل تعارضات البيانات بين الأجهزة</div>
-      <p style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">
-        عند تعديل نفس السجل من جهازين مختلفين قبل المزامنة، يعتمد النظام افتراضيًا التعديل الأحدث زمنيًا تلقائيًا.
-        فعّل هذا الخيار لمراجعة كل تعارض بنفسك بدلًا من الحسم التلقائى.
-      </p>
-      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:600;">
-        <input type="checkbox" id="manualConflictToggle" ${DB.settings.manualConflictReview ? "checked" : ""}>
-        مراجعة التعارضات يدويًا
-      </label>
-      <div id="conflictsLinkWrap" style="margin-top:10px;"></div>
-    </div>` : ""}
-
+      <div id="firestoreConnectionStatus" class="hint">${navigator.onLine ? "🟢 الاتصال بالإنترنت متاح" : "🟡 لا يوجد اتصال بالإنترنت — سيُحفظ العمل محليًا"}</div>
+    </div>
     ${can("demoData","view") ? `
     <div class="card" style="margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
       <div>
@@ -5110,7 +4376,7 @@ function renderSettings() {
     <div class="card" style="margin-bottom:18px;">
       <div class="section-title">💾 النسخ الاحتياطي</div>
       <p style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">
-        نسخة احتياطية كاملة لكل بيانات النظام (الزيارات، الخزينة، الأطباء، المستخدمين...) كملف واحد تحفظه بنفسك — حماية إضافية بجانب Supabase.
+        نسخة احتياطية كاملة لكل بيانات النظام (الزيارات، الخزينة، الأطباء، المستخدمين...) كملف واحد تحفظه بنفسك — حماية إضافية بجانب Firestore.
       </p>
       <button class="btn" id="downloadBackupBtn">⬇️ تنزيل نسخة احتياطية</button>
       <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border,#eee);">
@@ -5344,118 +4610,6 @@ function renderSettings() {
     </div>
   `;
 
-  const connectBtn = document.getElementById("connectSb");
-  if (connectBtn) {
-    connectBtn.addEventListener("click", async () => {
-      const url = document.getElementById("sbUrl").value.trim();
-      const key = document.getElementById("sbKey").value.trim();
-      const statusEl = document.getElementById("sbStatus");
-      if (!url || !key) { statusEl.textContent = "يرجى إدخال الرابط والمفتاح."; statusEl.style.color = "var(--expense)"; return; }
-      statusEl.textContent = "جارٍ الاتصال..."; statusEl.style.color = "var(--muted)";
-      saveCredentials(url, key);
-      const ok = await tryInitSupabase();
-      if (ok) {
-        showToast("✅ تم الاتصال بقاعدة البيانات بنجاح");
-        logActivity("الاتصال بـ Supabase", "settings");
-        await boot();
-      } else {
-        clearCredentials();
-        statusEl.textContent = explainConnectError(SB_LAST_CONNECT_ERROR);
-        statusEl.style.color = "var(--expense)";
-      }
-    });
-  }
-  const migrateFirebaseBtn = document.getElementById("migrateToFirebase");
-  if (migrateFirebaseBtn) {
-    migrateFirebaseBtn.addEventListener("click", async () => {
-      if (!isAdminUser()) { showToast("⚠️ الترحيل متاح للمدير فقط"); return; }
-      if (!confirm("سيتم نسخ البيانات الحالية إلى Firestore للاختبار فقط، مع إبقاء Supabase كما هو. كلمات المرور لن تُنقل. متابعة؟")) return;
-      const statusEl = document.getElementById("firebaseMigrationStatus");
-      migrateFirebaseBtn.disabled = true; migrateFirebaseBtn.textContent = "جارٍ ترحيل النسخة...";
-      if (statusEl) statusEl.textContent = "قد يستغرق ذلك وقتاً حسب عدد السجلات...";
-      try {
-        const summary = await migrateCurrentDataToFirestore();
-        try { localStorage.setItem(FIRESTORE_MIGRATED_FLAG, "1"); } catch (e) { /* ignore */ }
-        if (statusEl) statusEl.textContent = "تم نقل جميع البيانات بنجاح ✅";
-        showToast("✅ تم نقل جميع البيانات إلى Firestore — Supabase ما زال المصدر الرئيسي");
-        console.info("Firestore migration completed:", summary);
-      } catch (error) {
-        console.error("Firestore migration failed:", error);
-        if (statusEl) statusEl.textContent = "فشل الترحيل";
-        showToast(`⚠️ فشل ترحيل Firestore: ${(error && (error.message || error.code)) || error}`);
-      } finally {
-        migrateFirebaseBtn.disabled = false; migrateFirebaseBtn.textContent = isFirestoreMigrated() ? "إعادة مزامنة نسخة إلى Firestore" : "نقل جميع البيانات إلى Firestore";
-      }
-    });
-  }
-
-  const activateFirestoreBtn = document.getElementById("activateFirestore");
-  if (activateFirestoreBtn) {
-    activateFirestoreBtn.addEventListener("click", async () => {
-      if (!isAdminUser()) { showToast("⚠️ تفعيل Firestore متاح للمدير فقط"); return; }
-      if (!isFirestoreMigrated()) { showToast("⚠️ يجب نقل البيانات إلى Firestore أولاً"); return; }
-      if (!window.MitaliFirebase || !window.MitaliFirebase.authUser()) {
-        showToast("⚠️ يجب تسجيل الدخول بحساب Firebase قبل التفعيل"); return;
-      }
-      if (!confirm("سيصبح Firestore مصدر القراءة والكتابة الرئيسي. ستبقى نسخة Supabase محفوظة ويمكن الرجوع إليها. متابعة؟")) return;
-      setFirestoreEnabled(true);
-      showToast("تم تفعيل Firestore. ستتم إعادة تحميل النظام الآن.");
-      setTimeout(() => location.reload(), 500);
-    });
-  }
-  const deactivateFirestoreBtn = document.getElementById("deactivateFirestore");
-  if (deactivateFirestoreBtn) {
-    deactivateFirestoreBtn.addEventListener("click", () => {
-      if (!confirm("سيعود النظام مؤقتًا إلى Supabase كمصدر رئيسي. لن يتم حذف أي بيانات من Firestore. متابعة؟")) return;
-      setFirestoreEnabled(false);
-      showToast("تم الرجوع إلى Supabase. ستتم إعادة تحميل النظام الآن.");
-      setTimeout(() => location.reload(), 500);
-    });
-  }
-
-  const disconnectBtn = document.getElementById("disconnectSb");
-  if (disconnectBtn) {
-    disconnectBtn.addEventListener("click", async () => {
-      if (!confirm("سيتم حفظ كل بياناتك الحالية (الزيارات، الخزينة، الأطباء، الموظفون) فى هذا المتصفح، وسيعمل النظام محليًا بعد قطع الاتصال. متابعة؟")) return;
-      // نسخ وحفظ كافة البيانات الحالية فى التخزين المحلى قبل قطع الاتصال، دون فقدان أى شىء
-      const keysToBackup = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","settings","staffAccounts","categories","specialties","auditLog"];
-      keysToBackup.forEach(key => {
-        try {
-          const value = DB[key];
-          if (value !== undefined) localStorage.setItem(APP_PREFIX + key, JSON.stringify(value));
-        } catch (e) { console.error("Backup error for", key, e); }
-      });
-      logActivity("قطع الاتصال بـ Supabase (سيُسجَّل محليًا)", "settings");
-      clearCredentials();
-      cleanupRealtimeChannels("manual-disconnect");
-      sbClient = null;
-      sbClientCredentialsFingerprint = null;
-      STORAGE_MODE = "local";
-      persist("auditLog");
-      showToast("✅ تم حفظ كل بياناتك محليًا وقطع الاتصال بنجاح");
-      await boot();
-    });
-  }
-
-  const manualConflictToggle = document.getElementById("manualConflictToggle");
-  if (manualConflictToggle) {
-    manualConflictToggle.addEventListener("change", () => {
-      DB.settings.manualConflictReview = manualConflictToggle.checked;
-      logActivity("تعديل إعداد مراجعة التعارضات يدويًا", "settings");
-      persist("settings");
-      showToast(manualConflictToggle.checked ? "تم تفعيل المراجعة اليدوية للتعارضات" : "تم إيقاف المراجعة اليدوية — الحسم التلقائى بالأحدث زمنيًا");
-    });
-  }
-  const conflictsLinkWrap = document.getElementById("conflictsLinkWrap");
-  if (conflictsLinkWrap) {
-    getAllConflicts().then(list => {
-      if (!list.length) return;
-      conflictsLinkWrap.innerHTML = `<button class="btn danger sm" id="openConflictsBtn">⚠️ ${list.length} تعارض بانتظار المراجعة</button>`;
-      const btn = document.getElementById("openConflictsBtn");
-      if (btn) btn.addEventListener("click", () => { state.page = "dataConflicts"; route(); });
-    });
-  }
-
   const generateDemoBtn = document.getElementById("generateDemo");
   if (generateDemoBtn) generateDemoBtn.addEventListener("click", () => {
     if (!can("demoData","view")) { showToast("⚠️ ليس لديك صلاحية لهذا الإجراء"); return; }
@@ -5565,8 +4719,7 @@ function renderSettings() {
         if (Array.isArray(DB[key])) DB[key].forEach(rec => { if (rec && typeof rec === "object") rec.updatedAt = stamp; });
       });
       if (!DB.settings) DB.settings = { openingBalance: 0 };
-      if (DB.settings.manualConflictReview === undefined) DB.settings.manualConflictReview = false;
-      (async () => {
+          (async () => {
         const failed = [];
         let totalDeleted = 0, deletionApplied = false;
         for (const key of foundKeys) {
@@ -6000,7 +5153,7 @@ function renderDataConflicts() {
         <div class="card" style="text-align:center; padding:50px 20px;">
           <div style="font-size:38px; margin-bottom:10px;">✅</div>
           <div style="font-weight:800; font-size:16px; color:var(--navy);">لا توجد تعارضات بيانات حاليًا</div>
-          <div class="hint" style="margin-top:6px;">كل السجلات متطابقة بين هذا الجهاز والقاعدة السحابية.</div>
+          <div class="hint" style="margin-top:6px;">كل السجلات متطابقة بين هذا الجهاز والقاعدة البعيدة.</div>
         </div>`;
       return;
     }
@@ -6022,7 +5175,7 @@ function renderDataConflicts() {
               <button class="btn sm" style="margin-top:8px; width:100%; justify-content:center;" data-resolve="local" data-table="${cft.table}" data-id="${cft.id}">اعتماد هذه النسخة</button>
             </div>
             <div style="border:2px solid var(--navy); border-radius:10px; padding:10px;">
-              <div style="font-weight:800; margin-bottom:6px;">☁️ النسخة السحابية (جهاز آخر)</div>
+              <div style="font-weight:800; margin-bottom:6px;">☁️ النسخة البعيدة (جهاز آخر)</div>
               <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">آخر تعديل: ${esc(cft.remote?.updatedAt || "-")}</div>
               ${diffFields.map(f => `<div style="font-size:12.5px; margin-bottom:3px;"><b>${esc(f)}:</b> ${esc(cft.remote?.[f])}</div>`).join("")}
               <button class="btn sm ghost" style="margin-top:8px; width:100%; justify-content:center;" data-resolve="remote" data-table="${cft.table}" data-id="${cft.id}">اعتماد هذه النسخة</button>
@@ -6188,7 +5341,7 @@ function renderUsersPage() {
     // التعديل لم يصل للخادم أصلًا رغم ظهور رسالة النجاح.
     try {
       await persist("staffAccounts");
-      showToast(STORAGE_MODE === "supabase" && !navigator.onLine
+      showToast(STORAGE_MODE === "firestore" && !navigator.onLine
         ? msg + " (محليًا - سيُرفع تلقائيًا عند توفر الاتصال)"
         : msg);
     } catch (err) {
@@ -6217,7 +5370,7 @@ function renderUsersPage() {
     logActivity("إعادة تعيين كلمة مرور", "users", null, a.displayName);
     try {
       await persist("staffAccounts");
-      showToast(STORAGE_MODE === "supabase" && !navigator.onLine ? "تم الحفظ محليًا - سيُرفع عند توفر الاتصال" : "تم تعيين كلمة مرور جديدة");
+      showToast(STORAGE_MODE === "firestore" && !navigator.onLine ? "تم الحفظ محليًا - سيُرفع عند توفر الاتصال" : "تم تعيين كلمة مرور جديدة");
     } catch (err) {
       console.error(err);
       showToast("⚠️ تم الحفظ محليًا فقط - تعذّر رفع كلمة المرور الجديدة الآن");
@@ -6346,7 +5499,7 @@ function renderPermissionsPage() {
       // ننتظر اكتمال الحفظ فعليًا قبل إخبار المستخدم بالنجاح، بدل إظهار رسالة
       // "تم الحفظ" فورًا دون التأكد من اكتمال الكتابة الفعلية.
       await persist("staffAccounts");
-      showToast(STORAGE_MODE === "supabase" && !navigator.onLine
+      showToast(STORAGE_MODE === "firestore" && !navigator.onLine
         ? "تم حفظ الصلاحيات محليًا - ستُرفع للسحابة تلقائيًا عند توفر الاتصال"
         : "تم حفظ الصلاحيات");
     } catch (err) {
@@ -6538,20 +5691,16 @@ function renderLogin(errorMsg) {
     // نسخة الحسابات المحمّلة فى ذاكرة المتصفح منذ آخر تحميل للصفحة، فيظل التعديل
     // الجديد غير معروف على هذا الجهاز حتى تُعاد الصفحة فعليًا (F5) لا مجرد
     // تسجيل خروج ثم دخول داخل نفس الجلسة - وهو ما كان يبدو "تعارضًا" فى البيانات.
-    // تأكد أولًا من رفع أى تعديلات معلّقة من مستخدم سابق على هذا الجهاز (مثلًا لو
-    // أضاف مستخدم بيانات وهو أوفلاين ثم سجّل خروج قبل أن يعود الاتصال) قبل سحب
-    // أحدث نسخة من حسابات المستخدمين - وإلا قد تبقى تلك البيانات معلّقة محليًا
-    // فقط دون رفع فورى لحين مرور مؤقّت المزامنة الدورى (45 ثانية).
+    // اسحب أحدث ملف صلاحيات من Firestore قبل التحقق من كلمة المرور عند توفر الشبكة.
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "جارٍ التحقق..."; }
     try {
-      if (STORAGE_MODE === "supabase" && navigator.onLine && !SYNC_PAUSED) {
-        await flushPendingSync();
+      if (STORAGE_MODE === "firestore" && navigator.onLine) {
         // إصلاح باق خطير: كان هذا السطر يستبدل DB.staffAccounts بأي نتيجة تأتي من
-        // Supabase دون تحقق - فلو رجع الجدول السحابي فارغًا لأي سبب (لم يُرفَع
+        // Firestore دون تحقق - فلو رجع الجدول السحابي فارغًا لأي سبب (لم يُرفَع
         // الحساب الافتراضي بعد، أو مشكلة شبكة مؤقتة أعادت مصفوفة فارغة بدل خطأ
         // فعلي)، كان يُمسَح حساب admin المحلي بالكامل قبل حتى التحقق من كلمة
         // المرور، فتفشل كل محاولات الدخول برسالة "بيانات غير صحيحة" رغم صحتها.
-        // الآن: تجاهل النتيجة السحابية تمامًا إن كانت فارغة، واعتمد على النسخة
+        // الآن: تجاهل النتيجة البعيدة تمامًا إن كانت فارغة، واعتمد على النسخة
         // المحلية الموجودة (التي تحتوي حساب admin الافتراضي دائمًا على الأقل).
         const freshAccounts = await storeGet("staffAccounts", DB.staffAccounts);
         if (freshAccounts && freshAccounts.length) DB.staffAccounts = freshAccounts;
@@ -6560,7 +5709,7 @@ function renderLogin(errorMsg) {
     let account = null;
     let firebaseAuthAccount = null;
     // نحاول Firebase أولاً لكل اسم مستخدم. الحسابات القديمة التي لم تُنشأ في
-    // Firebase ترجع إلى Supabase/التحقق المحلي بلا تغيير مرئي للمستخدم.
+    // Firebase ترجع إلى Firestore/التحقق المحلي بلا تغيير مرئي للمستخدم.
     if (window.MitaliFirebase) {
       try {
         await window.MitaliFirebase.signInWithUsername(username, password);
@@ -6568,8 +5717,7 @@ function renderLogin(errorMsg) {
         const code = firebaseError && firebaseError.code;
         const knownFirebaseAccount = isFirebaseAccountCandidate(username);
         console.warn("Firebase Auth login failed:", code || firebaseError.message || firebaseError);
-        // عند عدم وجود حساب Firebase نكمل للمسار القديم. أما الحساب المعروف
-        // بأنه مرتبط بـ Firebase فنوقف الدخول ولا نسمح بكلمة مرور قديمة.
+        // لا يوجد مسار مصادقة بديل بعد إزالة قاعدة البيانات القديمة.
         if (knownFirebaseAccount || isFirebaseOnlyUsername(username)) {
           const authMessage = (code === "auth/wrong-password" || code === "auth/invalid-credential")
             ? "كلمة مرور Firebase غير صحيحة. استخدم كلمة المرور التي عيّنها مدير النظام."
@@ -6604,11 +5752,11 @@ function renderLogin(errorMsg) {
     if (!account) { renderLogin("اسم المستخدم أو كلمة المرور غير صحيحة."); return; }
     if (account.status === "موقوف") { renderLogin("هذا الحساب موقوف حاليًا. تواصل مع مدير النظام."); return; }
     // الموظف الجديد قد يبدأ من شاشة الدخول قبل وجود جلسة Firebase، لذلك يكون
-    // loadAll الأول على Supabase الاحتياطي. بعد نجاح Auth نحوله فوراً إلى Firestore
+    // loadAll الأول على Firestore الاحتياطي. بعد نجاح Auth نحوله فوراً إلى Firestore
     // حتى تكون كل عملياته وصلاحياته على المصدر الرئيسي نفسه.
     if (firebaseAuthAccount && (isFirebaseOnlyUsername(username) || isFirestoreEnabled() || isFirestoreMigrated())) {
       // تفعيل المصدر الرئيسي لكل متصفح جديد بعد نجاح Firebase Auth؛ لا نعتمد
-      // على localStorage الخاص بمتصفح سابق حتى لا يعود الحساب القديم من Supabase.
+      // على localStorage الخاص بمتصفح سابق حتى لا يعود الحساب القديم من Firestore.
       setFirestoreEnabled(true);
       try { localStorage.setItem(FIRESTORE_MIGRATED_FLAG, "1"); } catch (e) { /* ignore */ }
       STORAGE_MODE = "firestore";
@@ -6684,76 +5832,14 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && cu
 // ======================================================================
 // التشغيل
 // ======================================================================
-// اشتراك Realtime عام لكل الجداول المهمة بدل مراقبة staff_accounts فقط.
-// Realtime تحسين فوري وليس مصدر الحقيقة الوحيد؛ يبقى backgroundRefreshAll كخط دفاع
-// احتياطى لأن بعض جداول Supabase قد لا تكون مضافة إلى publication أو قد ينقطع الاتصال.
-const REALTIME_TABLES = [
-  ...Object.entries(SB_TABLES).filter(([key]) => key !== "auditLog"),
-  ["settings", "settings"], ["categories", "settings"], ["specialties", "settings"],
-];
-let realtimeChannel = null;
-let realtimeReconnectTimer = null;
-let realtimeSubscriptionGeneration = 0;
 const realtimeRefreshInProgress = new Set();
 const firestoreRealtimeUnsubs = new Map();
 const FIRESTORE_REALTIME_KEYS = [...FIRESTORE_MIGRATION_KEYS];
-
 function cleanupRealtimeChannels(reason) {
-  realtimeSubscriptionGeneration++;
-  if (realtimeReconnectTimer) { clearTimeout(realtimeReconnectTimer); realtimeReconnectTimer = null; }
-  const old = realtimeChannel;
-  realtimeChannel = null;
-  if (old && sbClient) {
-    try { sbClient.removeChannel(old); } catch (e) { console.warn("Realtime channel cleanup failed:", reason, e); }
-  }
   firestoreRealtimeUnsubs.forEach((unsubscribe) => {
     try { unsubscribe(); } catch (e) { console.warn("Firestore listener cleanup failed:", reason, e); }
   });
   firestoreRealtimeUnsubs.clear();
-}
-
-async function refreshTableFromRealtime(key) {
-  if (realtimeRefreshInProgress.has(key) || !sbClient || STORAGE_MODE !== "supabase" || SYNC_PAUSED || !navigator.onLine) return;
-  if (PENDING_WRITES > 0 || isMidEdit() || isUserActivelyTyping()) return;
-  const pendingBefore = await getPendingQueueKeys();
-  if (pendingBefore.includes(key)) return;
-  const generationBefore = TABLE_MUTATION_GENERATION[key] || 0;
-  realtimeRefreshInProgress.add(key);
-  try {
-    const fresh = await storeGet(key, DB[key]);
-    // لا نستبدل الذاكرة بنتيجة قديمة إذا بدأ حفظ محلى أثناء طلب الشبكة.
-    if (PENDING_WRITES > 0 || isMidEdit() || isUserActivelyTyping()) return;
-    if ((TABLE_MUTATION_GENERATION[key] || 0) !== generationBefore) return;
-    const pendingAfter = await getPendingQueueKeys();
-    if (pendingAfter.includes(key)) return;
-    if (fresh !== undefined && JSON.stringify(fresh) !== JSON.stringify(DB[key])) {
-      DB[key] = fresh;
-      DATA_VERSION++;
-      if (key === "staffAccounts" && currentUser) {
-        const me = getCurrentAccount();
-        if (!me || me.status === "موقوف") {
-          clearSession();
-          renderLogin("تم إيقاف هذا الحساب أو حذفه.");
-          return;
-        }
-      }
-      if (currentUser && !isMidEdit() && !isUserActivelyTyping()) route();
-    }
-  } catch (e) {
-    console.error("Realtime refresh failed for", key, e);
-  } finally {
-    realtimeRefreshInProgress.delete(key);
-  }
-}
-
-function scheduleRealtimeReconnect(generation) {
-  if (realtimeReconnectTimer || generation !== realtimeSubscriptionGeneration) return;
-  realtimeReconnectTimer = setTimeout(() => {
-    realtimeReconnectTimer = null;
-    if (generation === realtimeSubscriptionGeneration && STORAGE_MODE === "supabase" && !SYNC_PAUSED && navigator.onLine) {
-      subscribeStaffAccountsRealtime();
-    }
-  }, 5000);
 }
 
 async function refreshTableFromFirestore(key) {
@@ -6799,39 +5885,6 @@ function subscribeFirestoreRealtime() {
   });
 }
 
-function subscribeStaffAccountsRealtime() {
-  if (!sbClient || STORAGE_MODE !== "supabase" || SYNC_PAUSED || !navigator.onLine) return;
-  if (realtimeChannel) return;
-  const generation = ++realtimeSubscriptionGeneration;
-  try {
-    let channel = sbClient.channel("hospital_data_live");
-    for (const [key, table] of REALTIME_TABLES) {
-      channel = channel.on("postgres_changes", { event: "*", schema: "public", table }, () => {
-        refreshTableFromRealtime(key);
-      });
-    }
-    realtimeChannel = channel;
-    channel.subscribe(status => {
-      if (generation !== realtimeSubscriptionGeneration) return;
-      if (status === "SUBSCRIBED") {
-        console.log("Supabase Realtime subscribed:", REALTIME_TABLES.map(([, table]) => table).join(", "));
-        return;
-      }
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-        console.warn("Supabase Realtime status:", status);
-        if (realtimeChannel === channel) {
-          realtimeChannel = null;
-          try { sbClient.removeChannel(channel); } catch (e) { /* ignore */ }
-        }
-        scheduleRealtimeReconnect(generation);
-      }
-    });
-  } catch (e) {
-    console.error("Realtime subscribe failed:", e);
-    realtimeChannel = null;
-    scheduleRealtimeReconnect(generation);
-  }
-}
 async function boot() {
   document.getElementById("content").innerHTML = `<div style="text-align:center; padding:80px; color:var(--muted);">جارٍ تحميل النظام...</div>`;
   try {
@@ -6850,17 +5903,10 @@ async function boot() {
     // لا تعتمد على localStorage وحده لجلسة Firebase؛ أعد المستخدم للدخول إذا انتهت جلسة Auth.
     clearSession(); renderLogin(); return;
   }
-  // نفس إصلاح firstAccessiblePage عند تسجيل الدخول: state.page يبدأ دائمًا بقيمة
-  // "dashboard" الافتراضية عند كل تحميل جديد للصفحة (JS متغيّر فى الذاكرة، لا يُحفَظ
-  // بين إعادة التحميل) - فحتى مستخدم مسجّل دخوله بالفعل من قبل كان يقابل شاشة رفض
-  // الوصول بمجرد تحديث الصفحة (F5) لو لم يملك صلاحية "الرئيسية".
-  state.page = firstAccessiblePage();
+  const savedPage = getSavedPage();
+  state.page = savedPage && isPageAccessible(savedPage) ? savedPage : firstAccessiblePage();
   resetIdleTimer();
   route();
-  // إن كانت هناك عمليات معلّقة من جلسة سابقة لم تُرفَع بعد (مثلًا بعد إغلاق
-  // المتصفح أثناء انقطاع الاتصال)، حاول رفعها الآن فى الخلفية دون تعطيل الواجهة.
-  if (STORAGE_MODE === "supabase" && !SYNC_PAUSED) flushPendingSync();
-  if (STORAGE_MODE === "supabase" && navigator.onLine) subscribeStaffAccountsRealtime();
   if (STORAGE_MODE === "firestore") subscribeFirestoreRealtime();
 }
 boot();

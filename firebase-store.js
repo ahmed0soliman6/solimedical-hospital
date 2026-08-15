@@ -1,9 +1,9 @@
 /*
  * Mitali Hospital — Firebase Firestore adapter
  *
- * This adapter deliberately does not replace Supabase by itself. The main app
- * enables it only after Firestore Rules, Auth, and the migration have been
- * tested. No Admin SDK or service-account credential belongs in this file.
+ * Firestore is the only remote data source used by the main app. Authentication
+ * is handled by Firebase Auth, while data and user profiles are stored in Firestore.
+ * No Admin SDK or service-account credential belongs in this file.
  */
 (function () {
   "use strict";
