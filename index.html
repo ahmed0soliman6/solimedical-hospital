@@ -102,7 +102,9 @@
        بدل أن يبقى ثابتًا فى الأعلى. الحل: نقل القيد لـ #content فقط، وهو عنصر
        شقيق لـ #topbar (وليس أحد أسلافه)، فلا يؤثر على تثبيته إطلاقًا مع بقائه
        يمنع أي تمرير أفقي غير مقصود لمحتوى الصفحة نفسه. */
-    #content{ overflow-x:hidden; max-width:100vw; }
+    /* لا نقص عرض الصفحات الطويلة أو الجداول على الهاتف؛ اترك التمرير الأفقي
+       للحاوية المناسبة بدل إخفاء النص أو آخر الأعمدة. */
+    #content{ overflow-x:auto; max-width:none; }
   }
   .brand{
     padding:22px 20px 16px;
@@ -131,10 +133,13 @@
   .sidebar-account-user{font-size:12px; font-weight:800; line-height:1.55; margin-bottom:9px;}
   .sidebar-account-user .role{font-size:11px; color:#9FB6B9; font-weight:600;}
   .sidebar-account-actions{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:9px;}
-  .sidebar-account-actions .btn{flex:1 1 auto; min-width:0; padding:6px 8px; font-size:11px; border-color:rgba(255,255,255,.18); color:#EAF1EF; background:rgba(255,255,255,.06);}
-  .sidebar-account-actions .btn:hover{background:rgba(255,255,255,.13);}
-  .sidebar-connection{display:flex; align-items:center; justify-content:flex-start; gap:8px; font-size:11px; color:#9FB6B9;}
+  .sidebar-account-actions .btn,
+  #sidebar .sidebar-account-actions .btn.ghost{flex:1 1 auto; min-width:0; padding:7px 8px; font-size:11px; border-color:rgba(255,255,255,.26); color:#fff !important; background:rgba(255,255,255,.08); text-shadow:0 1px 1px rgba(0,0,0,.2);}
+  .sidebar-account-actions .btn:hover{background:rgba(255,255,255,.16);}
+  .sidebar-connection{display:flex; align-items:center; justify-content:flex-start; gap:8px; font-size:11px; color:#DDE9E7;}
   .sidebar-connection #storageIndicator{padding:0; border:0; color:#BFE8D4; flex:1;}
+  .sidebar-connection-top{padding:10px 14px; border-bottom:1px solid rgba(255,255,255,.08); background:rgba(0,0,0,.08);}
+  .sidebar-connection-top > span:first-child{font-weight:700; color:#fff;}
   .sidebar-connection .theme-toggle{width:30px; min-width:30px; height:28px; padding:0; display:inline-flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,.18); color:#EAF1EF; background:rgba(255,255,255,.06);}
   .sidebar-connection .theme-toggle:hover{background:rgba(255,255,255,.13);}
   .dashboard-link-card{cursor:pointer; transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;}
@@ -167,7 +172,12 @@
     #topbar .btn.sm{ padding:6px 9px; font-size:12px; }
   }
   @media (max-width:560px){
-    #topbar{padding:8px 10px; gap:6px; align-items:center;}
+    #topbar{padding:8px 10px; gap:6px; align-items:center; min-height:58px;}
+    #topbar > div:first-child{gap:5px;}
+    #topbar #backBtn{display:inline-flex !important;}
+    .visit-grid-3{grid-template-columns:1fr !important; gap:10px;}
+    .visit-grid-3 [style*="grid-column:span 2"]{grid-column:span 1 !important;}
+
     .sidebar-account-actions .btn{font-size:11px; padding:7px 6px;}
     #topbar > div:first-child{min-width:0; flex:1 1 45%;}
     #topbar > div:last-child{min-width:0; flex:1 1 45%; justify-content:flex-start; gap:5px; flex-wrap:wrap;}
@@ -288,6 +298,14 @@
   .status-dot{width:8px; height:8px; border-radius:50%; display:inline-block; margin-inline-end:5px;}
   .status-dot.active{background:var(--income);}
   .status-dot.inactive{background:var(--muted);}
+  .modal-backdrop{position:fixed; inset:0; z-index:2000; display:flex; align-items:center; justify-content:center; padding:16px; background:rgba(8,22,26,.58); overflow-y:auto;}
+  .modal-card{width:min(100%,430px); max-height:calc(100dvh - 32px); overflow-y:auto; padding:18px; border:1px solid var(--line); border-radius:14px; background:var(--card); color:var(--ink); box-shadow:0 18px 60px rgba(0,0,0,.28);}
+  .modal-card .section-title{color:var(--ink);}
+  @media (max-width:560px){
+    .modal-backdrop{padding:10px; align-items:flex-start; padding-top:12vh;}
+    .modal-card{width:100%; max-height:76dvh; padding:15px;}
+    .modal-card .form-grid{grid-template-columns:1fr !important;}
+  }
   .toast{
     position:fixed; bottom:22px; left:50%; transform:translateX(-50%);
     background:var(--navy-deep); color:#fff; padding:11px 22px; border-radius:10px;
@@ -1753,8 +1771,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.3";
-const APP_RELEASE_NOTES = "إصلاح الزيارات الفورية • تفاعل لوحة القيادة • تحسين الهاتف والوضع الليلي";
+const APP_VERSION = "v1.3.4";
+const APP_RELEASE_NOTES = "سؤال أمان للاستعادة • اتصال أعلى القائمة • تحسين عرض الهاتف وسهم العودة";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -1844,7 +1862,7 @@ const PAGE_TITLES = {
   patientFilesClinic: "ملفات مرضى العيادات", patientFilesDental: "ملفات مرضى الأسنان", outstandingBalancesClinic: "مرضى العيادات عليهم مستحقات", outstandingBalancesDental: "مرضى الأسنان عليهم مستحقات",
 };
 
-let state = { page: "dashboard", editId: null, editDocId: null, editUserId: null, editEmpId: null, dashboardPeriod: "today", dashboardDoctor: "", patientSearch: "", patientSearchOpen: false, selectedPatientKey: null, closingMonth: null, ledgerSearch: "", ledgerReceipt: null, incomeMonth: null, expenseMonth: null, ledgerMonth: null, payrollMonth: null, tablePage: {} };
+let state = { page: "dashboard", pageHistory: [], lastRoutedPage: null, skipPageHistory: false, editId: null, editDocId: null, editUserId: null, editEmpId: null, dashboardPeriod: "today", dashboardDoctor: "", patientSearch: "", patientSearchOpen: false, selectedPatientKey: null, closingMonth: null, ledgerSearch: "", ledgerReceipt: null, incomeMonth: null, expenseMonth: null, ledgerMonth: null, payrollMonth: null, tablePage: {} };
 const PAGE_KEY = APP_PREFIX + "current_page";
 function saveCurrentPage(page) {
   try { localStorage.setItem(PAGE_KEY, page); } catch (e) { /* ignore */ }
@@ -1874,6 +1892,9 @@ function renderSidebar() {
     <div class="brand">
       <div class="name">نظام إدارة مستشفى لجنة زكاة ميت على التخصصي</div>
     </div>
+    <div class="sidebar-connection sidebar-connection-top"><span>الاتصال</span><div class="sidebar-foot" id="storageIndicator">جارٍ التحقق...</div>
+      <button class="btn ghost sm theme-toggle" id="sidebarThemeToggleBtn" title="تبديل الوضع الليلي/النهاري" aria-label="تبديل الوضع الليلي/النهاري">${document.documentElement.getAttribute("data-theme") === "dark" ? "☀️" : "🌙"}</button>
+    </div>
     <nav>
       ${NAV.map(g => {
         const visibleItems = g.items.filter(navItemVisible);
@@ -1893,9 +1914,6 @@ function renderSidebar() {
       <div class="sidebar-account-actions">
         <button class="btn ghost sm" id="sidebarChangePasswordBtn" title="تغيير كلمة المرور">🔑 كلمة المرور</button>
         <button class="btn ghost sm" id="sidebarLogoutBtn">تسجيل الخروج</button>
-      </div>
-      <div class="sidebar-connection"><span>الاتصال</span><div class="sidebar-foot" id="storageIndicator">جارٍ التحقق...</div>
-        <button class="btn ghost sm theme-toggle" id="sidebarThemeToggleBtn" title="تبديل الوضع الليلي/النهاري" aria-label="تبديل الوضع الليلي/النهاري">${document.documentElement.getAttribute("data-theme") === "dark" ? "☀️" : "🌙"}</button>
       </div>
     </div>` : `<div class="sidebar-foot" id="storageIndicator">جارٍ التحقق...</div>`}
   `;
@@ -1990,8 +2008,9 @@ function renderTopbar() {
   const now = new Date();
   const dateStr = now.toLocaleDateString("ar-EG", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   el.innerHTML = `
-    <div style="display:flex; align-items:center; gap:10px;">
-      <button id="hamburgerBtn" title="القائمة" style="display:none; align-items:center; justify-content:center; width:38px; height:38px; border-radius:10px; border:1px solid var(--border,#ccc); background:var(--card); font-size:18px; cursor:pointer; flex-shrink:0;">☰</button>
+    <div style="display:flex; align-items:center; gap:7px; min-width:0;">
+      <button id="backBtn" title="عودة للصفحة السابقة" aria-label="عودة للصفحة السابقة" style="display:none; align-items:center; justify-content:center; width:38px; height:38px; border-radius:10px; border:1px solid var(--border,#ccc); background:var(--card); color:var(--ink); font-size:20px; cursor:pointer; flex-shrink:0;">‹</button>
+      <button id="hamburgerBtn" title="القائمة" aria-label="فتح القائمة" style="display:none; align-items:center; justify-content:center; width:38px; height:38px; border-radius:10px; border:1px solid var(--border,#ccc); background:var(--card); color:var(--ink); font-size:18px; cursor:pointer; flex-shrink:0;">☰</button>
       <div class="title">${PAGE_TITLES[state.page]}</div>
       <div id="topConnectionIndicator" class="top-connection-indicator" aria-live="polite">جارٍ التحقق من الاتصال...</div>
     </div>
@@ -2001,6 +2020,8 @@ function renderTopbar() {
   `;
   const hamburgerBtn = document.getElementById("hamburgerBtn");
   if (hamburgerBtn) hamburgerBtn.addEventListener("click", () => document.body.classList.toggle("sidebar-open"));
+  const backBtn = document.getElementById("backBtn");
+  if (backBtn) backBtn.addEventListener("click", navigateBack);
   renderStorageIndicator();
 }
 
@@ -2133,7 +2154,26 @@ function renderAccessDenied() {
       <div class="hint" style="margin-top:6px;">يرجى التواصل مع مدير النظام لمنحك الصلاحية المناسبة.</div>
     </div>`;
 }
+function navigateBack() {
+  if (document.body.classList.contains("sidebar-open")) {
+    document.body.classList.remove("sidebar-open");
+    return;
+  }
+  const previous = (state.pageHistory || []).pop();
+  const fallback = firstAccessiblePage();
+  state.page = previous && isPageAccessible(previous) ? previous : (state.page === fallback ? fallback : fallback);
+  state.skipPageHistory = true;
+  route();
+}
 function route() {
+  const nextPage = state.page;
+  if (!state.skipPageHistory && state.lastRoutedPage && state.lastRoutedPage !== nextPage) {
+    state.pageHistory = Array.isArray(state.pageHistory) ? state.pageHistory : [];
+    state.pageHistory.push(state.lastRoutedPage);
+    if (state.pageHistory.length > 20) state.pageHistory.shift();
+  }
+  state.skipPageHistory = false;
+  state.lastRoutedPage = nextPage;
   saveCurrentPage(state.page);
   renderSidebar();
   renderTopbar();
@@ -4444,7 +4484,16 @@ function renderSettings() {
       <p style="font-size:12px; color:var(--muted); margin-bottom:10px;">
         بعد التعيين، استخدم كلمة المرور الجديدة في شاشة الدخول المعتادة. هذا المسار لا يحذف أي بيانات من Firestore ولا يغيّر الصلاحيات.
       </p>
-      <a class="btn ghost" href="https://console.firebase.google.com/project/mitali-hospital/authentication/users" target="_blank" rel="noopener noreferrer">فتح مستخدمي Firebase Authentication</a>
+      <div style="border-top:1px solid var(--line); margin-top:12px; padding-top:12px;">
+        <div style="font-weight:800; font-size:13px; margin-bottom:6px;">إعداد سؤال الأمان لهذا الجهاز</div>
+        <p class="hint" style="line-height:1.8; margin-bottom:9px;">تُحفظ بصمة الإجابة فقط في هذا المتصفح، ولا تُحفظ الإجابة نفسها أو كلمة المرور. إذا تم مسح بيانات المتصفح، يجب إعداد السؤال مرة أخرى.</p>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr;">
+          <div class="field"><label>سؤال الأمان</label><input id="adminRecoveryQuestionInput" type="text" value="${esc(readAdminRecoveryConfig()?.question || DEFAULT_RECOVERY_QUESTION)}"></div>
+          <div class="field"><label>الإجابة السرية</label><input id="adminRecoveryAnswerInput" type="password" autocomplete="new-password" placeholder="اتركه فارغًا لعدم التغيير"></div>
+        </div>
+        <button class="btn" id="saveAdminRecoveryBtn" style="margin-top:10px;">حفظ سؤال الأمان</button>
+      </div>
+      <a class="btn ghost" style="margin-top:10px;" href="https://console.firebase.google.com/project/mitali-hospital/authentication/users" target="_blank" rel="noopener noreferrer">فتح مستخدمي Firebase Authentication</a>
     </div>` : ""}
     ${can("demoData","view") ? `
     <div class="card" style="margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
@@ -4715,6 +4764,19 @@ function renderSettings() {
       </div>` : "<div></div>"}
     </div>
   `;
+
+  const saveAdminRecoveryBtn = document.getElementById("saveAdminRecoveryBtn");
+  if (saveAdminRecoveryBtn) saveAdminRecoveryBtn.addEventListener("click", async () => {
+    if (!isAdminUser()) { showToast("⚠️ إعداد سؤال الأمان متاح للمدير فقط"); return; }
+    const question = document.getElementById("adminRecoveryQuestionInput")?.value || "";
+    const answer = document.getElementById("adminRecoveryAnswerInput")?.value || "";
+    if (!answer.trim()) { showToast("⚠️ أدخل إجابة سرية جديدة"); return; }
+    try {
+      await saveAdminRecoveryConfig(question, answer);
+      document.getElementById("adminRecoveryAnswerInput").value = "";
+      showToast("تم حفظ سؤال الأمان لهذا الجهاز");
+    } catch (e) { showToast("⚠️ السؤال لا يقل عن 6 أحرف والإجابة لا تقل عن 3 أحرف"); }
+  });
 
   const generateDemoBtn = document.getElementById("generateDemo");
   if (generateDemoBtn) generateDemoBtn.addEventListener("click", () => {
@@ -5692,6 +5754,82 @@ function renderAuditLogPage() {
 // تسجيل الدخول
 // ======================================================================
 const SESSION_KEY = APP_PREFIX + "session_user";
+const ADMIN_RECOVERY_KEY = APP_PREFIX + "admin_recovery_v1";
+const DEFAULT_RECOVERY_QUESTION = "ما الاسم السري الذي يحدده مدير النظام؟";
+async function digestRecoveryAnswer(value) {
+  const text = String(value || "").trim().normalize("NFKC");
+  if (window.crypto && crypto.subtle) {
+    const bytes = new TextEncoder().encode(text);
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+  // متصفح قديم: لا نسجل الإجابة نفسها؛ هذا بديل توافق محدود.
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
+  return String(hash >>> 0);
+}
+function readAdminRecoveryConfig() {
+  try {
+    const raw = localStorage.getItem(ADMIN_RECOVERY_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+async function saveAdminRecoveryConfig(question, answer) {
+  const normalizedQuestion = String(question || "").trim();
+  const normalizedAnswer = String(answer || "").trim();
+  if (normalizedQuestion.length < 6 || normalizedAnswer.length < 3) throw new Error("recovery-invalid");
+  const config = { username: "admin", question: normalizedQuestion, answerHash: await digestRecoveryAnswer(normalizedAnswer), updatedAt: nowISO() };
+  localStorage.setItem(ADMIN_RECOVERY_KEY, JSON.stringify(config));
+  return config;
+}
+function openForgotPasswordModal() {
+  const old = document.getElementById("forgotPasswordModal");
+  if (old) old.remove();
+  const config = readAdminRecoveryConfig();
+  const modal = document.createElement("div");
+  modal.id = "forgotPasswordModal";
+  modal.className = "modal-backdrop";
+  modal.innerHTML = `
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="forgotPasswordTitle" style="max-width:430px;">
+      <div class="section-title" id="forgotPasswordTitle">🔐 استعادة الدخول بسؤال الأمان</div>
+      <p class="hint" style="line-height:1.8; margin-bottom:12px;">أجب عن سؤال الأمان الذي أعدّه مدير النظام لهذا الجهاز. لا تُدخل كلمة المرور الحالية في هذا النموذج.</p>
+      <form id="forgotPasswordForm">
+        <div class="field"><label>اسم المستخدم</label><input id="recoveryUsernameInput" required autocomplete="username" placeholder="admin"></div>
+        <div class="field" style="margin-top:10px;"><label>${esc(config?.question || DEFAULT_RECOVERY_QUESTION)}</label><input id="recoveryAnswerInput" required type="password" autocomplete="off"></div>
+        <div id="recoveryMessage" class="hint" style="display:none; margin-top:10px; line-height:1.8;"></div>
+        <div style="display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; margin-top:14px;">
+          <button type="button" class="btn ghost" id="closeForgotPasswordBtn">إغلاق</button>
+          <button type="submit" class="btn">تحقق</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.querySelector("#closeForgotPasswordBtn")?.addEventListener("click", close);
+  modal.addEventListener("click", e => { if (e.target === modal) close(); });
+  modal.querySelector("#forgotPasswordForm")?.addEventListener("submit", async e => {
+    e.preventDefault();
+    const message = modal.querySelector("#recoveryMessage");
+    const username = modal.querySelector("#recoveryUsernameInput").value.trim().toLowerCase();
+    const answer = modal.querySelector("#recoveryAnswerInput").value;
+    if (!config) {
+      message.style.display = "block";
+      message.style.color = "var(--expense)";
+      message.textContent = "لم يُعدّ سؤال أمان على هذا الجهاز بعد. اطلب من مدير النظام ضبطه من صفحة الإعدادات، أو استخدم Firebase Console لإعادة تعيين كلمة المرور.";
+      return;
+    }
+    const answerHash = await digestRecoveryAnswer(answer);
+    if (username !== String(config.username || "admin").toLowerCase() || answerHash !== config.answerHash) {
+      message.style.display = "block";
+      message.style.color = "var(--expense)";
+      message.textContent = "بيانات سؤال الأمان غير صحيحة.";
+      return;
+    }
+    message.style.display = "block";
+    message.style.color = "var(--income)";
+    message.innerHTML = `تم التحقق من سؤال الأمان على هذا الجهاز. لأسباب أمنية لا يستطيع المتصفح تغيير كلمة مرور Firebase مباشرة؛ افتح لوحة Firebase Authentication واضبط كلمة مرور جديدة للحساب <strong>admin</strong>. <a href="https://console.firebase.google.com/project/mitali-hospital/authentication/users" target="_blank" rel="noopener noreferrer">فتح Firebase Authentication</a>`;
+  });
+}
 // حسابات نُقلت إلى Firebase Auth. تبقى بقية الحسابات على المسار القديم مؤقتاً
 // حتى يعيّن أصحابها كلمات مرور جديدة وتُنقل صلاحياتهم بأمان.
 const FIREBASE_MIGRATED_USERNAMES = new Set(["admin"]);
@@ -5757,6 +5895,7 @@ function renderLogin(errorMsg) {
           </div>
           ${errorMsg ? `<div style="color:var(--expense); font-size:12.5px; margin-bottom:12px; font-weight:700;">${esc(errorMsg)}</div>` : ""}
           <button type="submit" class="btn" style="width:100%; justify-content:center; padding:11px;">تسجيل الدخول</button>
+          <button type="button" id="forgotPasswordBtn" class="btn ghost" style="width:100%; justify-content:center; margin-top:9px; padding:9px;">نسيت كلمة المرور؟</button>
         </form>
       </div>
     </div>
@@ -5768,6 +5907,8 @@ function renderLogin(errorMsg) {
     passInput.type = shown ? "password" : "text";
     togglePassBtn.textContent = shown ? "إظهار" : "إخفاء";
   });
+  const forgotPasswordBtn = document.getElementById("forgotPasswordBtn");
+  if (forgotPasswordBtn) forgotPasswordBtn.addEventListener("click", openForgotPasswordModal);
   document.getElementById("loginForm").addEventListener("submit", async e => {
     e.preventDefault();
     const username = document.getElementById("loginUser").value.trim();
