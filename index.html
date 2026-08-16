@@ -164,6 +164,18 @@
   .top-connection-indicator .connection-dot{font-size:10px; width:8px; height:8px; border-radius:50%; background:currentColor; display:inline-block;}
   .release-card{display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:12px; padding:8px 11px; border:1px solid var(--line); border-inline-start:3px solid var(--teal); border-radius:10px; background:var(--card); color:var(--muted); font-size:11px; box-shadow:var(--shadow);}
   .release-card strong{color:var(--navy); font-size:12px; white-space:nowrap;}
+  .outstanding-cards-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; align-items:start;}
+  .outstanding-intro{margin-bottom:14px; border-inline-start:4px solid var(--teal);}
+  .outstanding-card{min-width:0; overflow:hidden; background:var(--card); border:1.5px solid var(--line); border-top:4px solid var(--outstanding-accent); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px;}
+  .outstanding-card-header{display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid color-mix(in srgb, var(--outstanding-accent) 25%, var(--line));}
+  .outstanding-card-title{display:flex; align-items:center; gap:7px; color:var(--outstanding-accent); font-weight:900; font-size:14px; line-height:1.45;}
+  .outstanding-card-icon{display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:9px; background:var(--outstanding-soft); flex-shrink:0;}
+  .outstanding-card .table-wrap{max-width:100%; overflow-x:auto;}
+  .outstanding-card table{min-width:620px;}
+  .outstanding-pagination{display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; padding-top:12px;}
+  .outstanding-pagination-actions{display:flex; align-items:center; gap:7px;}
+  .outstanding-pagination-actions strong{font-size:12px; color:var(--outstanding-accent);}
+  @media (max-width:880px){.outstanding-cards-grid{grid-template-columns:1fr;}}
   @media (max-width:880px){
     #topbar{ padding:10px 14px; flex-wrap:wrap; row-gap:8px; }
     #topbar .date{ display:none; }
@@ -208,6 +220,10 @@
     .grid-4, .grid-3, .grid-2{grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px;}
     .grid-4 > .card, .grid-3 > .card, .grid-2 > .card{min-width:0;}
     .grid-4 .label, .grid-3 .label, .grid-2 .label{overflow-wrap:anywhere; line-height:1.35;}
+    .outstanding-card{padding:11px;}
+    .outstanding-card-header{align-items:flex-start;}
+    .outstanding-card-title{font-size:13px;}
+    .outstanding-card .btn.sm{font-size:10px; padding:5px 7px;}
   }
 
   .card{
@@ -452,6 +468,9 @@ const PERMISSION_MODULES = [
     { key: "view", label: "عرض" },
   ]},
   { key: "outstandingBalancesDental", label: "مرضى الأسنان عليهم مستحقات", actions: [
+    { key: "view", label: "عرض" },
+  ]},
+  { key: "outstandingBalances", label: "مرضى عليهم مستحقات — كل الأقسام", actions: [
     { key: "view", label: "عرض" },
   ]},
   { key: "reports", label: "التقارير", actions: [
@@ -1783,8 +1802,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.9";
-const APP_RELEASE_NOTES = "إصلاح رسالة كلمة المرور • بطاقتان للهاتف • تنقل أسرع";
+const APP_VERSION = "v1.3.10";
+const APP_RELEASE_NOTES = "صفحة مستحقات موحدة • خمس بطاقات • ترقيم 20 اسمًا";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -1828,8 +1847,7 @@ const NAV = [
     { id: "payroll", label: "المرتبات والمستحقات", icon: "&#128188;", perm: ["payroll","view"] },
   ]},
   { group: "مرضى عليهم مستحقات", items: [
-    { id: "outstandingBalancesClinic", label: "مرضى العيادات عليهم مستحقات", icon: "&#9888;", perm: ["outstandingBalancesClinic","view"] },
-    { id: "outstandingBalancesDental", label: "مرضى الأسنان عليهم مستحقات", icon: "&#9888;", perm: ["outstandingBalancesDental","view"] },
+    { id: "outstandingBalances", label: "مرضى عليهم مستحقات — كل الأقسام", icon: "&#9888;", customCheck: "outstandingBalances" },
   ]},
   { group: "الإدارة", items: [
     { id: "reports", label: "التقارير", icon: "&#128202;", perm: ["reports","view"] },
@@ -1844,9 +1862,16 @@ function isAdminUser() {
   const account = getCurrentAccount();
   return !!account && account.role === "مدير" && account.status !== "موقوف";
 }
+function canOutstandingBalancesView() {
+  return can("outstandingBalances", "view") || can("outstandingBalancesClinic", "view") || can("outstandingBalancesDental", "view");
+}
+function normalizePageId(page) {
+  return page === "outstandingBalancesClinic" || page === "outstandingBalancesDental" ? "outstandingBalances" : page;
+}
 function navItemVisible(it) {
   if (it.customCheck === "settings") return hasAnySettingsAccess();
   if (it.customCheck === "admin") return isAdminUser();
+  if (it.customCheck === "outstandingBalances") return canOutstandingBalancesView();
   if (it.perm) return can(it.perm[0], it.perm[1]);
   return true;
 }
@@ -1871,7 +1896,7 @@ const PAGE_TITLES = {
   ledger: "دفتر الخزينة", payroll: "المرتبات والمستحقات",
   reports: "التقارير", settings: "الإعدادات",
   users: "إدارة المستخدمين", permissions: "إدارة الصلاحيات", auditlog: "سجل النشاط",
-  patientFilesClinic: "ملفات مرضى العيادات", patientFilesDental: "ملفات مرضى الأسنان", outstandingBalancesClinic: "مرضى العيادات عليهم مستحقات", outstandingBalancesDental: "مرضى الأسنان عليهم مستحقات",
+  patientFilesClinic: "ملفات مرضى العيادات", patientFilesDental: "ملفات مرضى الأسنان", outstandingBalances: "مرضى عليهم مستحقات — كل الأقسام", outstandingBalancesClinic: "مرضى عليهم مستحقات — كل الأقسام", outstandingBalancesDental: "مرضى عليهم مستحقات — كل الأقسام",
 };
 
 let state = { page: "dashboard", pageHistory: [], lastRoutedPage: null, skipPageHistory: false, editId: null, editDocId: null, editUserId: null, editEmpId: null, dashboardPeriod: "today", dashboardDoctor: "", patientSearch: "", patientSearchOpen: false, selectedPatientKey: null, closingMonth: null, ledgerSearch: "", ledgerReceipt: null, incomeMonth: null, expenseMonth: null, ledgerMonth: null, payrollMonth: null, tablePage: {} };
@@ -1883,7 +1908,9 @@ function getSavedPage() {
   try { return localStorage.getItem(PAGE_KEY); } catch (e) { return null; }
 }
 function isPageAccessible(page) {
+  page = normalizePageId(page);
   if (!page) return false;
+  if (page === "outstandingBalances") return canOutstandingBalancesView();
   if (page === "settings") return hasAnySettingsAccess();
   if (page === "auditlog" || page === "users" || page === "permissions") return isAdminUser();
   const guard = PAGE_GUARD[page];
@@ -2226,6 +2253,7 @@ function navigateBack() {
   route();
 }
 function route() {
+  state.page = normalizePageId(state.page);
   const nextPage = state.page;
   if (!state.skipPageHistory && state.lastRoutedPage && state.lastRoutedPage !== nextPage) {
     state.pageHistory = Array.isArray(state.pageHistory) ? state.pageHistory : [];
@@ -2249,13 +2277,15 @@ function route() {
     dataConflicts: renderDataConflicts,
     patientFilesClinic: () => renderPatientFilesPage("عيادات"),
     patientFilesDental: () => renderPatientFilesPage("أسنان"),
-    outstandingBalancesClinic: () => renderOutstandingBalances("عيادات"),
-    outstandingBalancesDental: () => renderOutstandingBalances("أسنان"),
+    outstandingBalances: renderOutstandingBalances,
+    outstandingBalancesClinic: renderOutstandingBalances,
+    outstandingBalancesDental: renderOutstandingBalances,
   };
   c.innerHTML = "";
   const guard = PAGE_GUARD[state.page];
   if (guard && !can(guard[0], guard[1])) { renderAccessDenied(); return; }
   if (state.page === "settings" && !hasAnySettingsAccess()) { renderAccessDenied(); return; }
+  if (state.page === "outstandingBalances" && !canOutstandingBalancesView()) { renderAccessDenied(); return; }
   if (state.page === "auditlog" && !isAdminUser()) { renderAccessDenied(); return; }
   if ((state.page === "users" || state.page === "permissions") && !isAdminUser()) { renderAccessDenied(); return; }
   if (state.page === "dataConflicts" && !can("settings","edit")) { renderAccessDenied(); return; }
@@ -3516,66 +3546,98 @@ function renderPatientFilesPage(kind) {
 }
 console.log("Patient files page ready.");
 // ======================================================================
-// تقرير: مرضى عليهم مبالغ متبقية
+// تقرير: مرضى عليهم مبالغ متبقية — كل الأقسام فى صفحة واحدة
 // ======================================================================
-function renderOutstandingBalances(kind) {
-  const c = document.getElementById("content");
-  // إصلاح: الشاشة كانت موحّدة (عيادات + أسنان معًا) بلا فصل - الآن تُفلتَر
-  // الزيارات على القسم المطلوب فقط قبل التجميع، فالمبلغ المتبقي المعروض يعكس
-  // مستحقات هذا القسم تحديدًا لكل مريض (وليس إجمالى مستحقاته فى القسمين معًا).
-  const kindVisits = allPatientVisits().filter(v => v.kind === kind);
-  const debtors = groupPatients(kindVisits)
-    .filter(g => g.totalDue > 0.01)
-    .sort((a, b) => b.totalDue - a.totalDue);
+const OUTSTANDING_PAGE_SIZE = 20;
+const OUTSTANDING_SECTION_META = {
+  clinic: { kind: "عيادات", label: "مرضى العيادات عليهم مستحقات", icon: "⚠", permission: "clinic", legacyPermission: "outstandingBalancesClinic", listKey: "visitsClinic", patientPage: "patientFilesClinic", patientStateKey: "selectedPatientKeyClinic", accent: "#0F6674", soft: "rgba(15,102,116,.12)", csv: "مرضى_العيادات_عليهم_مستحقات.csv" },
+  dental: { kind: "أسنان", label: "مرضى الأسنان عليهم مستحقات", icon: "⚠", permission: "dental", legacyPermission: "outstandingBalancesDental", listKey: "visitsDental", patientPage: "patientFilesDental", patientStateKey: "selectedPatientKeyDental", accent: "#6A3FA0", soft: "rgba(106,63,160,.12)", csv: "مرضى_الأسنان_عليهم_مستحقات.csv" },
+  operations: { kind: "عمليات", label: "يومية العمليات — مستحقات المرضى", icon: "⚙", permission: "operations", listKey: "visitsOperations", servicePage: "operations", accent: "#B5482F", soft: "rgba(181,72,47,.12)", csv: "مرضى_العمليات_عليهم_مستحقات.csv" },
+  labs: { kind: "تحاليل", label: "يومية التحاليل — مستحقات المرضى", icon: "🧪", permission: "labs", listKey: "visitsLabs", servicePage: "labs", accent: "#2A6DA6", soft: "rgba(42,109,166,.12)", csv: "مرضى_التحاليل_عليهم_مستحقات.csv" },
+  radiology: { kind: "أشعة", label: "يومية الأشعة — مستحقات المرضى", icon: "🧭", permission: "radiology", listKey: "visitsRadiology", servicePage: "radiology", accent: "#C79A3E", soft: "rgba(199,154,62,.14)", csv: "مرضى_الأشعة_عليهم_مستحقات.csv" },
+};
+function outstandingSectionsForUser() {
+  return Object.entries(OUTSTANDING_SECTION_META).filter(([, meta]) => can(meta.permission, "view") || (meta.legacyPermission && can(meta.legacyPermission, "view")));
+}
+function outstandingPageInfo(list, pageKey) {
+  const totalPages = Math.max(1, Math.ceil(list.length / OUTSTANDING_PAGE_SIZE));
+  let current = Number(state.tablePage[pageKey]) || 1;
+  current = Math.min(Math.max(current, 1), totalPages);
+  state.tablePage[pageKey] = current;
+  const start = (current - 1) * OUTSTANDING_PAGE_SIZE;
+  return { pageItems: list.slice(start, start + OUTSTANDING_PAGE_SIZE), current, totalPages, total: list.length, start: list.length ? start + 1 : 0, end: Math.min(start + OUTSTANDING_PAGE_SIZE, list.length) };
+}
+function outstandingPaginationHTML(pageKey, info) {
+  if (info.total <= OUTSTANDING_PAGE_SIZE) return "";
+  return `<div class="outstanding-pagination">
+    <span class="hint">يعرض ${info.start}-${info.end} من ${info.total}</span>
+    <div class="outstanding-pagination-actions">
+      <button type="button" class="btn ghost sm" data-outstanding-page="${pageKey}" data-page-to="${info.current - 1}" ${info.current === 1 ? "disabled" : ""}>السابق</button>
+      <strong>صفحة ${info.current} من ${info.totalPages}</strong>
+      <button type="button" class="btn ghost sm" data-outstanding-page="${pageKey}" data-page-to="${info.current + 1}" ${info.current === info.totalPages ? "disabled" : ""}>التالي</button>
+    </div>
+  </div>`;
+}
+function outstandingVisits(meta) {
+  return (DB[meta.listKey] || []).map(v => ({ ...v, kind: meta.kind, kindKey: meta.listKey }));
+}
+function splitOutstandingTarget(value) {
+  const raw = String(value || "");
+  const separator = raw.indexOf(":");
+  return separator < 0 ? [raw, ""] : [raw.slice(0, separator), raw.slice(separator + 1)];
+}
+function renderOutstandingCard(meta, debtors, info) {
   const totalDebt = debtors.reduce((s, g) => s + g.totalDue, 0);
-  const pageLabel = kind === "أسنان" ? "مرضى الأسنان عليهم مستحقات" : "مرضى العيادات عليهم مستحقات";
-  const csvName = kind === "أسنان" ? "مرضى_الأسنان_عليهم_مستحقات.csv" : "مرضى_العيادات_عليهم_مستحقات.csv";
-
-  c.innerHTML = `
-    <div class="grid grid-2" style="margin-bottom:16px;">
-      <div class="card kpi"><div class="label">إجمالي المستحقات غير المحصَّلة</div><div class="value" style="color:var(--expense);">${fmt(totalDebt)} ج.م</div></div>
-      <div class="card kpi"><div class="label">عدد المرضى المدينين</div><div class="value">${fmtInt(debtors.length)}</div></div>
+  const pageKey = `outstanding_${meta.listKey}`;
+  return `<section class="outstanding-card" style="--outstanding-accent:${meta.accent}; --outstanding-soft:${meta.soft};">
+    <div class="outstanding-card-header">
+      <div><div class="outstanding-card-title"><span class="outstanding-card-icon">${meta.icon}</span>${meta.label}</div><div class="hint">${debtors.length} مريضًا • إجمالي المستحقات ${fmt(totalDebt)} ج.م</div></div>
+      <button class="btn ghost sm no-print" data-export-outstanding="${meta.listKey}">⬇️ تصدير</button>
     </div>
-    <div class="card">
-      <div class="section-title" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
-        <span>${pageLabel} <span class="hint">${debtors.length}</span></span>
-        <button class="btn ghost sm no-print" id="exportDebtorsCsv">⬇️ تصدير Excel</button>
-      </div>
-      <div class="table-wrap"><table>
-        <thead><tr><th>المريض</th><th>الهاتف</th><th>آخر زيارة</th><th>عدد الزيارات</th><th>المبلغ المتبقي</th><th></th></tr></thead>
-        <tbody>
-          ${debtors.length === 0 ? `<tr class="empty-row"><td colspan="6">لا يوجد مرضى عليهم مستحقات حاليًا 🎉</td></tr>` : debtors.map(g => `
-            <tr>
-              <td style="font-weight:700;">${esc(g.name || "-")}</td>
-              <td>${esc(g.phone || "-")} ${waIconButtonHTML(g.phone, "wa-debtor", g.key)}</td>
-              <td>${g.lastVisit?.date || "-"}</td>
-              <td>${g.visits.length}</td>
-              <td style="font-weight:700; color:var(--expense);">${fmt(g.totalDue)}</td>
-              <td><button class="btn sm ghost" data-openpatient="${esc(g.key)}">عرض الملف</button></td>
-            </tr>`).join("")}
-        </tbody>
-      </table></div>
-    </div>
-  `;
-  c.querySelectorAll("[data-openpatient]").forEach(b => b.addEventListener("click", () => {
-    const targetPage = kind === "أسنان" ? "patientFilesDental" : "patientFilesClinic";
-    const nsKey = kind === "أسنان" ? "selectedPatientKeyDental" : "selectedPatientKeyClinic";
-    state.page = targetPage; state[nsKey] = b.dataset.openpatient; route();
+    <div class="table-wrap"><table>
+      <thead><tr><th>المريض</th><th>الهاتف</th><th>آخر زيارة</th><th>الزيارات</th><th>المتبقي</th><th></th></tr></thead>
+      <tbody>${debtors.length === 0 ? `<tr class="empty-row"><td colspan="6">لا يوجد مرضى عليهم مستحقات حاليًا 🎉</td></tr>` : info.pageItems.map(g => `<tr>
+        <td style="font-weight:700;">${esc(g.name || "-")}</td>
+        <td>${esc(g.phone || "-")} ${waIconButtonHTML(g.phone, "wa-outstanding", `${meta.listKey}:${g.key}`)}</td>
+        <td>${g.lastVisit?.date || "-"}</td><td>${g.visits.length}</td>
+        <td style="font-weight:700; color:var(--outstanding-accent);">${fmt(g.totalDue)}</td>
+        <td>${meta.patientPage ? `<button class="btn sm ghost" data-open-outstanding="${meta.listKey}:${esc(g.key)}">عرض الملف</button>` : `<button class="btn sm ghost" data-open-outstanding-service="${meta.servicePage}">فتح اليومية</button>`}</td>
+      </tr>`).join("")}</tbody>
+    </table></div>
+    ${outstandingPaginationHTML(pageKey, info)}
+  </section>`;
+}
+function renderOutstandingBalances() {
+  const c = document.getElementById("content");
+  const sections = outstandingSectionsForUser();
+  c.innerHTML = `<div class="outstanding-intro card"><div class="section-title">⚠ مرضى عليهم مستحقات</div><div class="hint">صفحة موحدة لمتابعة المستحقات فى جميع الأقسام. كل بطاقة تعرض 20 اسمًا فقط مع ترقيم مستقل.</div></div><div class="outstanding-cards-grid">${sections.map(([key, meta]) => {
+    const debtors = groupPatients(outstandingVisits(meta)).filter(g => g.totalDue > 0.01).sort((a, b) => b.totalDue - a.totalDue);
+    return renderOutstandingCard(meta, debtors, outstandingPageInfo(debtors, `outstanding_${meta.listKey}`));
+  }).join("")}</div>`;
+  c.querySelectorAll("[data-outstanding-page]").forEach(button => button.addEventListener("click", () => {
+    state.tablePage[button.dataset.outstandingPage] = Number(button.dataset.pageTo) || 1;
+    route();
   }));
-  c.querySelectorAll("[data-wa-debtor]").forEach(b => b.addEventListener("click", () => {
-    const g2 = debtors.find(x => x.key === b.dataset.waDebtor);
-    if (!g2) return;
-    openWhatsAppChat(g2.phone, {
-      patientName: g2.name, orderNo: "",
-      paid: g2.totalPaid, remaining: g2.totalDue,
-    });
+  c.querySelectorAll("[data-open-outstanding]").forEach(button => button.addEventListener("click", () => {
+    const [listKey, patientKey] = splitOutstandingTarget(button.dataset.openOutstanding);
+    const meta = Object.values(OUTSTANDING_SECTION_META).find(x => x.listKey === listKey);
+    if (!meta) return;
+    state.page = meta.patientPage; state[meta.patientStateKey] = patientKey; route();
   }));
-  const exportDebtorsBtn = document.getElementById("exportDebtorsCsv");
-  if (exportDebtorsBtn) exportDebtorsBtn.addEventListener("click", () => {
-    exportTableToCSV(csvName,
-      ["المريض","الهاتف","آخر زيارة","عدد الزيارات","المبلغ المتبقي"],
-      debtors.map(g => [g.name, g.phone, g.lastVisit?.date || "", g.visits.length, g.totalDue]));
-  });
+  c.querySelectorAll("[data-open-outstanding-service]").forEach(button => button.addEventListener("click", () => { state.page = button.dataset.openOutstandingService; route(); }));
+  c.querySelectorAll("[data-wa-outstanding]").forEach(button => button.addEventListener("click", () => {
+    const [listKey, patientKey] = splitOutstandingTarget(button.dataset.waOutstanding);
+    const meta = Object.values(OUTSTANDING_SECTION_META).find(x => x.listKey === listKey);
+    if (!meta) return;
+    const debtor = groupPatients(outstandingVisits(meta)).find(g => g.key === patientKey);
+    if (debtor) openWhatsAppChat(debtor.phone, { patientName: debtor.name, orderNo: "", paid: debtor.totalPaid, remaining: debtor.totalDue });
+  }));
+  c.querySelectorAll("[data-export-outstanding]").forEach(button => button.addEventListener("click", () => {
+    const meta = Object.values(OUTSTANDING_SECTION_META).find(x => x.listKey === button.dataset.exportOutstanding);
+    if (!meta) return;
+    const debtors = groupPatients(outstandingVisits(meta)).filter(g => g.totalDue > 0.01).sort((a, b) => b.totalDue - a.totalDue);
+    exportTableToCSV(meta.csv, ["المريض","الهاتف","آخر زيارة","عدد الزيارات","المبلغ المتبقي"], debtors.map(g => [g.name, g.phone, g.lastVisit?.date || "", g.visits.length, g.totalDue]));
+  }));
 }
 // ======================================================================
 // صفحة الوارد / المنصرف
