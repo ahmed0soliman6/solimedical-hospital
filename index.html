@@ -474,7 +474,13 @@ const PERMISSION_MODULES = [
   { key: "outstandingBalancesDental", label: "مرضى الأسنان عليهم مستحقات", actions: [
     { key: "view", label: "عرض" },
   ]},
-  { key: "outstandingBalances", label: "مرضى عليهم مستحقات — كل الأقسام", actions: [
+  { key: "outstandingBalancesOperations", label: "مستحقات العمليات", actions: [
+    { key: "view", label: "عرض" },
+  ]},
+  { key: "outstandingBalancesLabs", label: "مستحقات التحاليل", actions: [
+    { key: "view", label: "عرض" },
+  ]},
+  { key: "outstandingBalancesRadiology", label: "مستحقات الأشعة", actions: [
     { key: "view", label: "عرض" },
   ]},
   { key: "reports", label: "التقارير", actions: [
@@ -1476,7 +1482,12 @@ function incomeDoctorShare(rec) {
   if (mode === "fixed_visit" || mode === "fixed_daily") return { doc: 0, clinic: amt };
   return { doc: amt * (d.docPct || 0), clinic: amt * (d.clinicPct || 0) };
 }
-function visitRemaining(v) { return (Number(v.total) || 0) - (Number(v.paid) || 0); }
+function visitRemaining(v) {
+  const legacyAmount = Number(v.amount) || 0;
+  const total = v.total !== undefined && v.total !== null ? Number(v.total) || 0 : legacyAmount;
+  const paid = v.paid !== undefined && v.paid !== null ? Number(v.paid) || 0 : (v.amount !== undefined ? legacyAmount : 0);
+  return total - paid;
+}
 
 function allVisits() {
   return [
@@ -1806,8 +1817,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.11";
-const APP_RELEASE_NOTES = "إشعار عدم الاتصال • إصلاح الصلاحيات • استرداد المدير";
+const APP_VERSION = "v1.3.12";
+const APP_RELEASE_NOTES = "صفحات مستحقات منفصلة • صلاحيات الأقسام • حساب مستحقات الأشعة";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -1851,7 +1862,13 @@ const NAV = [
     { id: "payroll", label: "المرتبات والمستحقات", icon: "&#128188;", perm: ["payroll","view"] },
   ]},
   { group: "مرضى عليهم مستحقات", items: [
-    { id: "outstandingBalances", label: "مرضى عليهم مستحقات — كل الأقسام", icon: "&#9888;", customCheck: "outstandingBalances" },
+    { id: "outstandingBalancesMenu", label: "المستحقات حسب القسم", icon: "&#9888;", dropdown: [
+      { id: "outstandingBalancesClinic", label: "مستحقات العيادات", perm: ["outstandingBalancesClinic", "view"] },
+      { id: "outstandingBalancesDental", label: "مستحقات الأسنان", perm: ["outstandingBalancesDental", "view"] },
+      { id: "outstandingBalancesOperations", label: "مستحقات العمليات", perm: ["outstandingBalancesOperations", "view"] },
+      { id: "outstandingBalancesLabs", label: "مستحقات التحاليل", perm: ["outstandingBalancesLabs", "view"] },
+      { id: "outstandingBalancesRadiology", label: "مستحقات الأشعة", perm: ["outstandingBalancesRadiology", "view"] },
+    ]},
   ]},
   { group: "الإدارة", items: [
     { id: "reports", label: "التقارير", icon: "&#128202;", perm: ["reports","view"] },
@@ -1866,16 +1883,35 @@ function isAdminUser() {
   const account = getCurrentAccount();
   return !!account && account.role === "مدير" && account.status !== "موقوف";
 }
+const OUTSTANDING_PAGE_SECTION = {
+  outstandingBalancesClinic: "clinic",
+  outstandingBalancesDental: "dental",
+  outstandingBalancesOperations: "operations",
+  outstandingBalancesLabs: "labs",
+  outstandingBalancesRadiology: "radiology",
+};
+function canOutstandingSection(sectionKey) {
+  const meta = OUTSTANDING_SECTION_META && OUTSTANDING_SECTION_META[sectionKey];
+  if (isAdminUser()) return !!meta;
+  return !!meta && (can(meta.permission, "view") || (meta.legacyPermission && can(meta.legacyPermission, "view")));
+}
+function canOutstandingPage(pageId) {
+  return pageId === "outstandingBalances" ? false : canOutstandingSection(OUTSTANDING_PAGE_SECTION[pageId]);
+}
 function canOutstandingBalancesView() {
-  return can("outstandingBalances", "view") || can("outstandingBalancesClinic", "view") || can("outstandingBalancesDental", "view");
+  return Object.keys(OUTSTANDING_PAGE_SECTION).some(canOutstandingPage);
+}
+function firstAccessibleOutstandingPage() {
+  return Object.keys(OUTSTANDING_PAGE_SECTION).find(canOutstandingPage) || "outstandingBalancesClinic";
 }
 function normalizePageId(page) {
-  return page === "outstandingBalancesClinic" || page === "outstandingBalancesDental" ? "outstandingBalances" : page;
+  return page === "outstandingBalances" || page === "outstandingBalancesMenu" ? firstAccessibleOutstandingPage() : page;
 }
 function navItemVisible(it) {
   if (it.customCheck === "settings") return hasAnySettingsAccess();
   if (it.customCheck === "admin") return isAdminUser();
   if (it.customCheck === "outstandingBalances") return canOutstandingBalancesView();
+  if (it.dropdown) return it.dropdown.some(option => canOutstandingPage(option.id));
   if (it.perm) return can(it.perm[0], it.perm[1]);
   return true;
 }
@@ -1900,7 +1936,10 @@ const PAGE_TITLES = {
   ledger: "دفتر الخزينة", payroll: "المرتبات والمستحقات",
   reports: "التقارير", settings: "الإعدادات",
   users: "إدارة المستخدمين", permissions: "إدارة الصلاحيات", auditlog: "سجل النشاط",
-  patientFilesClinic: "ملفات مرضى العيادات", patientFilesDental: "ملفات مرضى الأسنان", outstandingBalances: "مرضى عليهم مستحقات — كل الأقسام", outstandingBalancesClinic: "مرضى عليهم مستحقات — كل الأقسام", outstandingBalancesDental: "مرضى عليهم مستحقات — كل الأقسام",
+  patientFilesClinic: "ملفات مرضى العيادات", patientFilesDental: "ملفات مرضى الأسنان",
+  outstandingBalances: "مرضى عليهم مستحقات — كل الأقسام",
+  outstandingBalancesClinic: "مستحقات العيادات", outstandingBalancesDental: "مستحقات الأسنان",
+  outstandingBalancesOperations: "مستحقات العمليات", outstandingBalancesLabs: "مستحقات التحاليل", outstandingBalancesRadiology: "مستحقات الأشعة",
 };
 
 let state = { page: "dashboard", pageHistory: [], lastRoutedPage: null, skipPageHistory: false, editId: null, editDocId: null, editUserId: null, editEmpId: null, dashboardPeriod: "today", dashboardDoctor: "", patientSearch: "", patientSearchOpen: false, selectedPatientKey: null, closingMonth: null, ledgerSearch: "", ledgerReceipt: null, incomeMonth: null, expenseMonth: null, ledgerMonth: null, payrollMonth: null, tablePage: {} };
@@ -1941,7 +1980,16 @@ function renderSidebar() {
         if (!visibleItems.length) return "";
         return `
         <div class="nav-group-label">${g.group}</div>
-        ${visibleItems.map(it => `
+        ${visibleItems.map(it => it.dropdown ? (() => {
+          const options = it.dropdown.filter(option => !option.perm || can(option.perm[0], option.perm[1]));
+          if (!options.length) return "";
+          return `<label class="nav-item nav-dropdown-item" style="display:flex; align-items:center; gap:7px; cursor:default;">
+            <span class="ic">${it.icon}</span><span style="white-space:nowrap;">${it.label}</span>
+            <select data-nav-outstanding-select style="margin-inline-start:auto; max-width:150px; min-width:120px; padding:5px 7px; border-radius:7px; border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.08); color:inherit; font-size:11px;">
+              ${options.map(option => `<option value="${option.id}" ${state.page === option.id ? "selected" : ""}>${option.label}</option>`).join("")}
+            </select>
+          </label>`;
+        })() : `
           <div class="nav-item ${state.page === it.id ? "active" : ""}" data-page="${it.id}">
             <span class="ic">${it.icon}</span><span>${it.label}</span>
           </div>`).join("")}
@@ -1957,9 +2005,12 @@ function renderSidebar() {
       </div>
     </div>` : ""}
   `;
-  el.querySelectorAll(".nav-item").forEach(n => {
+  el.querySelectorAll(".nav-item[data-page]").forEach(n => {
     n.addEventListener("click", () => { state.page = n.dataset.page; state.editId = null; state.editDocId = null; state.editEmpId = null; state.showAnnualReport = false; document.body.classList.remove("sidebar-open"); route(); });
   });
+  el.querySelectorAll("[data-nav-outstanding-select]").forEach(select => select.addEventListener("change", () => {
+    state.page = select.value; state.tablePage[`outstanding_${select.value}`] = 1; state.skipPageHistory = false; document.body.classList.remove("sidebar-open"); route();
+  }));
   const newNav = el.querySelector("nav");
   if (newNav) newNav.scrollTop = prevScroll;
   const sidebarChangePasswordBtn = document.getElementById("sidebarChangePasswordBtn");
@@ -2247,6 +2298,9 @@ const PAGE_GUARD = {
   patientFilesDental: ["patientFilesDental","view"],
   outstandingBalancesClinic: ["outstandingBalancesClinic","view"],
   outstandingBalancesDental: ["outstandingBalancesDental","view"],
+  outstandingBalancesOperations: ["outstandingBalancesOperations","view"],
+  outstandingBalancesLabs: ["outstandingBalancesLabs","view"],
+  outstandingBalancesRadiology: ["outstandingBalancesRadiology","view"],
   reports: ["reports","view"],
 };
 function renderAccessDenied() {
@@ -2293,9 +2347,12 @@ function route() {
     dataConflicts: renderDataConflicts,
     patientFilesClinic: () => renderPatientFilesPage("عيادات"),
     patientFilesDental: () => renderPatientFilesPage("أسنان"),
-    outstandingBalances: renderOutstandingBalances,
-    outstandingBalancesClinic: renderOutstandingBalances,
-    outstandingBalancesDental: renderOutstandingBalances,
+    outstandingBalances: () => renderOutstandingBalances(firstAccessibleOutstandingPage()),
+    outstandingBalancesClinic: () => renderOutstandingBalances("clinic"),
+    outstandingBalancesDental: () => renderOutstandingBalances("dental"),
+    outstandingBalancesOperations: () => renderOutstandingBalances("operations"),
+    outstandingBalancesLabs: () => renderOutstandingBalances("labs"),
+    outstandingBalancesRadiology: () => renderOutstandingBalances("radiology"),
   };
   c.innerHTML = "";
   const guard = PAGE_GUARD[state.page];
@@ -2961,13 +3018,15 @@ function renderVisitsPage(kind) {
 const SERVICE_KIND_CONFIG = {
   operations: { listKey: "visitsOperations", label: "العمليات", serviceLabel: "اسم العملية", addLabel: "تسجيل عملية جديدة", waSection: "قسم العمليات", addAction: "إضافة عملية", editAction: "تعديل عملية", deleteAction: "حذف عملية" },
   labs:       { listKey: "visitsLabs",       label: "التحاليل", serviceLabel: "نوع التحليل", addLabel: "تسجيل تحليل جديد", waSection: "قسم التحاليل", addAction: "إضافة تحليل", editAction: "تعديل تحليل", deleteAction: "حذف تحليل", serviceOptionsKey: "labTestTypes" },
-  radiology:  { listKey: "visitsRadiology",  label: "الأشعة",   serviceLabel: "نوع الأشعة",   addLabel: "تسجيل أشعة جديدة",  waSection: "قسم الأشعة",   addAction: "إضافة أشعة",   editAction: "تعديل أشعة",   deleteAction: "حذف أشعة",   serviceOptionsKey: "xrayTypes", simple: true },
+  radiology:  { listKey: "visitsRadiology",  label: "الأشعة",   serviceLabel: "نوع الأشعة",   addLabel: "تسجيل أشعة جديدة",  waSection: "قسم الأشعة",   addAction: "إضافة أشعة",   editAction: "تعديل أشعة",   deleteAction: "حذف أشعة",   serviceOptionsKey: "xrayTypes" },
 };
 function renderServiceVisitsPage(kind) {
   const cfg = SERVICE_KIND_CONFIG[kind];
   const list = DB[cfg.listKey];
   const c = document.getElementById("content");
   const editing = state.editId ? list.find(v => v.id === state.editId) : null;
+  const editingTotal = editing ? (editing.total ?? editing.amount ?? "") : "";
+  const editingPaid = editing ? (editing.paid ?? editing.amount ?? "") : "";
   const canAdd = can(kind, "add"), canEdit = can(kind, "edit"), canDelete = can(kind, "delete");
   const typeOptions = cfg.serviceOptionsKey ? (DB.settings[cfg.serviceOptionsKey] || []) : null;
 
@@ -3001,21 +3060,15 @@ function renderServiceVisitsPage(kind) {
             })()
                         : `<input type="text" name="serviceName" required value="${esc(editing?.serviceName)}">`}
         </div>
-        ${cfg.simple ? `
-        <div class="field"><label>المبلغ (ج.م)</label><input type="text" inputmode="decimal" step="0.01" name="amount" required value="${editing?.total ?? ""}"></div>
-        <div class="field" style="align-self:end; display:flex; gap:8px;">
-          <button type="submit" class="btn">${editing ? "حفظ التعديل" : "تسجيل"}</button>
-          ${editing ? `<button type="button" class="btn ghost" id="cancelEdit">إلغاء</button>` : ""}
-        </div>` : `
-        <div class="field"><label>إجمالي الحساب (ج.م)</label><input type="text" inputmode="decimal" step="0.01" name="total" required value="${editing?.total ?? ""}"></div>
-        <div class="field"><label>المدفوع</label><input type="text" inputmode="decimal" step="0.01" name="paid" required value="${editing?.paid ?? ""}"></div>
+        <div class="field"><label>إجمالي الحساب (ج.م)</label><input type="text" inputmode="decimal" step="0.01" name="total" required value="${editingTotal}"></div>
+        <div class="field"><label>المدفوع</label><input type="text" inputmode="decimal" step="0.01" name="paid" required value="${editingPaid}"></div>
         <div class="field"><label>حالة الدفع</label><select name="status">${option(LISTS.payStatus, editing?.status)}</select></div>
         <div class="field"><label>ملاحظات</label><input type="text" name="notes" value="${esc(editing?.notes)}"></div>
         <div class="field"><label>موعد المتابعة (اختياري)</label><input type="date" name="nextVisitDate" value="${editing?.nextVisitDate || ""}"></div>
         <div class="field" style="align-self:end; display:flex; gap:8px;">
           <button type="submit" class="btn">${editing ? "حفظ التعديل" : "تسجيل"}</button>
           ${editing ? `<button type="button" class="btn ghost" id="cancelEdit">إلغاء</button>` : ""}
-        </div>`}
+        </div>
       </form>
     </div>` : ""}
 
@@ -3110,16 +3163,16 @@ function renderServiceVisitsPage(kind) {
     }
     async function runServiceSave() {
       const fd = new FormData(e.target);
-      const total = cfg.simple ? (Number(fd.get("amount")) || 0) : (Number(fd.get("total")) || 0);
-      const paid = cfg.simple ? total : (Number(fd.get("paid")) || 0);
+      const total = Number(fd.get("total")) || 0;
+      const paid = Number(fd.get("paid")) || 0;
       const serviceNameVal = cfg.serviceOptionsKey ? fd.getAll("serviceName").filter(Boolean).join("، ") : fd.get("serviceName");
       const rec = {
         id: editing ? editing.id : uid(),
         date: fd.get("date"), fileNo: fd.get("fileNo"), patient: fd.get("patient"), phone: fd.get("phone"),
         serviceName: serviceNameVal,
         total, paid, paymentMethod: "نقدي",
-        status: cfg.simple ? "تم" : fd.get("status"), notes: cfg.simple ? "" : fd.get("notes"),
-        nextVisitDate: cfg.simple ? null : (fd.get("nextVisitDate") || null),
+        status: fd.get("status"), notes: fd.get("notes"),
+        nextVisitDate: fd.get("nextVisitDate") || null,
         linkedIncomeId: editing ? (editing.linkedIncomeId || null) : null,
         createdAt: editing ? (editing.createdAt || null) : nowISO(),
       };
@@ -3568,12 +3621,12 @@ const OUTSTANDING_PAGE_SIZE = 20;
 const OUTSTANDING_SECTION_META = {
   clinic: { kind: "عيادات", label: "مرضى العيادات عليهم مستحقات", icon: "⚠", permission: "clinic", legacyPermission: "outstandingBalancesClinic", listKey: "visitsClinic", patientPage: "patientFilesClinic", patientStateKey: "selectedPatientKeyClinic", accent: "#0F6674", soft: "rgba(15,102,116,.12)", csv: "مرضى_العيادات_عليهم_مستحقات.csv" },
   dental: { kind: "أسنان", label: "مرضى الأسنان عليهم مستحقات", icon: "⚠", permission: "dental", legacyPermission: "outstandingBalancesDental", listKey: "visitsDental", patientPage: "patientFilesDental", patientStateKey: "selectedPatientKeyDental", accent: "#6A3FA0", soft: "rgba(106,63,160,.12)", csv: "مرضى_الأسنان_عليهم_مستحقات.csv" },
-  operations: { kind: "عمليات", label: "يومية العمليات — مستحقات المرضى", icon: "⚙", permission: "operations", listKey: "visitsOperations", servicePage: "operations", accent: "#B5482F", soft: "rgba(181,72,47,.12)", csv: "مرضى_العمليات_عليهم_مستحقات.csv" },
-  labs: { kind: "تحاليل", label: "يومية التحاليل — مستحقات المرضى", icon: "🧪", permission: "labs", listKey: "visitsLabs", servicePage: "labs", accent: "#2A6DA6", soft: "rgba(42,109,166,.12)", csv: "مرضى_التحاليل_عليهم_مستحقات.csv" },
-  radiology: { kind: "أشعة", label: "يومية الأشعة — مستحقات المرضى", icon: "🧭", permission: "radiology", listKey: "visitsRadiology", servicePage: "radiology", accent: "#C79A3E", soft: "rgba(199,154,62,.14)", csv: "مرضى_الأشعة_عليهم_مستحقات.csv" },
+  operations: { kind: "عمليات", label: "يومية العمليات — مستحقات المرضى", icon: "⚙", permission: "operations", legacyPermission: "outstandingBalancesOperations", listKey: "visitsOperations", servicePage: "operations", accent: "#B5482F", soft: "rgba(181,72,47,.12)", csv: "مرضى_العمليات_عليهم_مستحقات.csv" },
+  labs: { kind: "تحاليل", label: "يومية التحاليل — مستحقات المرضى", icon: "🧪", permission: "labs", legacyPermission: "outstandingBalancesLabs", listKey: "visitsLabs", servicePage: "labs", accent: "#2A6DA6", soft: "rgba(42,109,166,.12)", csv: "مرضى_التحاليل_عليهم_مستحقات.csv" },
+  radiology: { kind: "أشعة", label: "يومية الأشعة — مستحقات المرضى", icon: "🧭", permission: "radiology", legacyPermission: "outstandingBalancesRadiology", listKey: "visitsRadiology", servicePage: "radiology", accent: "#C79A3E", soft: "rgba(199,154,62,.14)", csv: "مرضى_الأشعة_عليهم_مستحقات.csv" },
 };
 function outstandingSectionsForUser() {
-  return Object.entries(OUTSTANDING_SECTION_META).filter(([, meta]) => can(meta.permission, "view") || (meta.legacyPermission && can(meta.legacyPermission, "view")));
+  return Object.entries(OUTSTANDING_SECTION_META).filter(([key]) => canOutstandingSection(key));
 }
 function outstandingPageInfo(list, pageKey) {
   const totalPages = Math.max(1, Math.ceil(list.length / OUTSTANDING_PAGE_SIZE));
@@ -3623,36 +3676,36 @@ function renderOutstandingCard(meta, debtors, info) {
     ${outstandingPaginationHTML(pageKey, info)}
   </section>`;
 }
-function renderOutstandingBalances() {
+function renderOutstandingBalances(sectionKey) {
   const c = document.getElementById("content");
-  const sections = outstandingSectionsForUser();
-  c.innerHTML = `<div class="outstanding-intro card"><div class="section-title">⚠ مرضى عليهم مستحقات</div><div class="hint">صفحة موحدة لمتابعة المستحقات فى جميع الأقسام. كل بطاقة تعرض 20 اسمًا فقط مع ترقيم مستقل.</div></div><div class="outstanding-cards-grid">${sections.map(([key, meta]) => {
-    const debtors = groupPatients(outstandingVisits(meta)).filter(g => g.totalDue > 0.01).sort((a, b) => b.totalDue - a.totalDue);
-    return renderOutstandingCard(meta, debtors, outstandingPageInfo(debtors, `outstanding_${meta.listKey}`));
-  }).join("")}</div>`;
+  const meta = OUTSTANDING_SECTION_META[sectionKey];
+  if (!meta || !canOutstandingSection(sectionKey)) { renderAccessDenied(); return; }
+  const debtors = groupPatients(outstandingVisits(meta)).filter(g => g.totalDue > 0.01).sort((a, b) => b.totalDue - a.totalDue);
+  const info = outstandingPageInfo(debtors, `outstanding_${meta.listKey}`);
+  c.innerHTML = `<div class="outstanding-intro card"><div class="section-title">${meta.icon} ${meta.label}</div><div class="hint">هذه صفحة مستقلة للقسم المحدد. تعرض 20 اسمًا فقط في كل صفحة، مع ترقيم مستقل.</div></div><div class="outstanding-cards-grid">${renderOutstandingCard(meta, debtors, info)}</div>`;
   c.querySelectorAll("[data-outstanding-page]").forEach(button => button.addEventListener("click", () => {
     state.tablePage[button.dataset.outstandingPage] = Number(button.dataset.pageTo) || 1;
     route();
   }));
   c.querySelectorAll("[data-open-outstanding]").forEach(button => button.addEventListener("click", () => {
     const [listKey, patientKey] = splitOutstandingTarget(button.dataset.openOutstanding);
-    const meta = Object.values(OUTSTANDING_SECTION_META).find(x => x.listKey === listKey);
-    if (!meta) return;
-    state.page = meta.patientPage; state[meta.patientStateKey] = patientKey; route();
+    const found = Object.values(OUTSTANDING_SECTION_META).find(x => x.listKey === listKey);
+    if (!found) return;
+    state.page = found.patientPage; state[found.patientStateKey] = patientKey; route();
   }));
   c.querySelectorAll("[data-open-outstanding-service]").forEach(button => button.addEventListener("click", () => { state.page = button.dataset.openOutstandingService; route(); }));
   c.querySelectorAll("[data-wa-outstanding]").forEach(button => button.addEventListener("click", () => {
     const [listKey, patientKey] = splitOutstandingTarget(button.dataset.waOutstanding);
-    const meta = Object.values(OUTSTANDING_SECTION_META).find(x => x.listKey === listKey);
-    if (!meta) return;
-    const debtor = groupPatients(outstandingVisits(meta)).find(g => g.key === patientKey);
+    const found = Object.values(OUTSTANDING_SECTION_META).find(x => x.listKey === listKey);
+    if (!found) return;
+    const debtor = groupPatients(outstandingVisits(found)).find(g => g.key === patientKey);
     if (debtor) openWhatsAppChat(debtor.phone, { patientName: debtor.name, orderNo: "", paid: debtor.totalPaid, remaining: debtor.totalDue });
   }));
   c.querySelectorAll("[data-export-outstanding]").forEach(button => button.addEventListener("click", () => {
-    const meta = Object.values(OUTSTANDING_SECTION_META).find(x => x.listKey === button.dataset.exportOutstanding);
-    if (!meta) return;
-    const debtors = groupPatients(outstandingVisits(meta)).filter(g => g.totalDue > 0.01).sort((a, b) => b.totalDue - a.totalDue);
-    exportTableToCSV(meta.csv, ["المريض","الهاتف","آخر زيارة","عدد الزيارات","المبلغ المتبقي"], debtors.map(g => [g.name, g.phone, g.lastVisit?.date || "", g.visits.length, g.totalDue]));
+    const found = Object.values(OUTSTANDING_SECTION_META).find(x => x.listKey === button.dataset.exportOutstanding);
+    if (!found) return;
+    const currentDebtors = groupPatients(outstandingVisits(found)).filter(g => g.totalDue > 0.01).sort((a, b) => b.totalDue - a.totalDue);
+    exportTableToCSV(found.csv, ["المريض","الهاتف","آخر زيارة","عدد الزيارات","المبلغ المتبقي"], currentDebtors.map(g => [g.name, g.phone, g.lastVisit?.date || "", g.visits.length, g.totalDue]));
   }));
 }
 // ======================================================================
