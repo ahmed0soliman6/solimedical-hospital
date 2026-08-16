@@ -84,7 +84,6 @@ function sanitizeProfile(uid, data) {
 }
 
 async function requireManager(req) {
-  const api = getAdmin();
   const authHeader = String(req.headers.authorization || '');
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
   if (!token) {
@@ -92,6 +91,7 @@ async function requireManager(req) {
     error.status = 401;
     throw error;
   }
+  const api = getAdmin();
   const decoded = await api.auth().verifyIdToken(token);
   const snapshot = await api.firestore().collection('users').doc(decoded.uid).get();
   const profile = snapshot.exists ? snapshot.data() : null;
