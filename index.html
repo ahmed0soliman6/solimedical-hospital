@@ -168,18 +168,18 @@
   .top-connection-indicator .connection-dot{font-size:10px; width:8px; height:8px; border-radius:50%; background:currentColor; display:inline-block;}
   .release-card{display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:12px; padding:8px 11px; border:1px solid var(--line); border-inline-start:3px solid var(--teal); border-radius:10px; background:var(--card); color:var(--muted); font-size:11px; box-shadow:var(--shadow);}
   .release-card strong{color:var(--navy); font-size:12px; white-space:nowrap;}
-  .outstanding-cards-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; align-items:start;}
-  .outstanding-intro{margin-bottom:14px; border-inline-start:4px solid var(--teal);}
-  .outstanding-card{min-width:0; overflow:hidden; background:var(--card); border:1.5px solid var(--line); border-top:4px solid var(--outstanding-accent); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px;}
+  .outstanding-cards-grid{display:block; width:100%;}
+  .outstanding-intro{margin-bottom:18px; padding:4px 0 12px; border-inline-start:4px solid var(--teal); padding-inline-start:12px;}
+  .outstanding-card{display:block; width:100%; min-width:0; overflow:hidden; background:transparent; border:0; border-top:4px solid var(--outstanding-accent); border-radius:0; box-shadow:none; padding:0 0 18px;}
   .outstanding-card-header{display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid color-mix(in srgb, var(--outstanding-accent) 25%, var(--line));}
   .outstanding-card-title{display:flex; align-items:center; gap:7px; color:var(--outstanding-accent); font-weight:900; font-size:14px; line-height:1.45;}
   .outstanding-card-icon{display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:9px; background:var(--outstanding-soft); flex-shrink:0;}
-  .outstanding-card .table-wrap{max-width:100%; overflow-x:auto;}
-  .outstanding-card table{min-width:620px;}
+  .outstanding-card .table-wrap{width:100%; max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; background:var(--card); border:1px solid var(--line); border-radius:var(--radius);}
+  .outstanding-card table{width:100%; min-width:760px;}
   .outstanding-pagination{display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; padding-top:12px;}
   .outstanding-pagination-actions{display:flex; align-items:center; gap:7px;}
   .outstanding-pagination-actions strong{font-size:12px; color:var(--outstanding-accent);}
-  @media (max-width:880px){.outstanding-cards-grid{grid-template-columns:1fr;}}
+  @media (max-width:880px){.outstanding-cards-grid{display:block; width:100%;}}
   @media (max-width:880px){
     #topbar{ padding:10px 14px; flex-wrap:wrap; row-gap:8px; }
     #topbar .date{ display:none; }
@@ -224,8 +224,10 @@
     .grid-4, .grid-3, .grid-2{grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px;}
     .grid-4 > .card, .grid-3 > .card, .grid-2 > .card{min-width:0;}
     .grid-4 .label, .grid-3 .label, .grid-2 .label{overflow-wrap:anywhere; line-height:1.35;}
-    .outstanding-card{padding:11px;}
-    .outstanding-card-header{align-items:flex-start;}
+    .outstanding-card{padding:0 0 14px;}
+    .outstanding-card-header{align-items:flex-start; padding-inline:2px;}
+    .outstanding-card .table-wrap{border-radius:10px;}
+    .outstanding-card table{min-width:700px;}
     .outstanding-card-title{font-size:13px;}
     .outstanding-card .btn.sm{font-size:10px; padding:5px 7px;}
   }
@@ -1817,8 +1819,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.12";
-const APP_RELEASE_NOTES = "صفحات مستحقات منفصلة • صلاحيات الأقسام • حساب مستحقات الأشعة";
+const APP_VERSION = "v1.3.13";
+const APP_RELEASE_NOTES = "تصميم يوميات كامل العرض • صفحات مستقلة • استجابة الهاتف";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -1862,13 +1864,11 @@ const NAV = [
     { id: "payroll", label: "المرتبات والمستحقات", icon: "&#128188;", perm: ["payroll","view"] },
   ]},
   { group: "مرضى عليهم مستحقات", items: [
-    { id: "outstandingBalancesMenu", label: "المستحقات حسب القسم", icon: "&#9888;", dropdown: [
-      { id: "outstandingBalancesClinic", label: "مستحقات العيادات", perm: ["outstandingBalancesClinic", "view"] },
-      { id: "outstandingBalancesDental", label: "مستحقات الأسنان", perm: ["outstandingBalancesDental", "view"] },
-      { id: "outstandingBalancesOperations", label: "مستحقات العمليات", perm: ["outstandingBalancesOperations", "view"] },
-      { id: "outstandingBalancesLabs", label: "مستحقات التحاليل", perm: ["outstandingBalancesLabs", "view"] },
-      { id: "outstandingBalancesRadiology", label: "مستحقات الأشعة", perm: ["outstandingBalancesRadiology", "view"] },
-    ]},
+    { id: "outstandingBalancesClinic", label: "مستحقات العيادات", icon: "&#9888;", perm: ["outstandingBalancesClinic", "view"] },
+    { id: "outstandingBalancesDental", label: "مستحقات الأسنان", icon: "&#9888;", perm: ["outstandingBalancesDental", "view"] },
+    { id: "outstandingBalancesOperations", label: "مستحقات العمليات", icon: "&#9888;", perm: ["outstandingBalancesOperations", "view"] },
+    { id: "outstandingBalancesLabs", label: "مستحقات التحاليل", icon: "&#9888;", perm: ["outstandingBalancesLabs", "view"] },
+    { id: "outstandingBalancesRadiology", label: "مستحقات الأشعة", icon: "&#9888;", perm: ["outstandingBalancesRadiology", "view"] },
   ]},
   { group: "الإدارة", items: [
     { id: "reports", label: "التقارير", icon: "&#128202;", perm: ["reports","view"] },
@@ -3682,7 +3682,7 @@ function renderOutstandingBalances(sectionKey) {
   if (!meta || !canOutstandingSection(sectionKey)) { renderAccessDenied(); return; }
   const debtors = groupPatients(outstandingVisits(meta)).filter(g => g.totalDue > 0.01).sort((a, b) => b.totalDue - a.totalDue);
   const info = outstandingPageInfo(debtors, `outstanding_${meta.listKey}`);
-  c.innerHTML = `<div class="outstanding-intro card"><div class="section-title">${meta.icon} ${meta.label}</div><div class="hint">هذه صفحة مستقلة للقسم المحدد. تعرض 20 اسمًا فقط في كل صفحة، مع ترقيم مستقل.</div></div><div class="outstanding-cards-grid">${renderOutstandingCard(meta, debtors, info)}</div>`;
+  c.innerHTML = `<div class="outstanding-intro"><div class="section-title">${meta.icon} ${meta.label}</div><div class="hint">صفحة اليومية كاملة العرض للقسم المحدد. تعرض 20 اسمًا فقط في كل صفحة، مع ترقيم مستقل.</div></div><div class="outstanding-cards-grid">${renderOutstandingCard(meta, debtors, info)}</div>`;
   c.querySelectorAll("[data-outstanding-page]").forEach(button => button.addEventListener("click", () => {
     state.tablePage[button.dataset.outstandingPage] = Number(button.dataset.pageTo) || 1;
     route();
