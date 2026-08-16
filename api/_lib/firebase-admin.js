@@ -1,12 +1,33 @@
 const admin = require('firebase-admin');
 
+function normalizePrivateKey(rawValue) {
+  let value = String(rawValue || '').trim();
+  if (!value) return '';
+  if (value.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(value);
+      value = String(parsed.private_key || '');
+    } catch (error) {
+      // Fall through to the normal validation below so no secret is logged.
+    }
+  } else if (value.startsWith('"') && value.endsWith('"')) {
+    try { value = JSON.parse(value); } catch (error) { /* keep raw value */ }
+  }
+  return value
+    .replace(/\\\\n/g, '\n')
+    .replace(/\\\\r/g, '\r')
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .trim();
+}
+
 function getAdmin() {
   if (admin.apps.length) return admin;
   const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || 'mitali-hospital';
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
-  if (!clientEmail || !privateKey) {
-    const error = new Error('Firebase Admin credentials are not configured');
+  const clientEmail = String(process.env.FIREBASE_CLIENT_EMAIL || '').trim();
+  const privateKey = normalizePrivateKey(process.env.FIREBASE_PRIVATE_KEY);
+  if (!clientEmail || !privateKey || !privateKey.includes('-----BEGIN PRIVATE KEY-----') || !privateKey.includes('-----END PRIVATE KEY-----')) {
+    const error = new Error('Firebase Admin credentials are not configured correctly');
     error.code = 'server-misconfigured';
     throw error;
   }

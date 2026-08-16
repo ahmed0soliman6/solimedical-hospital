@@ -5411,6 +5411,17 @@ function countActiveAdmins(excludeId) {
   return (DB.staffAccounts || []).filter(a => a.role === "مدير" && a.status !== "موقوف" && a.id !== excludeId).length;
 }
 let ADMIN_ACCOUNTS_REFRESH_IN_PROGRESS = false;
+function adminAccountFailureMessage(error, fallback) {
+  const code = error && (error.code || error.message);
+  if (code === "app/invalid-credential" || code === "server-misconfigured" || code === "auth/invalid-credential") {
+    return "إعدادات خادم Firebase غير صالحة؛ يجب تحديث مفتاح Service Account في Vercel ثم إعادة النشر";
+  }
+  if (code === "auth/email-already-exists") return "اسم المستخدم مستخدم بالفعل";
+  if (code === "auth/weak-password") return "كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل";
+  if (code === "cannot-remove-last-manager") return "لا يمكن إزالة آخر مدير نشط";
+  if (code === "admin-api-unavailable") return "خدمة إدارة الحسابات غير متاحة حاليًا";
+  return fallback;
+}
 async function refreshAccountsFromAdminApi(shouldRoute = true) {
   if (ADMIN_ACCOUNTS_REFRESH_IN_PROGRESS || !navigator.onLine || !isAdminUser() || !window.MitaliFirebase?.adminListAccounts) return;
   ADMIN_ACCOUNTS_REFRESH_IN_PROGRESS = true;
@@ -5552,12 +5563,7 @@ function renderUsersPage() {
       route();
     } catch (err) {
       console.error("Professional account save failed:", err);
-      const code = err && (err.code || err.message);
-      const reason = code === "auth/email-already-exists" ? "اسم المستخدم مستخدم بالفعل"
-        : code === "auth/weak-password" ? "كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل"
-        : code === "cannot-remove-last-manager" ? "لا يمكن إزالة آخر مدير نشط"
-        : code === "admin-api-unavailable" ? "خدمة إدارة الحسابات غير متاحة حاليًا"
-        : "تعذر حفظ الحساب على الخادم؛ لم تُعرض رسالة نجاح ولم يُعتمد التعديل";
+      const reason = adminAccountFailureMessage(err, "تعذر حفظ الحساب على الخادم؛ لم تُعرض رسالة نجاح ولم يُعتمد التعديل");
       showToast(`⚠️ ${reason}`, 7000);
     }
   });
@@ -5608,7 +5614,12 @@ function renderUsersPage() {
         await cacheLocally("staffAccounts", DB.staffAccounts); await writeSyncBaseline("staffAccounts", DB.staffAccounts);
         logActivity("تغيير كلمة مرور مستخدم وإلغاء اعتماد الأجهزة", "users", { username: a.username }, { username: a.username, credentialVersion: updated.credentialVersion });
         showToast("تم حفظ كلمة المرور وإلغاء الاعتمادات القديمة"); close(); route();
-      } catch (err) { console.error(err); btn.disabled = false; btn.textContent = "حفظ كلمة المرور"; showToast("⚠️ لم تُحفظ كلمة المرور؛ لم يتغير اعتماد المستخدم", 7000); }
+      } catch (err) {
+        console.error(err);
+        btn.disabled = false;
+        btn.textContent = "حفظ كلمة المرور";
+        showToast(`⚠️ ${adminAccountFailureMessage(err, "لم تُحفظ كلمة المرور؛ لم يتغير اعتماد المستخدم")}`, 7000);
+      }
     });
   }));
 
@@ -5627,7 +5638,11 @@ function renderUsersPage() {
       await cacheLocally("staffAccounts", DB.staffAccounts); await writeSyncBaseline("staffAccounts", DB.staffAccounts);
       logActivity(nextStatus === "موقوف" ? "إيقاف مستخدم وإلغاء اعتماد الأجهزة" : "تفعيل مستخدم", "users", a.status, nextStatus);
       showToast(nextStatus === "موقوف" ? "تم إيقاف المستخدم وإلغاء اعتمادات أجهزته" : "تم تفعيل المستخدم"); route();
-    } catch (err) { console.error(err); b.disabled = false; showToast("⚠️ لم يُحفظ تغيير حالة المستخدم على الخادم", 7000); }
+    } catch (err) {
+      console.error(err);
+      b.disabled = false;
+      showToast(`⚠️ ${adminAccountFailureMessage(err, "لم يُحفظ تغيير حالة المستخدم على الخادم")}`, 7000);
+    }
   }));
 
   c.querySelectorAll("[data-deluser]").forEach(b => b.addEventListener("click", async () => {
@@ -5715,7 +5730,7 @@ function renderPermissionsPage() {
       showToast("تم حفظ الصلاحيات على Firestore وإلغاء الاعتمادات القديمة"); route();
     } catch (err) {
       console.error(err); if (btn) { btn.disabled = false; btn.textContent = "حفظ الصلاحيات"; }
-      showToast("⚠️ لم تُحفظ الصلاحيات؛ لم يتغير وصول المستخدم", 7000);
+      showToast(`⚠️ ${adminAccountFailureMessage(err, "لم تُحفظ الصلاحيات؛ لم يتغير وصول المستخدم")}`, 7000);
     }
   });
 }
