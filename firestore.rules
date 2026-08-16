@@ -21,12 +21,17 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow create: if isAdmin();
-      allow update: if isAdmin() || (request.auth.uid == uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLogin']));
+      allow update: if isAdmin() || (request.auth.uid == uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLogin', 'securityVersion', 'lastPasswordChangeAt']));
       allow delete: if isAdmin();
     }
 
     match /username_index/{username} {
       allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /staff_accounts/{document} {
+      allow read: if activeUser();
       allow write: if isAdmin();
     }
 
@@ -36,7 +41,8 @@ service cloud.firestore {
       allow read, write: if activeUser()
         && collection != 'users'
         && collection != 'username_index'
-        && collection != 'settings';
+        && collection != 'settings'
+        && collection != 'staff_accounts';
     }
 
     match /settings/{document=**} {

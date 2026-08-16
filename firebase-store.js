@@ -176,6 +176,20 @@
     return snap.exists ? Object.assign({ id: snap.id }, snap.data()) : null;
   }
 
+  async function updateOwnSecurityMetadata(metadata) {
+    await ready();
+    if (!auth || !auth.currentUser) throw new Error('Firebase user is not authenticated');
+    const data = cleanDocument(Object.assign({}, metadata || {}));
+    delete data.id;
+    delete data.password;
+    delete data.role;
+    delete data.status;
+    delete data.username;
+    delete data.firebaseUid;
+    await db.collection('users').doc(String(auth.currentUser.uid)).set(data, { merge: true });
+    return data;
+  }
+
   async function setUserProfile(uid, profile) {
     await ready();
     if (!auth || !auth.currentUser) throw new Error('Firebase administrator is not authenticated');
@@ -316,6 +330,7 @@
     waitForAuth,
     getUserProfile,
     setUserProfile,
+    updateOwnSecurityMetadata,
     deleteUserProfile
   });
 })();
