@@ -166,6 +166,23 @@
   .offline-save-notice{display:none; align-items:center; gap:6px; margin-inline-start:8px; padding:5px 9px; border-radius:9px; background:var(--expense-soft); color:var(--expense); font-size:10.5px; font-weight:800; line-height:1.35;}
   .offline-save-notice.is-visible{display:inline-flex;}
   .offline-save-notice.is-pending{background:var(--gold-soft); color:var(--gold);}
+  .diary-form{display:block !important;}
+  .diary-form .diary-primary-row,.diary-form .diary-triple-row,.diary-form .diary-bottom-row{display:grid; gap:10px; margin-bottom:10px;}
+  .diary-form .diary-primary-row{grid-template-columns:1fr 1fr;}
+  .diary-form .diary-triple-row{grid-template-columns:repeat(3,minmax(0,1fr));}
+  .diary-form .diary-bottom-row{grid-template-columns:repeat(3,minmax(0,1fr)); align-items:end;}
+  .diary-form .field{min-width:0;}
+  .diary-form .diary-primary-row .field,.diary-form .diary-triple-row .field,.diary-form .diary-bottom-row .field{grid-column:auto !important;}
+  .top-alerts-wrap{position:relative; display:inline-flex; flex:0 0 auto;}
+  .top-alerts-btn{position:relative; display:inline-flex; align-items:center; justify-content:center; width:34px; min-width:34px; height:30px; padding:0; border:1px solid var(--line); border-radius:9px; background:var(--card); color:var(--ink); font-size:16px; cursor:pointer;}
+  .top-alerts-badge{position:absolute; top:-7px; right:-7px; min-width:18px; height:18px; padding:0 4px; border-radius:999px; background:var(--expense); color:#fff; font-size:10px; line-height:18px; font-weight:900; text-align:center;}
+  .top-alerts-panel{position:absolute; top:calc(100% + 9px); inset-inline-end:0; z-index:30; width:min(360px,calc(100vw - 22px)); padding:10px; border:1px solid var(--line); border-radius:12px; background:var(--card); box-shadow:0 14px 36px rgba(0,0,0,.18); color:var(--ink);}
+  .top-alerts-panel[hidden]{display:none;}
+  .top-alert-item{display:flex; align-items:flex-start; gap:8px; padding:9px 7px; border-bottom:1px solid var(--line); font-size:12px; line-height:1.55;}
+  .top-alert-item:last-child{border-bottom:0;}
+  .top-alert-item strong{display:block; font-size:12px;}
+  .top-alert-item .hint{display:block; margin-top:2px;}
+  .top-alert-action{margin-top:8px; width:100%;}
   .top-connection-indicator .connection-dot{font-size:10px; width:8px; height:8px; border-radius:50%; background:currentColor; display:inline-block;}
   .release-card{display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:12px; padding:8px 11px; border:1px solid var(--line); border-inline-start:3px solid var(--teal); border-radius:10px; background:var(--card); color:var(--muted); font-size:11px; box-shadow:var(--shadow);}
   .release-card strong{color:var(--navy); font-size:12px; white-space:nowrap;}
@@ -205,6 +222,12 @@
     #topbar .btn.sm{padding:5px 7px; font-size:11px;}
     #content{padding:12px 10px 42px; width:100%; min-width:0;}
     .form-grid{grid-template-columns:1fr !important; gap:10px;}
+    .diary-form .diary-primary-row{grid-template-columns:repeat(2,minmax(0,1fr));}
+    .diary-form .diary-triple-row{grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px;}
+    .diary-form .diary-bottom-row{grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px;}
+    .diary-form .field label{font-size:12px; line-height:1.35;}
+    .diary-form input,.diary-form select,.diary-form textarea{min-width:0; font-size:13px;}
+    .top-alerts-panel{inset-inline-end:-4px;}
     .two-col{grid-template-columns:1fr; gap:10px;}
     .table-wrap{width:100%; max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch;}
     .table-wrap table{min-width:620px;}
@@ -1341,6 +1364,14 @@ function memoize(fn) {
     return result;
   };
 }
+function persistAfterPaint(key, label = "التعديل") {
+  const run = () => persist(key).catch(error => {
+    console.error("Background persistence failed:", key, error);
+    showToast(`⚠️ تم حفظ ${label} محليًا وسيُعاد رفعه تلقائيًا عند توفر الاتصال`, 4200);
+  });
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(run);
+  else setTimeout(run, 0);
+}
 async function persist(key) {
   TABLE_MUTATION_GENERATION[key] = (TABLE_MUTATION_GENERATION[key] || 0) + 1;
   TABLE_MUTATION_AT[key] = Date.now();
@@ -1415,7 +1446,7 @@ function logActivity(action, page, oldValue, newValue) {
       timestamp: now.toISOString(),
     });
     if (DB.auditLog.length > MAX_AUDIT_ENTRIES) DB.auditLog.splice(0, DB.auditLog.length - MAX_AUDIT_ENTRIES);
-    persist("auditLog");
+    persistAfterPaint("auditLog", "سجل النشاط");
   } catch (e) { console.error("Audit log error:", e); }
 }
 
@@ -1820,8 +1851,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.14";
-const APP_RELEASE_NOTES = "شعار مستشفى ميت على • Regex • تسريع المزامنة";
+const APP_VERSION = "v1.3.15";
+const APP_RELEASE_NOTES = "تنسيق اليوميات للهاتف • تنبيهات المتابعات والمستحقات • حفظ إعدادات أسرع";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -2100,6 +2131,50 @@ async function backgroundRefreshAll() {
 }
 setInterval(backgroundRefreshAll, 300000);
 
+const BACKUP_EXPORT_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","settings","staffAccounts","categories","specialties","auditLog","labExpenses"];
+function downloadSystemBackup() {
+  const backup = { app: "مستشفى لجنة زكاة ميت على التخصصي", exportedAt: nowISO(), data: {} };
+  BACKUP_EXPORT_KEYS.forEach(key => { backup.data[key] = DB[key]; });
+  const json = JSON.stringify(backup, null, 2);
+  const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `نسخة_احتياطية_مستشفى_ميت_على_${todayISO()}.json`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  logActivity("تنزيل نسخة احتياطية", "settings");
+  try { localStorage.setItem("lastBackupAt", nowISO()); } catch (e) { /* ignore */ }
+  showToast("تم تنزيل النسخة الاحتياطية بنجاح");
+  renderTopAlerts();
+}
+function topAlertData() {
+  const today = todayISO();
+  const followupUntil = localISO(new Date(Date.now() + 7 * 86400000));
+  const visits = allVisits();
+  const followups = visits.filter(v => v.nextVisitDate && v.nextVisitDate >= today && v.nextVisitDate <= followupUntil);
+  const debtPatients = new Set(visits.filter(v => visitRemaining(v) > 0).map(v => `${v.patient || ""}|${v.phone || ""}`));
+  let lastBackup = 0;
+  try { lastBackup = Date.parse(localStorage.getItem("lastBackupAt") || "") || 0; } catch (e) { /* ignore */ }
+  const backupDue = !lastBackup || (Date.now() - lastBackup > 7 * 86400000);
+  const items = [];
+  if (followups.length) items.push({ icon: "📅", title: "متابعات قريبة", detail: `${followups.length} موعد متابعة خلال الأيام السبعة القادمة` });
+  if (debtPatients.size) items.push({ icon: "💰", title: "مرضى عليهم مستحقات", detail: `${debtPatients.size} مريض يحتاج مراجعة مستحقاته` });
+  if (backupDue) items.push({ icon: "💾", title: "النسخة الاحتياطية", detail: lastBackup ? "مرّ أكثر من 7 أيام على آخر نسخة احتياطية" : "لم يتم تنزيل نسخة احتياطية على هذا الجهاز بعد", backup: true });
+  return items;
+}
+function renderTopAlerts() {
+  const button = document.getElementById("topAlertsBtn");
+  const badge = document.getElementById("topAlertsBadge");
+  const panel = document.getElementById("topAlertsPanel");
+  if (!button || !badge || !panel) return;
+  const items = topAlertData();
+  badge.textContent = String(items.length);
+  badge.hidden = !items.length;
+  panel.innerHTML = items.length
+    ? `${items.map(item => `<div class="top-alert-item"><span>${item.icon}</span><div><strong>${item.title}</strong><span class="hint">${item.detail}</span>${item.backup ? `<button type="button" class="btn sm top-alert-action" data-alert-backup>تحميل آخر نسخة احتياطية</button>` : ""}</div></div>`).join("")}`
+    : `<div class="top-alert-item"><span>✅</span><div><strong>لا توجد تنبيهات حالية</strong><span class="hint">لا توجد متابعات قريبة أو مستحقات ظاهرة الآن.</span></div></div>`;
+  panel.querySelectorAll("[data-alert-backup]").forEach(btn => btn.addEventListener("click", downloadSystemBackup));
+}
 function renderTopbar() {
   const el = document.getElementById("topbar");
   const now = new Date();
@@ -2113,13 +2188,29 @@ function renderTopbar() {
       <div id="offlineSaveNotice" class="offline-save-notice" role="status" aria-live="polite"></div>
     </div>
     <div style="display:flex; align-items:center; gap:8px;">
-      <button class="btn ghost sm top-theme-toggle" id="topThemeToggleBtn" title="تبديل الوضع الليلي/النهاري" aria-label="تبديل الوضع الليلي/النهاري">${document.documentElement.getAttribute("data-theme") === "dark" ? "☀️" : "🌙"}</button>
-      <div class="date">${dateStr}</div>
+       <div class="top-alerts-wrap">
+         <button type="button" class="top-alerts-btn" id="topAlertsBtn" title="التنبيهات" aria-label="التنبيهات">⚠️<span class="top-alerts-badge" id="topAlertsBadge" hidden>0</span></button>
+         <div class="top-alerts-panel" id="topAlertsPanel" hidden></div>
+       </div>
+       <button class="btn ghost sm top-theme-toggle" id="topThemeToggleBtn" title="تبديل الوضع الليلي/النهاري" aria-label="تبديل الوضع الليلي/النهاري">${document.documentElement.getAttribute("data-theme") === "dark" ? "☀️" : "🌙"}</button>
+       <div class="date">${dateStr}</div>
     </div>
   `;
   const hamburgerBtn = document.getElementById("hamburgerBtn");
   if (hamburgerBtn) hamburgerBtn.addEventListener("click", () => document.body.classList.toggle("sidebar-open"));
   const topThemeToggleBtn = document.getElementById("topThemeToggleBtn");
+  const topAlertsBtn = document.getElementById("topAlertsBtn");
+  const topAlertsPanel = document.getElementById("topAlertsPanel");
+  if (topAlertsBtn && topAlertsPanel) topAlertsBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    topAlertsPanel.hidden = !topAlertsPanel.hidden;
+  });
+  if (!renderTopbar._alertOutsideBound) {
+    document.addEventListener("click", event => {
+      if (!event.target.closest(".top-alerts-wrap")) document.querySelectorAll(".top-alerts-panel").forEach(panel => { panel.hidden = true; });
+    });
+    renderTopbar._alertOutsideBound = true;
+  }
   if (topThemeToggleBtn) topThemeToggleBtn.addEventListener("click", () => {
     const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
     applyTheme(next);
@@ -2128,6 +2219,7 @@ function renderTopbar() {
   const backBtn = document.getElementById("backBtn");
   if (backBtn) backBtn.addEventListener("click", navigateBack);
   renderStorageIndicator();
+  renderTopAlerts();
 }
 
 function showToast(msg, duration) {
@@ -2724,30 +2816,38 @@ function renderVisitsPage(kind) {
       <div class="section-title">${editing ? "تعديل زيارة" : "تسجيل زيارة جديدة"}
         <span class="hint">${doctorsPool.length} طبيب نشط متاح</span>
       </div>
-      <form id="visitForm" class="form-grid visit-grid-3">
-        <div class="field"><label>التاريخ</label><input type="date" name="date" required value="${editing?.date || todayISO()}"></div>
+      <form id="visitForm" class="form-grid visit-grid-3 diary-form">
+        <div class="diary-primary-row">
+          <div class="field"><label>التاريخ</label><input type="date" name="date" required value="${editing?.date || todayISO()}"></div>
+          <div class="field" style="position:relative;">
+            <label>اسم المريض</label>
+            <input type="text" name="patient" id="visitPatientInput" required autocomplete="off" value="${esc(editing?.patient)}">
+            <div id="visitPatientSuggest" style="display:none; position:absolute; z-index:20; top:100%; right:0; left:0; background:#fff; border:1px solid var(--border,#ccc); border-radius:8px; box-shadow:0 4px 14px rgba(0,0,0,.12); max-height:220px; overflow:auto;"></div>
+          </div>
+        </div>
         <input type="hidden" name="fileNo" id="visitFileNoInput" value="${esc(editing ? editing.fileNo : "")}">
-        <div class="field" style="grid-column:span 2; position:relative;">
-          <label>اسم المريض</label>
-          <input type="text" name="patient" id="visitPatientInput" required autocomplete="off" value="${esc(editing?.patient)}">
-          <div id="visitPatientSuggest" style="display:none; position:absolute; z-index:20; top:100%; right:0; left:0; background:#fff; border:1px solid var(--border,#ccc); border-radius:8px; box-shadow:0 4px 14px rgba(0,0,0,.12); max-height:220px; overflow:auto;"></div>
+        <div class="diary-triple-row">
+          <div class="field"><label>رقم الهاتف</label><input type="text" name="phone" id="visitPhoneInput" value="${esc(editing?.phone)}"></div>
+          <div class="field"><label>الطبيب</label>
+            <select name="doctorId" id="visitDoctorSelect" required>
+              <option value="">اختر طبيبًا</option>
+              ${doctorsPool.map(d => `<option value="${d.id}" ${editing?.doctorId === d.id ? "selected" : ""} data-checkup-price="${d.checkupPrice ?? ""}" data-followup-price="${d.followupPrice ?? ""}">${esc(d.name)} — ${esc(d.specialty)}</option>`).join("")}
+            </select>
+          </div>
+          <div class="field"><label>نوع الكشف</label><select name="examType" id="visitExamTypeSelect">${option(LISTS.examTypes, editing?.examType)}</select></div>
         </div>
-        <div class="field"><label>رقم الهاتف</label><input type="text" name="phone" id="visitPhoneInput" value="${esc(editing?.phone)}"></div>
-        <div class="field"><label>الطبيب</label>
-          <select name="doctorId" id="visitDoctorSelect" required>
-            <option value="">اختر طبيبًا</option>
-            ${doctorsPool.map(d => `<option value="${d.id}" ${editing?.doctorId === d.id ? "selected" : ""} data-checkup-price="${d.checkupPrice ?? ""}" data-followup-price="${d.followupPrice ?? ""}">${esc(d.name)} — ${esc(d.specialty)}</option>`).join("")}
-          </select>
+        <div class="diary-triple-row">
+          <div class="field"><label>إجمالي الحساب (ج.م)</label><input type="text" inputmode="decimal" step="0.01" name="total" id="visitTotalInput" required value="${editing?.total ?? ""}"></div>
+          <div class="field"><label>المدفوع</label><input type="text" inputmode="decimal" step="0.01" name="paid" required value="${editing?.paid ?? ""}"></div>
+          <div class="field"><label>حالة الدفع</label><select name="status">${option(LISTS.payStatus, editing?.status)}</select></div>
         </div>
-        <div class="field"><label>نوع الكشف</label><select name="examType" id="visitExamTypeSelect">${option(LISTS.examTypes, editing?.examType)}</select></div>
-        <div class="field"><label>إجمالي الحساب (ج.م)</label><input type="text" inputmode="decimal" step="0.01" name="total" id="visitTotalInput" required value="${editing?.total ?? ""}"></div>
-        <div class="field"><label>المدفوع</label><input type="text" inputmode="decimal" step="0.01" name="paid" required value="${editing?.paid ?? ""}"></div>
-        <div class="field"><label>حالة الدفع</label><select name="status">${option(LISTS.payStatus, editing?.status)}</select></div>
-        <div class="field"><label>ملاحظات</label><input type="text" name="notes" value="${esc(editing?.notes)}"></div>
-        <div class="field"><label>موعد المتابعة (اختياري)</label><input type="date" name="nextVisitDate" value="${editing?.nextVisitDate || ""}"></div>
-        <div class="field" style="align-self:end; display:flex; gap:8px;">
-          <button type="submit" class="btn">${editing ? "حفظ التعديل" : "تسجيل الزيارة"}</button>
-          ${editing ? `<button type="button" class="btn ghost" id="cancelEdit">إلغاء</button>` : ""}
+        <div class="diary-bottom-row">
+          <div class="field"><label>ملاحظات</label><input type="text" name="notes" value="${esc(editing?.notes)}"></div>
+          <div class="field"><label>موعد المتابعة (اختياري)</label><input type="date" name="nextVisitDate" value="${editing?.nextVisitDate || ""}"></div>
+          <div class="field" style="align-self:end; display:flex; gap:8px;">
+            <button type="submit" class="btn">${editing ? "حفظ التعديل" : "تسجيل الزيارة"}</button>
+            ${editing ? `<button type="button" class="btn ghost" id="cancelEdit">إلغاء</button>` : ""}
+          </div>
         </div>
       </form>
     </div>` : ""}
@@ -3043,33 +3143,41 @@ function renderServiceVisitsPage(kind) {
     ${(editing ? canEdit : canAdd) ? `
     <div class="card" style="margin-bottom:18px;">
       <div class="section-title">${editing ? "تعديل السجل" : cfg.addLabel}</div>
-      <form id="serviceVisitForm" class="form-grid visit-grid-3">
-        <div class="field"><label>التاريخ</label><input type="date" name="date" required value="${editing?.date || todayISO()}"></div>
+      <form id="serviceVisitForm" class="form-grid visit-grid-3 diary-form">
+        <div class="diary-primary-row">
+          <div class="field"><label>التاريخ</label><input type="date" name="date" required value="${editing?.date || todayISO()}"></div>
+          <div class="field" style="position:relative;">
+            <label>اسم المريض</label>
+            <input type="text" name="patient" id="svcPatientInput" required autocomplete="off" value="${esc(editing?.patient)}">
+            <div id="svcPatientSuggest" style="display:none; position:absolute; z-index:20; top:100%; right:0; left:0; background:#fff; border:1px solid var(--border,#ccc); border-radius:8px; box-shadow:0 4px 14px rgba(0,0,0,.12); max-height:220px; overflow:auto;"></div>
+          </div>
+        </div>
         <input type="hidden" name="fileNo" id="svcFileNoInput" value="${esc(editing ? editing.fileNo : "")}">
-        <div class="field" style="grid-column:span 2; position:relative;">
-          <label>اسم المريض</label>
-          <input type="text" name="patient" id="svcPatientInput" required autocomplete="off" value="${esc(editing?.patient)}">
-          <div id="svcPatientSuggest" style="display:none; position:absolute; z-index:20; top:100%; right:0; left:0; background:#fff; border:1px solid var(--border,#ccc); border-radius:8px; box-shadow:0 4px 14px rgba(0,0,0,.12); max-height:220px; overflow:auto;"></div>
+        <div class="diary-triple-row">
+          <div class="field"><label>رقم الهاتف</label><input type="text" name="phone" id="svcPhoneInput" value="${esc(editing?.phone)}"></div>
+          <div class="field"><label>${cfg.serviceLabel}</label>
+            ${typeOptions ? (() => {
+                const selectedNames = editing?.serviceName ? editing.serviceName.split(/،\s*|,\s*/).filter(Boolean) : [];
+                return `<select name="serviceName" multiple required style="height:92px;">
+                  ${typeOptions.map(t => `<option value="${esc(t)}" ${selectedNames.includes(t) ? "selected" : ""}>${esc(t)}</option>`).join("")}
+                </select>
+                <div class="hint" style="margin-top:4px;">اختيار أكثر من نوع متاح</div>`;
+              })()
+                          : `<input type="text" name="serviceName" required value="${esc(editing?.serviceName)}">`}
+          </div>
+          <div class="field"><label>إجمالي الحساب (ج.م)</label><input type="text" inputmode="decimal" step="0.01" name="total" required value="${editingTotal}"></div>
         </div>
-        <div class="field"><label>رقم الهاتف</label><input type="text" name="phone" id="svcPhoneInput" value="${esc(editing?.phone)}"></div>
-        <div class="field" style="grid-column:span 2;"><label>${cfg.serviceLabel}</label>
-          ${typeOptions ? (() => {
-              const selectedNames = editing?.serviceName ? editing.serviceName.split(/،\s*|,\s*/).filter(Boolean) : [];
-              return `<select name="serviceName" multiple required style="height:120px;">
-                ${typeOptions.map(t => `<option value="${esc(t)}" ${selectedNames.includes(t) ? "selected" : ""}>${esc(t)}</option>`).join("")}
-              </select>
-              <div class="hint" style="margin-top:4px;">اضغط مع الاستمرار (أو اسحب إصبعك) لاختيار أكثر من نوع للمريض الواحد</div>`;
-            })()
-                        : `<input type="text" name="serviceName" required value="${esc(editing?.serviceName)}">`}
+        <div class="diary-triple-row">
+          <div class="field"><label>المدفوع</label><input type="text" inputmode="decimal" step="0.01" name="paid" required value="${editingPaid}"></div>
+          <div class="field"><label>حالة الدفع</label><select name="status">${option(LISTS.payStatus, editing?.status)}</select></div>
+          <div class="field"><label>موعد المتابعة (اختياري)</label><input type="date" name="nextVisitDate" value="${editing?.nextVisitDate || ""}"></div>
         </div>
-        <div class="field"><label>إجمالي الحساب (ج.م)</label><input type="text" inputmode="decimal" step="0.01" name="total" required value="${editingTotal}"></div>
-        <div class="field"><label>المدفوع</label><input type="text" inputmode="decimal" step="0.01" name="paid" required value="${editingPaid}"></div>
-        <div class="field"><label>حالة الدفع</label><select name="status">${option(LISTS.payStatus, editing?.status)}</select></div>
-        <div class="field"><label>ملاحظات</label><input type="text" name="notes" value="${esc(editing?.notes)}"></div>
-        <div class="field"><label>موعد المتابعة (اختياري)</label><input type="date" name="nextVisitDate" value="${editing?.nextVisitDate || ""}"></div>
-        <div class="field" style="align-self:end; display:flex; gap:8px;">
-          <button type="submit" class="btn">${editing ? "حفظ التعديل" : "تسجيل"}</button>
-          ${editing ? `<button type="button" class="btn ghost" id="cancelEdit">إلغاء</button>` : ""}
+        <div class="diary-bottom-row">
+          <div class="field" style="grid-column:span 2;"><label>ملاحظات</label><input type="text" name="notes" value="${esc(editing?.notes)}"></div>
+          <div class="field" style="align-self:end; display:flex; gap:8px;">
+            <button type="submit" class="btn">${editing ? "حفظ التعديل" : "تسجيل"}</button>
+            ${editing ? `<button type="button" class="btn ghost" id="cancelEdit">إلغاء</button>` : ""}
+          </div>
         </div>
       </form>
     </div>` : ""}
@@ -5059,25 +5167,9 @@ function renderSettings() {
     persist("settings"); showToast("تم حفظ الرصيد الافتتاحي"); route();
   });
 
-  const BACKUP_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","settings","staffAccounts","categories","specialties","auditLog","labExpenses"];
+  const BACKUP_KEYS = BACKUP_EXPORT_KEYS;
   const downloadBackupBtn = document.getElementById("downloadBackupBtn");
-  if (downloadBackupBtn) downloadBackupBtn.addEventListener("click", () => {
-    const backup = { app: "مستشفى لجنة زكاة ميت على التخصصي", exportedAt: nowISO(), data: {} };
-    BACKUP_KEYS.forEach(key => { backup.data[key] = DB[key]; });
-    const json = JSON.stringify(backup, null, 2);
-    const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `نسخة_احتياطية_مستشفى_ميت_على_${todayISO()}.json`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    logActivity("تنزيل نسخة احتياطية", "settings");
-    // إصلاح: تذكير النسخة الاحتياطية الدورية يحتاج معرفة "آخر مرة اتعمل فيها نسخة
-    // احتياطية فعليًا" - نحفظها محليًا (بدون مزامنة سحابية، فهى تخص هذا الجهاز
-    // تحديدًا الذى نزّل النسخة فعليًا) لحساب مرور المدة لاحقًا فى renderDashboard.
-    try { localStorage.setItem("lastBackupAt", nowISO()); } catch (e) { /* localStorage قد يكون معطلاً */ }
-    showToast("تم تنزيل النسخة الاحتياطية بنجاح");
-  });
+  if (downloadBackupBtn) downloadBackupBtn.addEventListener("click", downloadSystemBackup);
   const restoreBackupInput = document.getElementById("restoreBackupInput");
   if (restoreBackupInput) restoreBackupInput.addEventListener("change", () => {
     const file = restoreBackupInput.files[0];
@@ -5381,7 +5473,8 @@ function renderSettings() {
       logActivity("إضافة طبيب", "settings", null, newDoc);
       saveToast("تمت إضافة الطبيب");
     }
-    persist("doctors"); route();
+    route();
+    persistAfterPaint("doctors", "بيانات الطبيب");
   });
   // تحديث حى لمجموع النسبتين + تعبئة تلقائية لنسبة المجمع كلما تغيّرت نسبة
   // الطبيب (تسهيلًا للإدخال الصحيح من البداية بدل الاعتماد فقط على رفض الحفظ لاحقًا)
@@ -5444,7 +5537,8 @@ function renderSettings() {
       logActivity("إضافة موظف", "settings", null, newEmp);
       saveToast("تمت إضافة الموظف");
     }
-    persist("employees"); route();
+    route();
+    persistAfterPaint("employees", "بيانات الموظف");
   });
   c.querySelectorAll("[data-editemp]").forEach(b => b.addEventListener("click", () => { state.editEmpId = b.dataset.editemp; route(); }));
   const cancelEmpEditBtn = document.getElementById("cancelEmpEdit");
