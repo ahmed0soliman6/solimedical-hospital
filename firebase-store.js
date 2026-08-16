@@ -182,6 +182,26 @@
     return adminAccountRequest(Object.assign({ action: 'create' }, payload || {}));
   }
 
+  async function configureManagerRecovery(payload) {
+    return adminAccountRequest(Object.assign({ action: 'configureManagerRecovery' }, payload || {}));
+  }
+
+  async function recoverManagerPassword(payload) {
+    init();
+    const response = await fetch('/api/admin/account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ action: 'recoverManagerPassword' }, payload || {}))
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(body.error || `admin-recovery-${response.status}`);
+      error.code = body.error || `admin-recovery-${response.status}`;
+      throw error;
+    }
+    return body;
+  }
+
   async function adminUpdateAccount(payload) {
     return adminAccountRequest(Object.assign({ action: 'update' }, payload || {}));
   }
@@ -370,6 +390,8 @@
     changePassword,
     adminAccountRequest,
     adminCreateAccount,
+    configureManagerRecovery,
+    recoverManagerPassword,
     adminUpdateAccount,
     adminListAccounts,
     signOut,

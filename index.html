@@ -161,6 +161,10 @@
   #topbar .date{font-size:12.5px; color:var(--muted);}
   .top-connection-indicator{display:inline-flex; align-items:center; gap:5px; margin-inline-start:12px; padding:5px 9px; border-radius:999px; background:var(--income-soft); color:var(--income); font-size:11px; font-weight:800; white-space:nowrap;}
   .top-connection-indicator.is-offline{background:var(--expense-soft); color:var(--expense);}
+  .top-connection-indicator.is-pending{background:var(--gold-soft); color:var(--gold);}
+  .offline-save-notice{display:none; align-items:center; gap:6px; margin-inline-start:8px; padding:5px 9px; border-radius:9px; background:var(--expense-soft); color:var(--expense); font-size:10.5px; font-weight:800; line-height:1.35;}
+  .offline-save-notice.is-visible{display:inline-flex;}
+  .offline-save-notice.is-pending{background:var(--gold-soft); color:var(--gold);}
   .top-connection-indicator .connection-dot{font-size:10px; width:8px; height:8px; border-radius:50%; background:currentColor; display:inline-block;}
   .release-card{display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:12px; padding:8px 11px; border:1px solid var(--line); border-inline-start:3px solid var(--teal); border-radius:10px; background:var(--card); color:var(--muted); font-size:11px; box-shadow:var(--shadow);}
   .release-card strong{color:var(--navy); font-size:12px; white-space:nowrap;}
@@ -1802,8 +1806,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.10";
-const APP_RELEASE_NOTES = "صفحة مستحقات موحدة • خمس بطاقات • ترقيم 20 اسمًا";
+const APP_VERSION = "v1.3.11";
+const APP_RELEASE_NOTES = "إشعار عدم الاتصال • إصلاح الصلاحيات • استرداد المدير";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -1969,11 +1973,22 @@ function renderSidebar() {
 }
 
 async function renderStorageIndicator() {
-  const html = `<span class="connection-dot"></span><span>${navigator.onLine ? "متصل" : "غير متصل"}</span>`;
+  const offline = !navigator.onLine;
+  const pending = Number(typeof PENDING_WRITES === "number" ? PENDING_WRITES : 0) > 0;
+  const connectionLabel = offline ? "غير متصل" : (pending ? "جارٍ المزامنة" : "متصل");
+  const html = `<span class="connection-dot"></span><span>${connectionLabel}</span>`;
   const side = document.getElementById("storageIndicator");
   if (side) side.innerHTML = html;
   const top = document.getElementById("topConnectionIndicator");
-  if (top) { top.classList.toggle("is-offline", !navigator.onLine); top.innerHTML = html; }
+  if (top) { top.classList.toggle("is-offline", offline); top.classList.toggle("is-pending", !offline && pending); top.innerHTML = html; }
+  const notice = document.getElementById("offlineSaveNotice");
+  if (notice) {
+    notice.classList.toggle("is-visible", offline || pending);
+    notice.classList.toggle("is-pending", !offline && pending);
+    notice.innerHTML = offline
+      ? "⚠ محفوظ محليًا — سيُرفع تلقائيًا عند عودة الاتصال"
+      : (pending ? "⟳ تغييرات بانتظار المزامنة السحابية" : "");
+  }
 }
 
 window.addEventListener("online", async () => {
@@ -2043,6 +2058,7 @@ function renderTopbar() {
       <button id="backBtn" title="عودة للصفحة السابقة" aria-label="عودة للصفحة السابقة" style="display:none; align-items:center; justify-content:center; width:38px; height:38px; border-radius:10px; border:1px solid var(--border,#ccc); background:var(--card); color:var(--ink); font-size:20px; cursor:pointer; flex-shrink:0;">‹</button>
       <div class="title">${PAGE_TITLES[state.page]}</div>
       <div id="topConnectionIndicator" class="top-connection-indicator" aria-live="polite">جارٍ التحقق من الاتصال...</div>
+      <div id="offlineSaveNotice" class="offline-save-notice" role="status" aria-live="polite"></div>
     </div>
     <div style="display:flex; align-items:center; gap:8px;">
       <button class="btn ghost sm top-theme-toggle" id="topThemeToggleBtn" title="تبديل الوضع الليلي/النهاري" aria-label="تبديل الوضع الليلي/النهاري">${document.documentElement.getAttribute("data-theme") === "dark" ? "☀️" : "🌙"}</button>
@@ -4624,23 +4640,16 @@ function renderSettings() {
     </div>
     ${isAdminUser() ? `
     <div class="card" style="margin-bottom:18px; border-inline-start:3px solid var(--gold);">
-      <div class="section-title">🔐 استعادة كلمة مرور المدير</div>
-      <p style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">
-        لا يخزّن التطبيق كلمات المرور ولا يستطيع عرضها أو إعادة تعيينها من جهة العميل. عند نسيان كلمة المرور، افتح Firebase Console ثم اختر Authentication ← Users، وحدد حساب المدير، واضبط كلمة مرور جديدة لا تقل عن 6 أحرف أو أرقام.
-      </p>
-      <p style="font-size:12px; color:var(--muted); margin-bottom:10px;">
-        بعد التعيين، استخدم كلمة المرور الجديدة في شاشة الدخول المعتادة. هذا المسار لا يحذف أي بيانات من Firestore ولا يغيّر الصلاحيات.
+      <div class="section-title">🔐 استرداد كلمة مرور المدير</div>
+      <p style="font-size:12.5px; color:var(--muted); margin-bottom:10px; line-height:1.8;">
+        أنشئ رمز استرداد طويلًا واحفظه خارج الجهاز في مكان آمن. عند نسيان كلمة المرور، يمكن استخدام اسم المستخدم admin ورمز الاسترداد لتعيين كلمة مرور جديدة من شاشة الدخول، دون فتح Firebase Console ودون حذف أي بيانات.
       </p>
       <div style="border-top:1px solid var(--line); margin-top:12px; padding-top:12px;">
-        <div style="font-weight:800; font-size:13px; margin-bottom:6px;">إعداد سؤال الأمان لهذا الجهاز</div>
-        <p class="hint" style="line-height:1.8; margin-bottom:9px;">تُحفظ بصمة الإجابة فقط في هذا المتصفح، ولا تُحفظ الإجابة نفسها أو كلمة المرور. إذا تم مسح بيانات المتصفح، يجب إعداد السؤال مرة أخرى.</p>
-        <div class="form-grid" style="grid-template-columns:1fr 1fr;">
-          <div class="field"><label>سؤال الأمان</label><input id="adminRecoveryQuestionInput" type="text" value="${esc(readAdminRecoveryConfig()?.question || DEFAULT_RECOVERY_QUESTION)}"></div>
-          <div class="field"><label>الإجابة السرية</label><input id="adminRecoveryAnswerInput" type="password" autocomplete="new-password" placeholder="اتركه فارغًا لعدم التغيير"></div>
-        </div>
-        <button class="btn" id="saveAdminRecoveryBtn" style="margin-top:10px;">حفظ سؤال الأمان</button>
+        <div style="font-weight:800; font-size:13px; margin-bottom:6px;">إعداد رمز استرداد المدير</div>
+        <p class="hint" style="line-height:1.8; margin-bottom:9px;">لا تُحفظ قيمة الرمز نفسها في Firestore؛ يُحفظ اشتقاق PBKDF2 فقط. احتفظ بالرمز خارج المتصفح، لأن فقدانه يعني الحاجة إلى إعداد رمز جديد أثناء تسجيل دخول المدير.</p>
+        <div class="field"><label>رمز الاسترداد</label><div style="display:flex; gap:7px; align-items:center;"><input id="adminRecoveryCodeInput" type="text" autocomplete="off" placeholder="10 أحرف أو أرقام على الأقل" style="flex:1; letter-spacing:1px;"><button type="button" class="btn ghost sm" id="generateAdminRecoveryBtn">توليد رمز</button></div></div>
+        <button class="btn" id="saveAdminRecoveryBtn" style="margin-top:10px;">حفظ رمز الاسترداد</button>
       </div>
-      <a class="btn ghost" style="margin-top:10px;" href="https://console.firebase.google.com/project/mitali-hospital/authentication/users" target="_blank" rel="noopener noreferrer">فتح مستخدمي Firebase Authentication</a>
     </div>` : ""}
     ${can("demoData","view") ? `
     <div class="card" style="margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
@@ -4912,17 +4921,26 @@ function renderSettings() {
     </div>
   `;
 
+  const generateAdminRecoveryBtn = document.getElementById("generateAdminRecoveryBtn");
+  if (generateAdminRecoveryBtn) generateAdminRecoveryBtn.addEventListener("click", () => {
+    const input = document.getElementById("adminRecoveryCodeInput");
+    if (input) { input.value = generateRecoveryCode(); input.focus(); input.select(); }
+    showToast("تم توليد رمز جديد؛ انسخه واحفظه في مكان آمن قبل الضغط على الحفظ", 4500);
+  });
   const saveAdminRecoveryBtn = document.getElementById("saveAdminRecoveryBtn");
   if (saveAdminRecoveryBtn) saveAdminRecoveryBtn.addEventListener("click", async () => {
-    if (!isAdminUser()) { showToast("⚠️ إعداد سؤال الأمان متاح للمدير فقط"); return; }
-    const question = document.getElementById("adminRecoveryQuestionInput")?.value || "";
-    const answer = document.getElementById("adminRecoveryAnswerInput")?.value || "";
-    if (!answer.trim()) { showToast("⚠️ أدخل إجابة سرية جديدة"); return; }
+    if (!isAdminUser()) { showToast("⚠️ إعداد رمز الاسترداد متاح للمدير فقط"); return; }
+    const codeInput = document.getElementById("adminRecoveryCodeInput");
+    const code = codeInput?.value.trim() || "";
+    if (code.length < 10) { showToast("⚠️ رمز الاسترداد يجب أن يكون 10 أحرف أو أرقام على الأقل"); return; }
+    saveAdminRecoveryBtn.disabled = true; saveAdminRecoveryBtn.textContent = "جارٍ الحفظ على الخادم...";
     try {
-      await saveAdminRecoveryConfig(question, answer);
-      document.getElementById("adminRecoveryAnswerInput").value = "";
-      showToast("تم حفظ سؤال الأمان لهذا الجهاز");
-    } catch (e) { showToast("⚠️ السؤال لا يقل عن 6 أحرف والإجابة لا تقل عن 3 أحرف"); }
+      await window.MitaliFirebase.configureManagerRecovery({ recoveryCode: code });
+      codeInput.value = "";
+      showToast("تم حفظ رمز الاسترداد بأمان. احتفظ بالنسخة التي نسختها خارج الجهاز", 5000);
+    } catch (e) {
+      showToast(`⚠️ ${adminAccountFailureMessage(e, "تعذر حفظ رمز الاسترداد على الخادم")}`, 7000);
+    } finally { saveAdminRecoveryBtn.disabled = false; saveAdminRecoveryBtn.textContent = "حفظ رمز الاسترداد"; }
   });
 
   const generateDemoBtn = document.getElementById("generateDemo");
@@ -5953,6 +5971,13 @@ const MAX_LOGIN_FAILURES = 5;
 const LOGIN_LOCK_MS = 5 * 60 * 1000;
 const ADMIN_RECOVERY_KEY = APP_PREFIX + "admin_recovery_v1";
 const DEFAULT_RECOVERY_QUESTION = "ما الاسم السري الذي يحدده مدير النظام؟";
+function generateRecoveryCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  const bytes = new Uint8Array(16);
+  if (window.crypto?.getRandomValues) window.crypto.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  return Array.from(bytes, b => alphabet[b % alphabet.length]).join("");
+}
 async function digestRecoveryAnswer(value) {
   const text = String(value || "").trim().normalize("NFKC");
   if (window.crypto && crypto.subtle) {
@@ -5982,21 +6007,22 @@ async function saveAdminRecoveryConfig(question, answer) {
 function openForgotPasswordModal() {
   const old = document.getElementById("forgotPasswordModal");
   if (old) old.remove();
-  const config = readAdminRecoveryConfig();
   const modal = document.createElement("div");
   modal.id = "forgotPasswordModal";
   modal.className = "modal-backdrop";
   modal.innerHTML = `
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="forgotPasswordTitle" style="max-width:430px;">
-      <div class="section-title" id="forgotPasswordTitle">🔐 استعادة الدخول بسؤال الأمان</div>
-      <p class="hint" style="line-height:1.8; margin-bottom:12px;">أجب عن سؤال الأمان الذي أعدّه مدير النظام لهذا الجهاز. لا تُدخل كلمة المرور الحالية في هذا النموذج.</p>
+      <div class="section-title" id="forgotPasswordTitle">🔐 استرداد كلمة مرور المدير</div>
+      <p class="hint" style="line-height:1.8; margin-bottom:12px;">أدخل اسم المستخدم admin ورمز الاسترداد الذي أعددته مسبقًا، ثم اختر كلمة مرور جديدة. لا تُدخل كلمة المرور القديمة.</p>
       <form id="forgotPasswordForm">
-        <div class="field"><label>اسم المستخدم</label><input id="recoveryUsernameInput" required autocomplete="username" placeholder="admin"></div>
-        <div class="field" style="margin-top:10px;"><label>${esc(config?.question || DEFAULT_RECOVERY_QUESTION)}</label><input id="recoveryAnswerInput" required type="password" autocomplete="off"></div>
+        <div class="field"><label>اسم المستخدم</label><input id="recoveryUsernameInput" required autocomplete="username" value="admin"></div>
+        <div class="field" style="margin-top:10px;"><label>رمز الاسترداد</label><input id="recoveryCodeInput" required type="text" autocomplete="off"></div>
+        <div class="field" style="margin-top:10px;"><label>كلمة المرور الجديدة</label><input id="recoveryNewPasswordInput" required type="password" minlength="6" autocomplete="new-password"></div>
+        <div class="field" style="margin-top:10px;"><label>تأكيد كلمة المرور الجديدة</label><input id="recoveryConfirmPasswordInput" required type="password" minlength="6" autocomplete="new-password"></div>
         <div id="recoveryMessage" class="hint" style="display:none; margin-top:10px; line-height:1.8;"></div>
         <div style="display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; margin-top:14px;">
           <button type="button" class="btn ghost" id="closeForgotPasswordBtn">إغلاق</button>
-          <button type="submit" class="btn">تحقق</button>
+          <button type="submit" class="btn">تعيين كلمة المرور</button>
         </div>
       </form>
     </div>`;
@@ -6006,25 +6032,28 @@ function openForgotPasswordModal() {
   modal.addEventListener("click", e => { if (e.target === modal) close(); });
   modal.querySelector("#forgotPasswordForm")?.addEventListener("submit", async e => {
     e.preventDefault();
+    const form = e.target;
     const message = modal.querySelector("#recoveryMessage");
     const username = modal.querySelector("#recoveryUsernameInput").value.trim().toLowerCase();
-    const answer = modal.querySelector("#recoveryAnswerInput").value;
-    if (!config) {
-      message.style.display = "block";
-      message.style.color = "var(--expense)";
-      message.textContent = "لم يُعدّ سؤال أمان على هذا الجهاز بعد. اطلب من مدير النظام ضبطه من صفحة الإعدادات، أو استخدم Firebase Console لإعادة تعيين كلمة المرور.";
-      return;
+    const recoveryCode = modal.querySelector("#recoveryCodeInput").value.trim();
+    const newPassword = modal.querySelector("#recoveryNewPasswordInput").value;
+    const confirmation = modal.querySelector("#recoveryConfirmPasswordInput").value;
+    const submit = form.querySelector('button[type="submit"]');
+    const showError = text => { message.style.display = "block"; message.style.color = "var(--expense)"; message.textContent = text; };
+    if (newPassword !== confirmation) { showError("كلمتا المرور غير متطابقتين."); return; }
+    if (newPassword.length < 6) { showError("كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل."); return; }
+    submit.disabled = true; submit.textContent = "جارٍ التحقق والتحديث...";
+    try {
+      await window.MitaliFirebase.recoverManagerPassword({ username, recoveryCode, newPassword });
+      message.style.display = "block"; message.style.color = "var(--income)";
+      message.textContent = "تم تغيير كلمة مرور المدير بنجاح. أغلق النافذة وسجّل الدخول بالكلمة الجديدة.";
+      form.reset();
+      setTimeout(close, 1800);
+    } catch (error) {
+      const code = error && (error.code || error.message);
+      showError(code === "recovery-not-configured" ? "لم يُعدّ رمز استرداد لهذا الحساب بعد. يجب إعداد الرمز من صفحة الإعدادات أثناء تسجيل دخول المدير." : code === "recovery-temporarily-locked" ? "تم إيقاف محاولات الاسترداد مؤقتًا بعد محاولات غير صحيحة. حاول لاحقًا." : code === "auth/weak-password" ? "كلمة المرور الجديدة ضعيفة؛ استخدم 6 أحرف أو أرقام على الأقل." : "رمز الاسترداد أو بيانات الحساب غير صحيحة.");
+      submit.disabled = false; submit.textContent = "تعيين كلمة المرور";
     }
-    const answerHash = await digestRecoveryAnswer(answer);
-    if (username !== String(config.username || "admin").toLowerCase() || answerHash !== config.answerHash) {
-      message.style.display = "block";
-      message.style.color = "var(--expense)";
-      message.textContent = "بيانات سؤال الأمان غير صحيحة.";
-      return;
-    }
-    message.style.display = "block";
-    message.style.color = "var(--income)";
-    message.innerHTML = `تم التحقق من سؤال الأمان على هذا الجهاز. لأسباب أمنية لا يستطيع المتصفح تغيير كلمة مرور Firebase مباشرة؛ افتح لوحة Firebase Authentication واضبط كلمة مرور جديدة للحساب <strong>admin</strong>. <a href="https://console.firebase.google.com/project/mitali-hospital/authentication/users" target="_blank" rel="noopener noreferrer">فتح Firebase Authentication</a>`;
   });
 }
 // حسابات نُقلت إلى Firebase Auth. تبقى بقية الحسابات على المسار القديم مؤقتاً

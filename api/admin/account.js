@@ -8,6 +8,8 @@ const {
   writeProfilePair,
   listProfiles,
   sanitizeProfile,
+  hashRecoveryCode,
+  recoveryCodeMatches,
 } = require('../_lib/firebase-admin');
 
 function json(res, status, body) {
@@ -137,6 +139,53 @@ async function updateAccount(api, input) {
   return writeProfilePair(api, uid, patch);
 }
 
+const RECOVERY_DOC_ID = 'admin_manager';
+function validRecoveryCode(value) {
+  const code = String(value || '').trim();
+  if (code.length < 10 || code.length > 64) throw Object.assign(new Error('recovery-code-invalid'), { status: 400 });
+  return code;
+}
+function recoveryCollection(api) {
+  return api.firestore().collection('_security');
+}
+async function configureManagerRecovery(api, managerUid, input) {
+  const code = validRecoveryCode(input.recoveryCode);
+  const salt = require('crypto').randomBytes(16).toString('hex');
+  const now = new Date().toISOString();
+  await recoveryCollection(api).doc(RECOVERY_DOC_ID).set({
+    uid: String(managerUid), username: 'admin', salt,
+    codeHash: hashRecoveryCode(code, salt), attempts: 0, lockedUntil: 0,
+    updatedAt: now, lastUsedAt: null,
+  }, { merge: true });
+  return { configured: true, updatedAt: now };
+}
+async function recoverManagerPassword(api, input) {
+  const username = String(input.username || '').trim().toLowerCase();
+  const code = validRecoveryCode(input.recoveryCode);
+  const password = requirePassword(input.newPassword);
+  if (username !== 'admin') throw Object.assign(new Error('invalid-recovery-code'), { status: 400 });
+  const ref = recoveryCollection(api).doc(RECOVERY_DOC_ID);
+  const snapshot = await ref.get();
+  const recovery = snapshot.exists ? snapshot.data() : null;
+  if (!recovery || !recovery.uid) throw Object.assign(new Error('recovery-not-configured'), { status: 409 });
+  const nowMs = Date.now();
+  if (Number(recovery.lockedUntil || 0) > nowMs) throw Object.assign(new Error('recovery-temporarily-locked'), { status: 429 });
+  if (!recoveryCodeMatches(code, recovery.salt, recovery.codeHash)) {
+    const attempts = Number(recovery.attempts || 0) + 1;
+    await ref.set({ attempts, lockedUntil: attempts >= 5 ? nowMs + 15 * 60 * 1000 : 0, lastFailedAt: new Date(nowMs).toISOString() }, { merge: true });
+    throw Object.assign(new Error('invalid-recovery-code'), { status: 400 });
+  }
+  const current = await readProfile(api, recovery.uid);
+  if (!current || current.username !== 'admin' || current.role !== 'مدير' || current.status === 'موقوف') throw Object.assign(new Error('recovery-account-unavailable'), { status: 409 });
+  const now = new Date().toISOString();
+  const nextVersion = Number(current.credentialVersion || current.securityVersion || 1) + 1;
+  await api.auth().updateUser(String(recovery.uid), { password });
+  await api.auth().revokeRefreshTokens(String(recovery.uid));
+  const updated = await writeProfilePair(api, recovery.uid, { ...current, credentialVersion: nextVersion, securityVersion: nextVersion, lastPasswordChangeAt: now, updatedAt: now });
+  await ref.set({ attempts: 0, lockedUntil: 0, lastUsedAt: now }, { merge: true });
+  return updated;
+}
+
 async function deleteAccount(api, input) {
   const uid = String(input.uid || '');
   if (!uid) throw Object.assign(new Error('missing-uid'), { status: 400 });
@@ -154,9 +203,15 @@ async function deleteAccount(api, input) {
 module.exports = async function handler(req, res) {
   try {
     if (req.method !== 'GET' && req.method !== 'POST') return json(res, 405, { error: 'method-not-allowed' });
-    const { api } = await requireManager(req);
-    if (req.method === 'GET') return json(res, 200, { accounts: (await listProfiles(api)).map(publicProfile) });
     const input = bodyOf(req);
+    if (req.method === 'POST' && input.action === 'recoverManagerPassword') {
+      const api = getAdmin();
+      const profile = await recoverManagerPassword(api, input);
+      return json(res, 200, { ok: true, account: publicProfile(profile) });
+    }
+    const { api, uid: managerUid } = await requireManager(req);
+    if (req.method === 'GET') return json(res, 200, { accounts: (await listProfiles(api)).map(publicProfile) });
+    if (input.action === 'configureManagerRecovery') return json(res, 200, { ok: true, recovery: await configureManagerRecovery(api, managerUid, input) });
     let profile;
     if (input.action === 'create') profile = await createAccount(api, input);
     else if (input.action === 'update' || input.action === 'resetPassword' || input.action === 'toggleStatus' || input.action === 'permissions') profile = await updateAccount(api, input);

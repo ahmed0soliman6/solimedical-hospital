@@ -3,7 +3,9 @@ const assert = require('node:assert/strict');
 const { authEmailForUsername, cleanPermissions, sanitizeProfile } = require('../api/_lib/firebase-admin');
 
 assert.equal(authEmailForUsername(' Ahmed '), 'u-YWhtZWQ@accounts.mitali-hospital.internal');
-const permissions = cleanPermissions({ users: { edit: true, unknown: true }, reports: { view: true } });
+const permissions = cleanPermissions({ dashboard: { view: true }, outstandingBalances: { view: true }, users: { edit: true, unknown: true }, reports: { view: true } });
+assert.equal(permissions.dashboard.view, true);
+assert.equal(permissions.outstandingBalances.view, true);
 assert.equal(permissions.users.edit, true);
 assert.equal(permissions.users.unknown, undefined);
 assert.equal(permissions.reports.view, true);

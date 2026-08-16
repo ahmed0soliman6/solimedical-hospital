@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const crypto = require('crypto');
 
 function normalizePrivateKey(rawValue) {
   let value = String(rawValue || '').trim();
@@ -49,6 +50,7 @@ function cleanPermissions(value) {
   const source = value && typeof value === 'object' ? value : {};
   const result = {};
   const modules = {
+    dashboard: ['view'],
     doctors: ['view', 'add', 'edit', 'delete'],
     employees: ['view', 'add', 'edit', 'delete'],
     clinic: ['view', 'add', 'edit', 'delete'],
@@ -63,6 +65,7 @@ function cleanPermissions(value) {
     ledger: ['view'],
     outstandingBalancesClinic: ['view'],
     outstandingBalancesDental: ['view'],
+    outstandingBalances: ['view'],
     reports: ['view'],
     payroll: ['view', 'add', 'edit', 'delete'],
     categories: ['view', 'add', 'edit', 'delete'],
@@ -75,6 +78,16 @@ function cleanPermissions(value) {
     for (const action of actions) result[module][action] = !!(source[module] && source[module][action]);
   }
   return result;
+}
+
+function hashRecoveryCode(code, salt) {
+  return crypto.pbkdf2Sync(String(code || ''), String(salt || ''), 120000, 32, 'sha256').toString('hex');
+}
+
+function recoveryCodeMatches(code, salt, expectedHash) {
+  const actual = Buffer.from(hashRecoveryCode(code, salt), 'hex');
+  const expected = Buffer.from(String(expectedHash || ''), 'hex');
+  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
 }
 
 function fullPermissions() {
@@ -164,4 +177,6 @@ module.exports = {
   readProfile,
   writeProfilePair,
   listProfiles,
+  hashRecoveryCode,
+  recoveryCodeMatches,
 };
