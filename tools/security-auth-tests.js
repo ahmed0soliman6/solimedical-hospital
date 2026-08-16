@@ -7,6 +7,8 @@ const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const rules = fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8');
 const store = fs.readFileSync(path.join(root, 'firebase-store.js'), 'utf8');
+const adminLib = fs.readFileSync(path.join(root, 'api/_lib/firebase-admin.js'), 'utf8');
+const adminApi = fs.readFileSync(path.join(root, 'api/admin/account.js'), 'utf8');
 
 function passwordPolicy(current, next, confirmation) {
   if (!next || next.length < 6) return 'weak';
@@ -56,13 +58,28 @@ assert.match(html, /تم تغيير كلمة المرور بنجاح/);
 assert.match(html, /لا يمكن تغيير كلمة المرور محليًا/);
 
 // Firestore rules must prevent self privilege changes while allowing only security metadata.
-assert.match(rules, /affectedKeys\(\)\.hasOnly\(\['lastLogin', 'securityVersion', 'lastPasswordChangeAt'\]\)/);
+assert.match(rules, /affectedKeys\(\)\.hasOnly\(\['lastLogin', 'credentialVersion', 'securityVersion', 'lastPasswordChangeAt'\]\)/);
 assert.match(rules, /match \/staff_accounts\/\{document\}/);
 assert.match(rules, /allow write: if isAdmin\(\);/);
 assert.match(rules, /collection != 'staff_accounts'/);
 
 // No literal password may be stored in the staff account persistence path.
-assert.match(store, /if \(key === "staffAccounts"\) delete data\.password/);
+assert.match(store, /if \(key === "staffAccounts"\) \{ delete data\.password; delete data\.passwordHash; \}/);
 assert.match(html, /a\.password = ""/);
+
+// Server-side account operations are manager-only and never return plaintext passwords.
+assert.match(store, /adminAccountRequest/);
+assert.match(store, /getIdToken\(true\)/);
+assert.match(adminApi, /requireManager/);
+assert.match(adminApi, /createUser/);
+assert.match(adminApi, /updateUser/);
+assert.match(adminApi, /credentialVersion/);
+assert.match(adminApi, /writeProfilePair/);
+assert.match(adminApi, /deleteUser/);
+assert.match(adminApi, /delete value\.password/);
+assert.match(adminLib, /passwordHash: api\.firestore\.FieldValue\.delete\(\)/);
+assert.match(html, /readTrustedDevice/);
+assert.match(html, /requireServer: true/);
+assert.match(html, /credentialVersion/);
 
 console.log('PASS security-auth-tests: login validation, generic errors, lockout, session expiry, password policy, Firebase reauthentication, security versioning, and Firestore rule guards.');

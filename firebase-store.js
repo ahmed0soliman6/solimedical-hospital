@@ -106,7 +106,7 @@
     const data = Object.assign({}, record || {});
     // Passwords belong only to Firebase Authentication and must never be copied
     // into Firestore during the migration.
-    if (key === "staffAccounts") delete data.password;
+    if (key === "staffAccounts") { delete data.password; delete data.passwordHash; }
     return cleanDocument(data);
   }
 
@@ -159,6 +159,43 @@
     return true;
   }
 
+  async function adminAccountRequest(payload) {
+    init();
+    if (!auth || !auth.currentUser) throw new Error('auth/not-authenticated');
+    const token = await auth.currentUser.getIdToken(true);
+    const response = await fetch('/api/admin/account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(payload || {})
+    });
+    let body = null;
+    try { body = await response.json(); } catch (e) { body = null; }
+    if (!response.ok) {
+      const error = new Error((body && body.error) || `admin-api-${response.status}`);
+      error.code = (body && body.error) || `admin-api-${response.status}`;
+      throw error;
+    }
+    return body;
+  }
+
+  async function adminCreateAccount(payload) {
+    return adminAccountRequest(Object.assign({ action: 'create' }, payload || {}));
+  }
+
+  async function adminUpdateAccount(payload) {
+    return adminAccountRequest(Object.assign({ action: 'update' }, payload || {}));
+  }
+
+  async function adminListAccounts() {
+    init();
+    if (!auth || !auth.currentUser) throw new Error('auth/not-authenticated');
+    const token = await auth.currentUser.getIdToken(true);
+    const response = await fetch('/api/admin/account', { headers: { 'Authorization': `Bearer ${token}` } });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw Object.assign(new Error(body.error || `admin-api-${response.status}`), { code: body.error });
+    return body.accounts || [];
+  }
+
   async function signOut() {
     init();
     if (auth) await auth.signOut();
@@ -169,10 +206,11 @@
     return auth ? auth.currentUser : null;
   }
 
-  async function getUserProfile(uid) {
+  async function getUserProfile(uid, options = {}) {
     await ready();
     if (!auth || !auth.currentUser || auth.currentUser.uid !== uid) throw new Error('Firebase user is not authenticated');
-    const snap = await db.collection('users').doc(String(uid)).get();
+    const ref = db.collection('users').doc(String(uid));
+    const snap = options && options.source ? await ref.get({ source: options.source }) : await ref.get();
     return snap.exists ? Object.assign({ id: snap.id }, snap.data()) : null;
   }
 
@@ -208,14 +246,19 @@
     return true;
   }
 
-  async function getTable(key) {
+  async function getTable(key, options = {}) {
     await ready();
-    const snap = await db.collection(collectionName(key)).get();
-    return snap.docs.map((doc) => Object.assign({ id: doc.id }, doc.data()));
+    const query = db.collection(collectionName(key));
+    const snap = options && options.source ? await query.get({ source: options.source }) : await query.get();
+    return snap.docs.map((doc) => {
+      const record = Object.assign({ id: doc.id }, doc.data());
+      if (key === "staffAccounts") { delete record.password; delete record.passwordHash; }
+      return record;
+    });
   }
 
-  async function getValue(key, fallback) {
-    const records = await getTable(key);
+  async function getValue(key, fallback, options = {}) {
+    const records = await getTable(key, options);
     if (!records.length) return fallback;
     if (key === "specialties") {
       const raw = Object.assign({}, records[0]);
@@ -325,6 +368,10 @@
     signInWithUsername,
     createAuthUserForUsername,
     changePassword,
+    adminAccountRequest,
+    adminCreateAccount,
+    adminUpdateAccount,
+    adminListAccounts,
     signOut,
     authUser,
     waitForAuth,

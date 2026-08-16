@@ -730,7 +730,7 @@ async function storeGet(key, fallback, options = {}) {
         return cached;
       }
       try {
-        const remote = await window.MitaliFirebase.getValue(key, fallback);
+        const remote = await window.MitaliFirebase.getValue(key, fallback, options.requireServer ? { source: "server" } : {});
         if (remote !== undefined && remote !== null) {
           const safeRemote = Array.isArray(remote) ? mergeRemoteSnapshot(key, remote) : remote;
           await cacheLocally(key, safeRemote);
@@ -1777,8 +1777,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.5";
-const APP_RELEASE_NOTES = "تقوية تسجيل الدخول • جلسة محددة المدة • حماية تغيير كلمة المرور";
+const APP_VERSION = "v1.3.7";
+const APP_RELEASE_NOTES = "إدارة حسابات آمنة • دخول أسرع • مزامنة وإلغاء اعتماد الأجهزة";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -2114,17 +2114,20 @@ function openChangeMyPasswordModal() {
     try {
       if (!navigator.onLine) throw new Error("offline");
       await window.MitaliFirebase.changePassword(account.username, current, new1);
-      const nextSecurityVersion = Math.max(1, Number(account.securityVersion || currentUser.securityVersion || 1) + 1);
+      const nextCredentialVersion = Math.max(1, Number(account.credentialVersion || account.securityVersion || currentUser.credentialVersion || currentUser.securityVersion || 1) + 1);
       const changedAt = nowISO();
       if (window.MitaliFirebase.updateOwnSecurityMetadata) {
-        await window.MitaliFirebase.updateOwnSecurityMetadata({ securityVersion: nextSecurityVersion, lastPasswordChangeAt: changedAt });
+        await window.MitaliFirebase.updateOwnSecurityMetadata({ credentialVersion: nextCredentialVersion, securityVersion: nextCredentialVersion, lastPasswordChangeAt: changedAt });
       }
       account.password = "";
-      account.securityVersion = nextSecurityVersion;
+      account.credentialVersion = nextCredentialVersion;
+      account.securityVersion = nextCredentialVersion;
       account.lastPasswordChangeAt = changedAt;
       account.updatedAt = changedAt;
       currentUser.password = "";
-      currentUser.securityVersion = nextSecurityVersion;
+      currentUser.credentialVersion = nextCredentialVersion;
+      currentUser.securityVersion = nextCredentialVersion;
+      clearTrustedDevice();
       currentUser.sessionIssuedAt = Date.now();
       currentUser.sessionExpiresAt = Date.now() + SESSION_TTL_MS;
       setSession(currentUser);
@@ -5407,7 +5410,23 @@ function renderDataConflicts() {
 function countActiveAdmins(excludeId) {
   return (DB.staffAccounts || []).filter(a => a.role === "مدير" && a.status !== "موقوف" && a.id !== excludeId).length;
 }
+let ADMIN_ACCOUNTS_REFRESH_IN_PROGRESS = false;
+async function refreshAccountsFromAdminApi(shouldRoute = true) {
+  if (ADMIN_ACCOUNTS_REFRESH_IN_PROGRESS || !navigator.onLine || !isAdminUser() || !window.MitaliFirebase?.adminListAccounts) return;
+  ADMIN_ACCOUNTS_REFRESH_IN_PROGRESS = true;
+  try {
+    const accounts = await window.MitaliFirebase.adminListAccounts();
+    if (Array.isArray(accounts) && accounts.length) {
+      DB.staffAccounts = accounts;
+      await cacheLocally("staffAccounts", accounts);
+      await writeSyncBaseline("staffAccounts", accounts);
+      if (shouldRoute && state.page === "users" || shouldRoute && state.page === "permissions") route();
+    }
+  } catch (error) { console.warn("Fresh account list unavailable:", error && (error.code || error.message)); }
+  finally { ADMIN_ACCOUNTS_REFRESH_IN_PROGRESS = false; }
+}
 function renderUsersPage() {
+  refreshAccountsFromAdminApi(true);
   const c = document.getElementById("content");
   const editing = state.editUserId ? DB.staffAccounts.find(a => a.id === state.editUserId) : null;
   const canAdd = can("users", "add");
@@ -5421,7 +5440,7 @@ function renderUsersPage() {
         <input type="hidden" name="editId" value="${editing?.id || ""}">
         <div class="field"><label>الاسم الظاهر</label><input type="text" name="displayName" required value="${esc(editing?.displayName)}"></div>
         <div class="field"><label>اسم المستخدم</label><input type="text" name="username" required value="${esc(editing?.username)}"></div>
-        <div class="field"><label>${editing ? "كلمة المرور" : "كلمة المرور المؤقتة"}</label><input type="password" name="password" ${editing ? "disabled" : "required"} minlength="6" placeholder="${editing ? "تُدار من Firebase Authentication" : "تُستخدم لإنشاء حساب Firebase"}" value="" autocomplete="new-password"></div>
+        <div class="field"><label>${editing ? "كلمة مرور جديدة (اختياري)" : "كلمة المرور المؤقتة"}</label><div style="position:relative;"><input type="password" name="password" ${editing ? "" : "required"} minlength="6" placeholder="${editing ? "اتركه فارغًا لعدم التغيير" : "أدخل كلمة مرور مؤقتة"}" value="" autocomplete="new-password" style="padding-left:62px;"><button type="button" class="btn sm ghost" data-toggle-user-password style="position:absolute; left:5px; top:50%; transform:translateY(-50%); padding:4px 7px;">إظهار</button></div><div class="hint" style="margin-top:5px;">لا تُعرض كلمة المرور بعد الحفظ؛ استخدم هذا الحقل لتعيين كلمة جديدة فقط.</div></div>
         <div class="field"><label>الدور</label><select name="role">
           <option value="موظف" ${editing && editing.role !== "مدير" ? "selected" : ""}>موظف</option>
           <option value="مدير" ${editing?.role === "مدير" ? "selected" : ""}>مدير</option>
@@ -5445,7 +5464,7 @@ function renderUsersPage() {
             <tr>
               <td>${esc(a.displayName)}</td>
               <td>${esc(a.username)}</td>
-              <td>${a.firebaseUid ? "مدارة عبر Firebase Authentication" : "غير مرتبطة بـ Firebase — يجب إنشاء الحساب من جديد"}</td>
+              <td><span class="pill">غير معروضة</span></td>
               <td>${esc(a.role)}</td>
               <td><span class="pill ${a.status === "موقوف" ? "unpaid" : "paid"}">${esc(a.status || "نشط")}</span></td>
               <td>${a.lastLogin ? new Date(a.lastLogin).toLocaleString("ar-EG") : "لم يسجّل الدخول بعد"}</td>
@@ -5475,159 +5494,163 @@ function renderUsersPage() {
     const password = (fd.get("password") || "").trim();
     const role = fd.get("role");
     let msg;
-    if (editId) {
-      const a = DB.staffAccounts.find(x => x.id === editId);
-      if (!a) return;
-      if (a.role === "مدير" && role !== "مدير" && countActiveAdmins(a.id) === 0) {
-        showToast("⚠️ لا يمكن تغيير دور آخر مدير نشط فى النظام"); return;
-      }
-      // إصلاح تتبّع: كان تعديل مستخدم يُسجَّل فى سجل النشاط بلا "قبل التعديل" إطلاقًا
-      // (بخلاف كل شاشات التعديل الأخرى فى النظام)، فلا يمكن معرفة ماذا تغيّر فعليًا
-      // لاحقًا عند المراجعة. لا نُدرج كلمة المرور نفسها هنا (قبل أو بعد) تفاديًا لتكرار
-      // نص حساس فى سجل النشاط بلا داعٍ - فقط إشارة إلى ما إذا تغيّرت أم لا.
-      const before = { displayName: a.displayName, username: a.username, role: a.role, passwordChanged: false };
-      if (a.firebaseUid && username !== a.username) {
-        showToast("⚠️ لا يمكن تغيير اسم مستخدم مرتبط بـ Firebase من هذا الحقل؛ الاسم مرتبط بحساب Authentication.", 6000);
-        return;
-      }
-      if (password) {
-        showToast("⚠️ تغيير كلمة مرور مستخدم آخر يتم من Firebase Authentication فقط، ولا تُحفظ كلمات المرور داخل التطبيق.", 6000);
-        return;
-      }
-      a.displayName = fd.get("displayName"); a.username = username; a.role = role;
-      a.password = "";
-      // إصلاح جوهري: بدون تحديث updatedAt هنا، كان الدمج الذكى (pushTableSmart)
-      // عاجزًا عن معرفة أى نسخة أحدث فعليًا بين الأجهزة عند تعارض بيانات نفس
-      // الحساب، فيرجّح الجهاز المحلى افتراضيًا عند تساوى الطابع الزمنى القديم -
-      // وهو ما كان يعيد كتابة كلمة مرور قديمة فوق التعديل الصحيح بصمت.
-      a.updatedAt = nowISO();
-      logActivity("تعديل مستخدم", "users", before, { displayName: a.displayName, username: a.username, role: a.role, passwordChanged: !!password });
-      state.editUserId = null;
-      msg = "تم حفظ تعديل المستخدم";
-    } else {
-      if (!password) { showToast("⚠️ أدخل كلمة مرور مؤقتة لإنشاء الحساب"); return; }
-      if (password.length < 6) { showToast("⚠️ كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل"); return; }
-      const newUser = {
-        id: uid(), displayName: fd.get("displayName"), username, password: "", role,
-        status: "نشط", createdAt: todayISO(), lastLogin: null, updatedAt: nowISO(), securityVersion: 1,
-        permissions: role === "مدير" ? fullPermissions() : emptyPermissions(),
-      };
-      if (STORAGE_MODE === "firestore" && window.MitaliFirebase && window.MitaliFirebase.authUser()) {
-        try {
-          const credential = await window.MitaliFirebase.createAuthUserForUsername(username, password);
-          const firebaseUid = credential && credential.user && credential.user.uid;
-          if (!firebaseUid) throw new Error("Firebase لم يُرجع UID للحساب الجديد");
-          newUser.id = firebaseUid;
-          newUser.firebaseUid = firebaseUid;
-          await window.MitaliFirebase.setUserProfile(firebaseUid, newUser);
-          newUser.password = "";
-          msg = "تم إنشاء حساب الموظف وربطه مباشرةً بـ Firebase Authentication وFirestore";
-        } catch (firebaseError) {
-          console.error("Firebase staff account creation failed:", firebaseError);
-          const code = firebaseError && firebaseError.code;
-          const reason = code === "auth/email-already-in-use"
-            ? "اسم المستخدم مرتبط بحساب Firebase موجود بالفعل"
-            : code === "auth/invalid-email"
-              ? "اسم المستخدم غير صالح"
-              : code === "auth/weak-password"
-                ? "كلمة المرور ضعيفة؛ استخدم 6 أحرف أو أرقام على الأقل"
-                : (firebaseError && firebaseError.message) || "تعذر إنشاء الحساب في Firebase";
-          showToast(`⚠️ لم تتم إضافة الموظف: ${reason}`, 6000);
-          return;
-        }
-      } else {
-        showToast("⚠️ يجب الاتصال بالإنترنت وإنشاء الحساب عبر Firebase Authentication");
-        return;
-      }
-      DB.staffAccounts.push(newUser);
-      logActivity("إضافة مستخدم وربطه بـ Firebase", "users", null, { displayName: newUser.displayName, username: newUser.username, role: newUser.role, firebaseUid: newUser.firebaseUid || null });
-    }
-    // ننتظر اكتمال الحفظ فعليًا قبل الإعلان عن النجاح. هذا مهم بشكل خاص هنا:
-    // كان تغيير اسم المستخدم/كلمة المرور يظهر "تم الحفظ" فورًا حتى لو فشل الرفع
-    // الفعلى للسحابة، فتبقى بيانات الدخول القديمة سارية على أى جهاز آخر لأن
-    // التعديل لم يصل للخادم أصلًا رغم ظهور رسالة النجاح.
+    let operationMessage = '';
     try {
-      await persist("staffAccounts");
-      showToast(STORAGE_MODE === "firestore" && !navigator.onLine
-        ? msg + " (محليًا - سيُرفع تلقائيًا عند توفر الاتصال)"
-        : msg);
+      if (!window.MitaliFirebase || !window.MitaliFirebase.adminUpdateAccount || !window.MitaliFirebase.adminCreateAccount) {
+        throw Object.assign(new Error('admin-api-unavailable'), { code: 'admin-api-unavailable' });
+      }
+      if (editId) {
+        const a = DB.staffAccounts.find(x => x.id === editId);
+        if (!a) return;
+        if (!a.firebaseUid) { showToast("⚠️ هذا الحساب قديم وغير مرتبط بالمصادقة الآمنة؛ أنشئ حسابًا جديدًا بدل تعديل كلمة مروره.", 7000); return; }
+        if (a.role === "مدير" && role !== "مدير" && countActiveAdmins(a.id) === 0) {
+          showToast("⚠️ لا يمكن تغيير دور آخر مدير نشط فى النظام"); return;
+        }
+        const before = { displayName: a.displayName, username: a.username, role: a.role, status: a.status, passwordChanged: !!password };
+        const saveButton = e.target.querySelector('button[type="submit"]');
+        if (saveButton) { saveButton.disabled = true; saveButton.textContent = "جارٍ الحفظ على الخادم..."; }
+        const response = await window.MitaliFirebase.adminUpdateAccount({
+          uid: a.firebaseUid,
+          displayName: String(fd.get("displayName") || "").trim(),
+          username,
+          role,
+          status: a.status || "نشط",
+          permissions: a.permissions || emptyPermissions(),
+          password: password || undefined,
+        });
+        const updated = response && response.account;
+        if (!updated) throw new Error('invalid-admin-api-response');
+        const index = DB.staffAccounts.findIndex(x => x.id === a.id);
+        if (index >= 0) DB.staffAccounts[index] = Object.assign({}, DB.staffAccounts[index], updated);
+        await cacheLocally("staffAccounts", DB.staffAccounts);
+        await writeSyncBaseline("staffAccounts", DB.staffAccounts);
+        logActivity(password ? "تعديل مستخدم وتغيير كلمة المرور" : "تعديل مستخدم", "users", before, { displayName: updated.displayName, username: updated.username, role: updated.role, status: updated.status, passwordChanged: !!password });
+        operationMessage = password ? "تم حفظ بيانات المستخدم وتغيير كلمة المرور؛ أُلغيت الاعتمادات القديمة" : "تم حفظ تعديل المستخدم";
+      } else {
+        if (!password) { showToast("⚠️ أدخل كلمة مرور مؤقتة لإنشاء الحساب"); return; }
+        if (password.length < 6) { showToast("⚠️ كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل"); return; }
+        const saveButton = e.target.querySelector('button[type="submit"]');
+        if (saveButton) { saveButton.disabled = true; saveButton.textContent = "جارٍ إنشاء الحساب..."; }
+        const response = await window.MitaliFirebase.adminCreateAccount({
+          displayName: String(fd.get("displayName") || "").trim(),
+          username,
+          password,
+          role,
+          status: "نشط",
+          permissions: emptyPermissions(),
+        });
+        const newUser = response && response.account;
+        if (!newUser) throw new Error('invalid-admin-api-response');
+        DB.staffAccounts = [...(DB.staffAccounts || []).filter(a => a.id !== newUser.id && a.username !== newUser.username), newUser];
+        await cacheLocally("staffAccounts", DB.staffAccounts);
+        await writeSyncBaseline("staffAccounts", DB.staffAccounts);
+        logActivity("إضافة مستخدم", "users", null, { displayName: newUser.displayName, username: newUser.username, role: newUser.role });
+        operationMessage = "تم إنشاء الحساب وحفظه في Firebase؛ كلمة المرور صالحة الآن على الأجهزة الجديدة";
+      }
+      state.editUserId = null;
+      showToast(operationMessage);
+      route();
     } catch (err) {
-      console.error(err);
-      showToast("⚠️ تم الحفظ محليًا فقط - تعذّر رفع التعديل الآن، سيُعاد المحاولة تلقائيًا. لن يظهر التعديل على الأجهزة الأخرى حتى تكتمل المزامنة");
+      console.error("Professional account save failed:", err);
+      const code = err && (err.code || err.message);
+      const reason = code === "auth/email-already-exists" ? "اسم المستخدم مستخدم بالفعل"
+        : code === "auth/weak-password" ? "كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل"
+        : code === "cannot-remove-last-manager" ? "لا يمكن إزالة آخر مدير نشط"
+        : code === "admin-api-unavailable" ? "خدمة إدارة الحسابات غير متاحة حاليًا"
+        : "تعذر حفظ الحساب على الخادم؛ لم تُعرض رسالة نجاح ولم يُعتمد التعديل";
+      showToast(`⚠️ ${reason}`, 7000);
     }
-    route();
   });
   const cancelBtn = document.getElementById("cancelUserEdit");
   if (cancelBtn) cancelBtn.addEventListener("click", () => { state.editUserId = null; route(); });
 
   c.querySelectorAll("[data-edituser]").forEach(b => b.addEventListener("click", () => { state.editUserId = b.dataset.edituser; route(); }));
+  const passwordToggle = form?.querySelector("[data-toggle-user-password]");
+  const passwordField = form?.querySelector('input[name="password"]');
+  if (passwordToggle && passwordField) passwordToggle.addEventListener("click", () => {
+    const shown = passwordField.type === "text";
+    passwordField.type = shown ? "password" : "text";
+    passwordToggle.textContent = shown ? "إظهار" : "إخفاء";
+  });
+
   c.querySelectorAll("[data-resetpass]").forEach(b => b.addEventListener("click", () => {
     if (!canEdit) { showToast("⚠️ ليس لديك صلاحية"); return; }
     const a = DB.staffAccounts.find(x => x.id === b.dataset.resetpass);
-    if (!a) return;
-    showToast("⚠️ لا يمكن عرض كلمات المرور. افتح Firebase Authentication لتعيين كلمة مرور هذا الحساب، ثم لا تسجلها في Firestore.", 7000);
+    if (!a || !a.firebaseUid) { showToast("⚠️ الحساب القديم غير مرتبط بالمصادقة الآمنة؛ أنشئ حسابًا مرحّلًا أولًا", 7000); return; }
+    const old = document.getElementById("adminResetPasswordModal"); if (old) old.remove();
+    const modal = document.createElement("div");
+    modal.id = "adminResetPasswordModal";
+    modal.className = "modal-backdrop";
+    modal.innerHTML = `<div class="modal-card" role="dialog" aria-modal="true" style="max-width:430px;">
+      <div class="section-title">تعيين كلمة مرور جديدة</div>
+      <p class="hint" style="line-height:1.8;">للمستخدم: <strong>${esc(a.displayName)}</strong>. اكتب كلمة جديدة؛ لن تظهر الكلمة بعد الحفظ، وستُلغى الاعتمادات القديمة فور نجاح العملية.</p>
+      <form id="adminResetPasswordForm">
+        <div class="field"><label>كلمة المرور الجديدة</label><div style="position:relative;"><input id="adminResetPasswordInput" type="password" minlength="6" required autocomplete="new-password" style="padding-left:62px;"><button type="button" class="btn sm ghost" id="adminResetPasswordToggle" style="position:absolute; left:5px; top:50%; transform:translateY(-50%); padding:4px 7px;">إظهار</button></div></div>
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px;"><button type="button" class="btn ghost" id="closeAdminResetPassword">إلغاء</button><button type="submit" class="btn">حفظ كلمة المرور</button></div>
+      </form>
+    </div>`;
+    document.body.appendChild(modal);
+    const close = () => modal.remove();
+    modal.querySelector("#closeAdminResetPassword").addEventListener("click", close);
+    modal.addEventListener("click", e => { if (e.target === modal) close(); });
+    modal.querySelector("#adminResetPasswordToggle").addEventListener("click", () => {
+      const input = modal.querySelector("#adminResetPasswordInput"); const shown = input.type === "text"; input.type = shown ? "password" : "text"; modal.querySelector("#adminResetPasswordToggle").textContent = shown ? "إظهار" : "إخفاء";
+    });
+    modal.querySelector("#adminResetPasswordForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button[type="submit"]'); const password = modal.querySelector("#adminResetPasswordInput").value;
+      if (password.length < 6) { showToast("⚠️ كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل"); return; }
+      btn.disabled = true; btn.textContent = "جارٍ الحفظ على الخادم...";
+      try {
+        const response = await window.MitaliFirebase.adminUpdateAccount({ uid: a.firebaseUid, displayName: a.displayName, username: a.username, role: a.role, status: a.status || "نشط", permissions: a.permissions || emptyPermissions(), password });
+        const updated = response && response.account; if (!updated) throw new Error("invalid-admin-api-response");
+        const index = DB.staffAccounts.findIndex(x => x.id === a.id); if (index >= 0) DB.staffAccounts[index] = Object.assign({}, DB.staffAccounts[index], updated);
+        await cacheLocally("staffAccounts", DB.staffAccounts); await writeSyncBaseline("staffAccounts", DB.staffAccounts);
+        logActivity("تغيير كلمة مرور مستخدم وإلغاء اعتماد الأجهزة", "users", { username: a.username }, { username: a.username, credentialVersion: updated.credentialVersion });
+        showToast("تم حفظ كلمة المرور وإلغاء الاعتمادات القديمة"); close(); route();
+      } catch (err) { console.error(err); btn.disabled = false; btn.textContent = "حفظ كلمة المرور"; showToast("⚠️ لم تُحفظ كلمة المرور؛ لم يتغير اعتماد المستخدم", 7000); }
+    });
   }));
+
   c.querySelectorAll("[data-toggleuser]").forEach(b => b.addEventListener("click", async () => {
     if (!canEdit) { showToast("⚠️ ليس لديك صلاحية"); return; }
-    const a = DB.staffAccounts.find(x => x.id === b.dataset.toggleuser);
-    if (!a) return;
+    const a = DB.staffAccounts.find(x => x.id === b.dataset.toggleuser); if (!a) return;
     if (currentUser && currentUser.id === a.id) { showToast("⚠️ لا يمكنك إيقاف حسابك الحالي"); return; }
-    if (a.status !== "موقوف" && a.role === "مدير" && countActiveAdmins(a.id) === 0) {
-      showToast("⚠️ لا يمكن إيقاف آخر مدير نشط فى النظام"); return;
-    }
-    const before = a.status;
-    a.status = a.status === "موقوف" ? "نشط" : "موقوف";
-    a.updatedAt = nowISO(); // نفس إصلاح تحديث المستخدم أعلاه
-    logActivity(a.status === "موقوف" ? "إيقاف مستخدم" : "تفعيل مستخدم", "users", before, a.status);
+    if (!a.firebaseUid) { showToast("⚠️ الحساب القديم غير مرتبط بالمصادقة الآمنة؛ لا يمكن إيقافه من المسار الجديد", 7000); return; }
+    const nextStatus = a.status === "موقوف" ? "نشط" : "موقوف";
+    if (nextStatus === "موقوف" && a.role === "مدير" && countActiveAdmins(a.id) === 0) { showToast("⚠️ لا يمكن إيقاف آخر مدير نشط فى النظام"); return; }
+    b.disabled = true; b.textContent = "جارٍ الحفظ...";
     try {
-      await persist("staffAccounts");
-      showToast(a.status === "موقوف" ? "تم إيقاف المستخدم" : "تم تفعيل المستخدم");
-    } catch (err) {
-      console.error(err);
-      showToast("⚠️ تم الحفظ محليًا فقط - تعذّر رفع التعديل الآن");
-    }
-    route();
+      const response = await window.MitaliFirebase.adminUpdateAccount({ uid: a.firebaseUid, displayName: a.displayName, username: a.username, role: a.role, status: nextStatus, permissions: a.permissions || emptyPermissions() });
+      const updated = response && response.account; if (!updated) throw new Error("invalid-admin-api-response");
+      const index = DB.staffAccounts.findIndex(x => x.id === a.id); if (index >= 0) DB.staffAccounts[index] = Object.assign({}, DB.staffAccounts[index], updated);
+      await cacheLocally("staffAccounts", DB.staffAccounts); await writeSyncBaseline("staffAccounts", DB.staffAccounts);
+      logActivity(nextStatus === "موقوف" ? "إيقاف مستخدم وإلغاء اعتماد الأجهزة" : "تفعيل مستخدم", "users", a.status, nextStatus);
+      showToast(nextStatus === "موقوف" ? "تم إيقاف المستخدم وإلغاء اعتمادات أجهزته" : "تم تفعيل المستخدم"); route();
+    } catch (err) { console.error(err); b.disabled = false; showToast("⚠️ لم يُحفظ تغيير حالة المستخدم على الخادم", 7000); }
   }));
+
   c.querySelectorAll("[data-deluser]").forEach(b => b.addEventListener("click", async () => {
-    if (!canDelete) { showToast("⚠️ ليس لديك صلاحية"); return; }
-    const a = DB.staffAccounts.find(x => x.id === b.dataset.deluser);
-    if (!a) return;
-    if (currentUser && (currentUser.id === a.id || (a.firebaseUid && currentUser.firebaseUid === a.firebaseUid))) { showToast("⚠️ لا يمكنك حذف حسابك الحالي أثناء تسجيل الدخول به"); return; }
-    if (a.role === "مدير" && countActiveAdmins(a.id) === 0) { showToast("⚠️ لا يمكن حذف آخر مدير نشط فى النظام"); return; }
-    const linkedFirebase = !!a.firebaseUid;
-    const confirmation = linkedFirebase
-      ? `سيتم حذف سجل المستخدم وصلاحياته من Firestore. حساب Authentication نفسه لا يمكن حذفه من المتصفح، لكنه لن يستطيع الدخول دون ملف الصلاحيات. حذف "${a.displayName}"؟`
-      : `حذف المستخدم "${a.displayName}"؟ لن يتمكن من تسجيل الدخول بعد الآن.`;
-    if (!confirm(confirmation)) return;
-    const idx = DB.staffAccounts.findIndex(x => x.id === a.id);
-    if (idx < 0) return;
-    let profileDeleted = false;
+    if (!canDelete) { showToast("⚠️ ليس لديك صلاحية حذف المستخدمين"); return; }
+    const a = DB.staffAccounts.find(x => x.id === b.dataset.deluser); if (!a) return;
+    if (currentUser && (currentUser.id === a.id || currentUser.firebaseUid === a.firebaseUid)) { showToast("⚠️ لا يمكنك حذف حسابك الحالي أثناء تسجيل الدخول به"); return; }
+    if (!a.firebaseUid) { showToast("⚠️ الحساب القديم غير مرتبط بالمصادقة الآمنة؛ لم يُحذف", 7000); return; }
+    if (!confirm(`سيُحذف حساب الدخول وملف الصلاحيات للمستخدم "${a.displayName}" من النظام. لن تتأثر بيانات المرضى أو الزيارات. هل تتابع؟`)) return;
+    b.disabled = true; b.textContent = "جارٍ الحذف...";
     try {
-      if (linkedFirebase && window.MitaliFirebase && window.MitaliFirebase.deleteUserProfile) {
-        await window.MitaliFirebase.deleteUserProfile(a.firebaseUid);
-        profileDeleted = true;
-      }
-      DB.staffAccounts.splice(idx, 1);
-      logActivity("حذف مستخدم مكرر", "users", { displayName: a.displayName, firebaseUid: a.firebaseUid || null }, null);
-      await persist("staffAccounts");
-      showToast(linkedFirebase ? "تم حذف سجل الحساب المكرر من Firestore" : "تم الحذف");
-    } catch (err) {
-      console.error(err);
-      DB.staffAccounts.splice(idx, 0, a);
-      if (profileDeleted && window.MitaliFirebase && window.MitaliFirebase.setUserProfile) {
-        try { await window.MitaliFirebase.setUserProfile(a.firebaseUid, a); } catch (restoreError) { console.error("Could not restore deleted profile:", restoreError); }
-      }
-      try { await persist("staffAccounts"); } catch (restorePersistError) { console.error("Could not restore account list:", restorePersistError); }
-      showToast(`⚠️ لم يكتمل حذف الحساب: ${(err && (err.message || err.code)) || "تحقق من الاتصال والصلاحيات"}`, 6000);
-    }
-    route();
+      await window.MitaliFirebase.adminAccountRequest({ action: "delete", uid: a.firebaseUid });
+      DB.staffAccounts = DB.staffAccounts.filter(x => x.id !== a.id); await cacheLocally("staffAccounts", DB.staffAccounts); await writeSyncBaseline("staffAccounts", DB.staffAccounts);
+      logActivity("حذف حساب مستخدم", "users", { username: a.username }, null); showToast("تم حذف حساب الدخول وملف الصلاحيات"); route();
+    } catch (err) { console.error(err); b.disabled = false; showToast("⚠️ لم يكتمل حذف الحساب على الخادم", 7000); }
   }));
+
 }
 
 // ======================================================================
 // صفحة إدارة الصلاحيات
 // ======================================================================
 function renderPermissionsPage() {
+  refreshAccountsFromAdminApi(true);
   const c = document.getElementById("content");
   const accounts = DB.staffAccounts || [];
   if (!state.permUserId && accounts.length) state.permUserId = accounts[0].id;
@@ -5680,23 +5703,20 @@ function renderPermissionsPage() {
     PERMISSION_MODULES.forEach(m => m.actions.forEach(a => {
       perms[m.key][a.key] = form.querySelector(`[name="${m.key}.${a.key}"]`).checked;
     }));
-    t.permissions = perms;
-    t.updatedAt = nowISO(); // نفس إصلاح تحديث المستخدم أعلاه
-    logActivity("تعديل صلاحيات مستخدم", "permissions", null, t.displayName);
+    if (!t.firebaseUid || !window.MitaliFirebase || !window.MitaliFirebase.adminUpdateAccount) { showToast("⚠️ الحساب غير مرتبط بخدمة المصادقة الآمنة"); return; }
     const btn = form.querySelector('button[type="submit"]');
-    if (btn) { btn.disabled = true; btn.textContent = "جارٍ الحفظ..."; }
+    if (btn) { btn.disabled = true; btn.textContent = "جارٍ الحفظ على الخادم..."; }
     try {
-      // ننتظر اكتمال الحفظ فعليًا قبل إخبار المستخدم بالنجاح، بدل إظهار رسالة
-      // "تم الحفظ" فورًا دون التأكد من اكتمال الكتابة الفعلية.
-      await persist("staffAccounts");
-      showToast(STORAGE_MODE === "firestore" && !navigator.onLine
-        ? "تم حفظ الصلاحيات محليًا - ستُرفع للسحابة تلقائيًا عند توفر الاتصال"
-        : "تم حفظ الصلاحيات");
+      const response = await window.MitaliFirebase.adminUpdateAccount({ uid: t.firebaseUid, displayName: t.displayName, username: t.username, role: t.role, status: t.status || "نشط", permissions: perms });
+      const updated = response && response.account; if (!updated) throw new Error("invalid-admin-api-response");
+      const index = DB.staffAccounts.findIndex(x => x.id === t.id); if (index >= 0) DB.staffAccounts[index] = Object.assign({}, DB.staffAccounts[index], updated);
+      await cacheLocally("staffAccounts", DB.staffAccounts); await writeSyncBaseline("staffAccounts", DB.staffAccounts);
+      logActivity("تعديل صلاحيات مستخدم وإلغاء اعتماد الأجهزة", "permissions", null, t.displayName);
+      showToast("تم حفظ الصلاحيات على Firestore وإلغاء الاعتمادات القديمة"); route();
     } catch (err) {
-      console.error(err);
-      showToast("⚠️ تم حفظ الصلاحيات محليًا فقط - تعذّر رفعها الآن، سيُعاد المحاولة تلقائيًا");
+      console.error(err); if (btn) { btn.disabled = false; btn.textContent = "حفظ الصلاحيات"; }
+      showToast("⚠️ لم تُحفظ الصلاحيات؛ لم يتغير وصول المستخدم", 7000);
     }
-    route();
   });
 }
 
@@ -5921,6 +5941,40 @@ function registerLoginFailure() {
 }
 function clearLoginFailures() { saveLoginGuard({ failures: 0, lockedUntil: 0 }); }
 function genericLoginError() { return "اسم المستخدم أو كلمة المرور غير صحيحة."; }
+const DEVICE_TRUST_KEY = APP_PREFIX + "trusted_device_v2";
+function readTrustedDevice(username) {
+  try {
+    const raw = localStorage.getItem(DEVICE_TRUST_KEY);
+    const value = raw ? JSON.parse(raw) : null;
+    if (!value || String(value.username || '').toLowerCase() !== String(username || '').trim().toLowerCase()) return null;
+    if (Number(value.trustedUntil || 0) <= Date.now()) { localStorage.removeItem(DEVICE_TRUST_KEY); return null; }
+    return value;
+  } catch (e) { return null; }
+}
+async function deriveOfflinePasswordVerifier(password, salt) {
+  const text = String(password || '');
+  const saltBytes = new TextEncoder().encode(String(salt || ''));
+  if (window.crypto && crypto.subtle) {
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(text), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: saltBytes, iterations: 120000, hash: 'SHA-256' }, key, 256);
+    return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  return digestRecoveryAnswer(`${salt}:${text}`);
+}
+async function rememberTrustedDevice(account, password) {
+  try {
+    const now = Date.now();
+    const salt = (window.crypto && crypto.getRandomValues) ? Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('') : `${now}-${Math.random()}`;
+    const passwordVerifier = await deriveOfflinePasswordVerifier(password, salt);
+    localStorage.setItem(DEVICE_TRUST_KEY, JSON.stringify({ username: account.username, firebaseUid: account.firebaseUid, credentialVersion: Number(account.credentialVersion || account.securityVersion || 1), trustedAt: now, trustedUntil: now + OFFLINE_TRUST_TTL_MS, salt, passwordVerifier }));
+  } catch (e) { /* ignore local storage failures */ }
+}
+async function verifyTrustedDevicePassword(password, trust) {
+  if (!trust || !trust.salt || !trust.passwordVerifier) return false;
+  const verifier = await deriveOfflinePasswordVerifier(password, trust.salt);
+  return verifier === trust.passwordVerifier;
+}
+function clearTrustedDevice() { try { localStorage.removeItem(DEVICE_TRUST_KEY); } catch (e) { /* ignore */ } }
 function getSession() {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
@@ -5952,16 +6006,16 @@ async function validateSessionSecurity() {
   if (currentUser.sessionExpiresAt && Number(currentUser.sessionExpiresAt) <= Date.now()) return false;
   const account = getCurrentAccount();
   if (!account || account.status === "موقوف") return false;
-  const localVersion = Number(currentUser.securityVersion || account.securityVersion || 1);
-  if (Number(account.securityVersion || 1) !== localVersion) return false;
+  const localVersion = Number(currentUser.credentialVersion || currentUser.securityVersion || account.credentialVersion || account.securityVersion || 1);
+  if (Number(account.credentialVersion || account.securityVersion || 1) !== localVersion) return false;
   if (currentUser.firebaseUid && window.MitaliFirebase) {
     const authUser = window.MitaliFirebase.authUser();
     const offlineTrusted = !navigator.onLine && Number(currentUser.offlineTrustedUntil || 0) > Date.now();
     if (!authUser && !offlineTrusted) return false;
     if (authUser && navigator.onLine && window.MitaliFirebase.getUserProfile) {
       try {
-        const profile = await window.MitaliFirebase.getUserProfile(authUser.uid);
-        if (!profile || profile.status === "موقوف" || Number(profile.securityVersion || 1) !== localVersion) return false;
+        const profile = await window.MitaliFirebase.getUserProfile(authUser.uid, { source: navigator.onLine ? "server" : undefined });
+        if (!profile || profile.status === "موقوف" || Number(profile.credentialVersion || profile.securityVersion || 1) !== localVersion) return false;
       } catch (error) {
         if (!offlineTrusted) return false;
       }
@@ -5974,9 +6028,9 @@ async function refreshCurrentSessionSecurity() {
   try {
     const authUser = window.MitaliFirebase.authUser();
     if (!authUser || !window.MitaliFirebase.getUserProfile) return;
-    const profile = await window.MitaliFirebase.getUserProfile(authUser.uid);
-    const version = Number(profile && profile.securityVersion || 1);
-    if (!profile || profile.status === "موقوف" || version !== Number(currentUser.securityVersion || 1)) {
+    const profile = await window.MitaliFirebase.getUserProfile(authUser.uid, { source: navigator.onLine ? "server" : undefined });
+    const version = Number(profile && (profile.credentialVersion || profile.securityVersion) || 1);
+    if (!profile || profile.status === "موقوف" || version !== Number(currentUser.credentialVersion || currentUser.securityVersion || 1)) {
       await logout();
       renderLogin("انتهت صلاحية الجلسة الأمنية. سجّل الدخول مرة أخرى.");
     }
@@ -6037,6 +6091,8 @@ function renderLogin(errorMsg) {
     if (!username || !password) { renderLogin("يرجى إدخال اسم المستخدم وكلمة المرور."); return; }
     const lockedFor = loginLockRemainingMs();
     if (lockedFor > 0) { renderLogin(`تم إيقاف محاولات الدخول مؤقتًا. حاول بعد ${Math.ceil(lockedFor / 60000)} دقيقة.`); return; }
+    const trustedDevice = readTrustedDevice(username);
+    if (!navigator.onLine && !trustedDevice) { renderLogin("هذا جهاز جديد ويحتاج اتصالًا بالإنترنت لمزامنة بيانات الحساب قبل تسجيل الدخول."); return; }
     // تأكد أولًا من أحدث نسخة من حسابات المستخدمين قبل أى تحقق من كلمة المرور.
     // شاشة الدخول قد تكون ظلت مفتوحة لفترة (بعد تسجيل خروج، أو بعد إغلاق تلقائى
     // بسبب عدم الاستخدام) بينما غيّر مدير النظام اسم المستخدم/كلمة المرور لهذا
@@ -6048,22 +6104,28 @@ function renderLogin(errorMsg) {
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "جارٍ التحقق..."; }
     try {
       if (STORAGE_MODE === "firestore" && navigator.onLine) {
-        // إصلاح باق خطير: كان هذا السطر يستبدل DB.staffAccounts بأي نتيجة تأتي من
-        // Firestore دون تحقق - فلو رجع الجدول السحابي فارغًا لأي سبب (لم يُرفَع
-        // الحساب الافتراضي بعد، أو مشكلة شبكة مؤقتة أعادت مصفوفة فارغة بدل خطأ
-        // فعلي)، كان يُمسَح حساب admin المحلي بالكامل قبل حتى التحقق من كلمة
-        // المرور، فتفشل كل محاولات الدخول برسالة "بيانات غير صحيحة" رغم صحتها.
-        // الآن: تجاهل النتيجة البعيدة تمامًا إن كانت فارغة، واعتمد على النسخة
-        // المحلية الموجودة (التي تحتوي حساب admin الافتراضي دائمًا على الأقل).
-        const freshAccounts = await storeGet("staffAccounts", DB.staffAccounts);
-        if (freshAccounts && freshAccounts.length) DB.staffAccounts = freshAccounts;
+        // الجهاز الجديد لا يستخدم cache للحسابات؛ يجب أن تنجح قراءة الخادم قبل المصادقة.
+        const freshAccounts = await storeGet("staffAccounts", null, { requireServer: true });
+        if (!freshAccounts || !freshAccounts.length) throw new Error("fresh-account-read-empty");
+        DB.staffAccounts = freshAccounts;
       }
-    } catch (err) { /* تعذّر التحديث الآن - نكمل بالتحقق من أحدث نسخة متاحة محليًا */ }
+    } catch (err) {
+      if (!trustedDevice) { renderLogin("تعذر مزامنة أحدث بيانات الحساب من Firestore. تحقق من الاتصال ثم حاول مرة أخرى."); return; }
+    }
     let account = null;
     let firebaseAuthAccount = null;
+    let offlineAuthenticated = false;
+    if (!navigator.onLine && trustedDevice) {
+      const offlineAccount = (DB.staffAccounts || []).find(a => a.username === username && a.firebaseUid && Number(a.credentialVersion || a.securityVersion || 1) === Number(trustedDevice.credentialVersion || 1));
+      if (!offlineAccount || !(await verifyTrustedDevicePassword(password, trustedDevice))) {
+        registerLoginFailure(); renderLogin(genericLoginError()); return;
+      }
+      firebaseAuthAccount = Object.assign({}, offlineAccount, { firebaseUid: offlineAccount.firebaseUid });
+      offlineAuthenticated = true;
+    }
     // نحاول Firebase أولاً لكل اسم مستخدم. الحسابات القديمة التي لم تُنشأ في
     // Firebase ترجع إلى Firestore/التحقق المحلي بلا تغيير مرئي للمستخدم.
-    if (window.MitaliFirebase) {
+    if (!offlineAuthenticated && window.MitaliFirebase) {
       try {
         await window.MitaliFirebase.signInWithUsername(username, password);
       } catch (firebaseError) {
@@ -6080,7 +6142,7 @@ function renderLogin(errorMsg) {
       if (window.MitaliFirebase.authUser()) {
         try {
         const authUser = window.MitaliFirebase.authUser();
-        const profile = authUser ? await window.MitaliFirebase.getUserProfile(authUser.uid) : null;
+        const profile = authUser ? await window.MitaliFirebase.getUserProfile(authUser.uid, { source: "server" }) : null;
         if (!profile) {
           renderLogin("تم التحقق من كلمة المرور، لكن ملف صلاحيات admin غير موجود في Firestore.");
           return;
@@ -6112,7 +6174,9 @@ function renderLogin(errorMsg) {
       try {
         // لا نعيد انتظار شبكة Firestore مرتين في مسار الدخول؛ نستخدم الكاش
         // المحلي فورًا، ثم realtime/التحديث الخلفي يجلبان أحدث السجلات بعد عرض الواجهة.
-        await loadAll({ preferCache: true });
+        loadAll({ preferCache: true }).then(() => {
+          if (currentUser && state.page !== "login") route();
+        }).catch(reloadError => console.warn("Firestore account reload after login failed:", reloadError));
         account = (DB.staffAccounts || []).find(a => a.firebaseUid === firebaseAuthAccount.firebaseUid) || account;
       } catch (reloadError) {
         console.warn("Firestore account reload after login failed:", reloadError);
@@ -6122,12 +6186,13 @@ function renderLogin(errorMsg) {
     account.lastLogin = new Date().toISOString();
     try {
       if (firebaseAuthAccount && window.MitaliFirebase.updateOwnSecurityMetadata) {
-        await window.MitaliFirebase.updateOwnSecurityMetadata({ lastLogin: account.lastLogin });
+        window.MitaliFirebase.updateOwnSecurityMetadata({ lastLogin: account.lastLogin }).catch(persistError => console.warn("Could not persist login metadata:", persistError && persistError.code ? persistError.code : "remote-write-error"));
       }
     } catch (persistError) {
       console.warn("Could not persist login metadata:", persistError && persistError.code ? persistError.code : "remote-write-error");
     }
-    setSession({ id: account.id, username: account.username, displayName: account.displayName, role: account.role, firebaseUid: account.firebaseUid || null, securityVersion: Number(account.securityVersion || 1) });
+    setSession({ id: account.id, username: account.username, displayName: account.displayName, role: account.role, firebaseUid: account.firebaseUid || null, securityVersion: Number(account.securityVersion || 1), credentialVersion: Number(account.credentialVersion || account.securityVersion || 1) });
+    if (navigator.onLine && account.firebaseUid) rememberTrustedDevice(account, password).catch(error => console.warn("Trusted device enrollment failed:", error));
     logActivity("تسجيل دخول", "login");
     state.page = firstAccessiblePage(); state.editId = null;
     resetIdleTimer();
@@ -6226,7 +6291,7 @@ async function refreshTableFromFirestore(key, changes) {
     DATA_VERSION++;
     if (key === "staffAccounts" && currentUser) {
       const me = getCurrentAccount();
-      if (!me || me.status === "موقوف" || Number(me.securityVersion || 1) !== Number(currentUser.securityVersion || 1)) {
+      if (!me || me.status === "موقوف" || Number(me.credentialVersion || me.securityVersion || 1) !== Number(currentUser.credentialVersion || currentUser.securityVersion || 1)) {
         clearSession();
         renderLogin("انتهت صلاحية الجلسة الأمنية. سجّل الدخول مرة أخرى.");
         return;

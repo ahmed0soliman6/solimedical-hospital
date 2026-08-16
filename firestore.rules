@@ -21,7 +21,7 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow create: if isAdmin();
-      allow update: if isAdmin() || (request.auth.uid == uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLogin', 'securityVersion', 'lastPasswordChangeAt']));
+      allow update: if isAdmin() || (request.auth.uid == uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLogin', 'credentialVersion', 'securityVersion', 'lastPasswordChangeAt']));
       allow delete: if isAdmin();
     }
 
