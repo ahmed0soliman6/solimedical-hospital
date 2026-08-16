@@ -7,6 +7,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#173B4A">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
   
 <title>نظام إدارة مستشفى لجنة زكاة ميت على التخصصي</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1819,8 +1820,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.13";
-const APP_RELEASE_NOTES = "تصميم يوميات كامل العرض • صفحات مستقلة • استجابة الهاتف";
+const APP_VERSION = "v1.3.14";
+const APP_RELEASE_NOTES = "شعار مستشفى ميت على • Regex • تسريع المزامنة";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -2924,8 +2925,9 @@ function renderVisitsPage(kind) {
     let pushFailedOnline = false;
     try {
       const incomeChanged = Number(rec.paid) > 0 || !!(editing && editing.linkedIncomeId);
-      if (incomeChanged) await persist("income");
-      await persist(isDental ? "visitsDental" : "visitsClinic");
+      const writes = [persist(isDental ? "visitsDental" : "visitsClinic")];
+      if (incomeChanged) writes.push(persist("income"));
+      await Promise.all(writes);
     } catch (err) {
       // فشل الرفع الفورى للسحابة رغم وجود اتصال (خطأ شبكة عابر، رفض من الخادم...).
       // البيانات محفوظة محليًا بالفعل وأُضيفت لطابور إعادة المحاولة التلقائية
@@ -3194,8 +3196,9 @@ function renderServiceVisitsPage(kind) {
       let pushFailedOnline = false;
       try {
         const incomeChanged = Number(rec.paid) > 0 || !!(editing && editing.linkedIncomeId);
-        if (incomeChanged) await persist("income");
-        await persist(cfg.listKey);
+        const writes = [persist(cfg.listKey)];
+        if (incomeChanged) writes.push(persist("income"));
+        await Promise.all(writes);
       } catch (err) {
         console.error("Service visit sync push failed (saved locally, will retry):", err);
         pushFailedOnline = true;

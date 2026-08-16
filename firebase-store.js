@@ -287,7 +287,7 @@
       // Support the first migration format, which spread an array into
       // numeric document fields ("0", "1", ...).
       const numericKeys = Object.keys(raw)
-        .filter((field) => /^\\d+$/.test(field))
+        .filter((field) => /^\d+$/.test(field))
         .sort((a, b) => Number(a) - Number(b));
       return numericKeys.length ? numericKeys.map((field) => raw[field]) : fallback;
     }
