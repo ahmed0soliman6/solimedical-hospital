@@ -201,10 +201,14 @@
   .grid-3{grid-template-columns:repeat(3,1fr);}
   .grid-2{grid-template-columns:repeat(2,1fr);}
   @media (max-width:1100px){.grid-4{grid-template-columns:repeat(2,1fr);} .grid-3{grid-template-columns:repeat(2,1fr);}}
-  /* إصلاح تنسيق: على شاشات الموبايل الضيقة، عمودين لبطاقات KPI كانا يخلّوا نص
-     العناوين الطويلة (زي "مرتبات الشهر (مدفوع / مستحق)") يتكسّر بشكل غير مقروء -
-     نخليها عمودًا واحدًا بعرض كامل بدل كده على الشاشات الضيقة جدًا. */
-  @media (max-width:560px){.grid-4, .grid-3, .grid-2{grid-template-columns:1fr; gap:10px;}}
+  /* تخطيط الهاتف: بطاقتا KPI في الصف مع السماح بانكسار العناوين الطويلة
+     بطريقة مقروءة، لتقليل التمرير الرأسي مع الحفاظ على وضوح البيانات. */
+  @media (max-width:560px){
+    /* بطاقات لوحة التحكم: بطاقتان في الصف على الهاتف بدل بطاقة واحدة */
+    .grid-4, .grid-3, .grid-2{grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px;}
+    .grid-4 > .card, .grid-3 > .card, .grid-2 > .card{min-width:0;}
+    .grid-4 .label, .grid-3 .label, .grid-2 .label{overflow-wrap:anywhere; line-height:1.35;}
+  }
 
   .card{
     background:var(--card); border:1.5px solid var(--line); border-radius:var(--radius);
@@ -1779,8 +1783,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.8";
-const APP_RELEASE_NOTES = "ظهور فوري للسجلات • مؤشر اتصال علوي • تحسين الهاتف";
+const APP_VERSION = "v1.3.9";
+const APP_RELEASE_NOTES = "إصلاح رسالة كلمة المرور • بطاقتان للهاتف • تنقل أسرع";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -2008,8 +2012,8 @@ function renderTopbar() {
   const dateStr = now.toLocaleDateString("ar-EG", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   el.innerHTML = `
     <div style="display:flex; align-items:center; gap:7px; min-width:0;">
-      <button id="backBtn" title="عودة للصفحة السابقة" aria-label="عودة للصفحة السابقة" style="display:none; align-items:center; justify-content:center; width:38px; height:38px; border-radius:10px; border:1px solid var(--border,#ccc); background:var(--card); color:var(--ink); font-size:20px; cursor:pointer; flex-shrink:0;">‹</button>
       <button id="hamburgerBtn" title="القائمة" aria-label="فتح القائمة" style="display:none; align-items:center; justify-content:center; width:38px; height:38px; border-radius:10px; border:1px solid var(--border,#ccc); background:var(--card); color:var(--ink); font-size:18px; cursor:pointer; flex-shrink:0;">☰</button>
+      <button id="backBtn" title="عودة للصفحة السابقة" aria-label="عودة للصفحة السابقة" style="display:none; align-items:center; justify-content:center; width:38px; height:38px; border-radius:10px; border:1px solid var(--border,#ccc); background:var(--card); color:var(--ink); font-size:20px; cursor:pointer; flex-shrink:0;">‹</button>
       <div class="title">${PAGE_TITLES[state.page]}</div>
       <div id="topConnectionIndicator" class="top-connection-indicator" aria-live="polite">جارٍ التحقق من الاتصال...</div>
     </div>
@@ -2111,13 +2115,24 @@ function openChangeMyPasswordModal() {
     }
     const submit = e.target.querySelector('button[type="submit"]');
     if (submit) { submit.disabled = true; submit.textContent = "جارٍ التحديث..."; }
+    let firebasePasswordChanged = false;
+    let metadataSyncFailed = false;
+    let appStateSyncFailed = false;
     try {
       if (!navigator.onLine) throw new Error("offline");
+      // هذه هي العملية الحساسة: بعد نجاحها تكون كلمة المرور الجديدة فعّالة
+      // حتى لو فشلت لاحقًا كتابة بيانات الجلسة أو المزامنة المحلية.
       await window.MitaliFirebase.changePassword(account.username, current, new1);
+      firebasePasswordChanged = true;
       const nextCredentialVersion = Math.max(1, Number(account.credentialVersion || account.securityVersion || currentUser.credentialVersion || currentUser.securityVersion || 1) + 1);
       const changedAt = nowISO();
       if (window.MitaliFirebase.updateOwnSecurityMetadata) {
-        await window.MitaliFirebase.updateOwnSecurityMetadata({ credentialVersion: nextCredentialVersion, securityVersion: nextCredentialVersion, lastPasswordChangeAt: changedAt });
+        try {
+          await window.MitaliFirebase.updateOwnSecurityMetadata({ credentialVersion: nextCredentialVersion, securityVersion: nextCredentialVersion, lastPasswordChangeAt: changedAt });
+        } catch (metadataError) {
+          metadataSyncFailed = true;
+          console.warn("Password changed, but security metadata sync failed:", metadataError);
+        }
       }
       account.password = "";
       account.credentialVersion = nextCredentialVersion;
@@ -2131,22 +2146,38 @@ function openChangeMyPasswordModal() {
       currentUser.sessionIssuedAt = Date.now();
       currentUser.sessionExpiresAt = Date.now() + SESSION_TTL_MS;
       setSession(currentUser);
-      if (isAdminUser()) await persist("staffAccounts");
+      if (isAdminUser()) {
+        try {
+          await persist("staffAccounts");
+        } catch (stateError) {
+          appStateSyncFailed = true;
+          console.warn("Password changed, but local staff state sync failed:", stateError);
+        }
+      }
       logActivity("تغيير كلمة المرور الشخصية", "settings");
-      showToast("تم تغيير كلمة المرور بنجاح. استخدم كلمة المرور الجديدة في تسجيل الدخول القادم", 4200);
+      showToast(metadataSyncFailed || appStateSyncFailed
+        ? "تم تغيير كلمة المرور بنجاح، وسيُعاد تحديث بيانات الجلسة تلقائيًا"
+        : "تم تغيير كلمة المرور بنجاح. استخدم كلمة المرور الجديدة في تسجيل الدخول القادم", 4200);
       closeModal();
     } catch (error) {
       console.error("Password change failed:", error);
-      const code = error && (error.code || error.message);
-      errBox.textContent = code === "auth/wrong-password" || code === "auth/invalid-credential"
-        ? "كلمة المرور الحالية غير صحيحة."
-        : code === "auth/requires-recent-login"
-          ? "لأسباب أمنية، سجّل الخروج ثم ادخل مرة أخرى قبل تغيير كلمة المرور."
-          : code === "offline"
-            ? "لا يوجد اتصال بالإنترنت؛ لا يمكن تغيير كلمة مرور Firebase أثناء عدم الاتصال."
-            : "تعذّر تغيير كلمة المرور في Firebase. حاول مرة أخرى.";
-      errBox.style.display = "block";
-      if (submit) { submit.disabled = false; submit.textContent = "حفظ كلمة المرور"; }
+      // لا نعرض فشلًا إذا كانت Firebase قد قبلت التغيير بالفعل؛ الخطأ هنا
+      // يكون في خطوة لاحقة مثل metadata أو persist وليس في كلمة المرور نفسها.
+      if (firebasePasswordChanged) {
+        showToast("تم تغيير كلمة المرور بنجاح. استخدم كلمة المرور الجديدة في تسجيل الدخول القادم", 4200);
+        closeModal();
+      } else {
+        const code = error && (error.code || error.message);
+        errBox.textContent = code === "auth/wrong-password" || code === "auth/invalid-credential"
+          ? "كلمة المرور الحالية غير صحيحة."
+          : code === "auth/requires-recent-login"
+            ? "لأسباب أمنية، سجّل الخروج ثم ادخل مرة أخرى قبل تغيير كلمة المرور."
+            : code === "offline"
+              ? "لا يوجد اتصال بالإنترنت؛ لا يمكن تغيير كلمة مرور Firebase أثناء عدم الاتصال."
+              : "تعذّر تغيير كلمة المرور في Firebase. حاول مرة أخرى.";
+        errBox.style.display = "block";
+        if (submit) { submit.disabled = false; submit.textContent = "حفظ كلمة المرور"; }
+      }
     }
   });
 }
