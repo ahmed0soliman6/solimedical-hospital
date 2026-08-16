@@ -179,13 +179,12 @@
     .visit-grid-3 [style*="grid-column:span 2"]{grid-column:span 1 !important;}
 
     .sidebar-account-actions .btn{font-size:11px; padding:7px 6px;}
-    #topbar > div:first-child{min-width:0; flex:1 1 45%;}
-    #topbar > div:last-child{min-width:0; flex:1 1 45%; justify-content:flex-start; gap:5px; flex-wrap:wrap;}
-    #topbar .title{font-size:14px; max-width:34vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-    /* على الهاتف يكفي عرض الحالة داخل القائمة الجانبية؛ إبقاء الشارة هنا
-       كان يضغط عنوان الصفحة ويغطي أول جزء من لوحة القيادة. */
-    #topConnectionIndicator{display:none;}
-    .top-connection-indicator{margin-inline-start:3px; padding:4px 7px; font-size:10px; gap:4px;}
+    #topbar > div:first-child{min-width:0; flex:1 1 70%; flex-wrap:wrap;}
+    #topbar > div:last-child{min-width:0; flex:0 0 auto; justify-content:flex-start; gap:5px; flex-wrap:wrap;}
+    #topbar .title{font-size:14px; max-width:none; flex:1 1 auto; min-width:0; overflow:visible; text-overflow:clip; white-space:normal; line-height:1.35;}
+    #topConnectionIndicator{display:inline-flex; margin-inline-start:43px; margin-top:2px;}
+    .top-connection-indicator{padding:4px 7px; font-size:10px; gap:4px;}
+    #topThemeToggleBtn{display:inline-flex; align-items:center; justify-content:center; width:32px; min-width:32px; height:30px; padding:0;}
     #topbar .btn.sm{padding:5px 7px; font-size:11px;}
     #content{padding:12px 10px 42px; width:100%; min-width:0;}
     .form-grid{grid-template-columns:1fr !important; gap:10px;}
@@ -1254,6 +1253,9 @@ async function stampChangedRecords(key, newArr) {
 // وهو أحد الأسباب المحتملة لفقدان تعديلات (خصوصًا الصلاحيات وبيانات المستخدمين)
 // كانت تظهر ناجحة فى الواجهة فورًا رغم أن الحفظ الفعلى غير متزامن ولم يكتمل بعد.
 let PENDING_WRITES = 0;
+// قفل واجهة مستقل لكل جدول أثناء تأكيد الحفظ السحابي؛ يمنع الضغط المزدوج
+// خصوصًا على الهاتف بعد إعادة رسم السجل محليًا وقبل اكتمال Firestore.
+const ACTIVE_UI_SAVES = new Set();
 // رقم جيل محلى لكل جدول؛ يتغير لحظة بدء أي حفظ، حتى نرفض نتيجة شبكة
 // بدأت قبل التعديل حتى لو اكتمل الحفظ أثناء انتظار طلب الشبكة.
 const TABLE_MUTATION_GENERATION = Object.create(null);
@@ -1777,8 +1779,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.7";
-const APP_RELEASE_NOTES = "إدارة حسابات آمنة • دخول أسرع • مزامنة وإلغاء اعتماد الأجهزة";
+const APP_VERSION = "v1.3.8";
+const APP_RELEASE_NOTES = "ظهور فوري للسجلات • مؤشر اتصال علوي • تحسين الهاتف";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -1898,9 +1900,6 @@ function renderSidebar() {
     <div class="brand">
       <div class="name">نظام إدارة مستشفى لجنة زكاة ميت على التخصصي</div>
     </div>
-    <div class="sidebar-connection sidebar-connection-top"><span>الاتصال</span><div class="sidebar-foot" id="storageIndicator">جارٍ التحقق...</div>
-      <button class="btn ghost sm theme-toggle" id="sidebarThemeToggleBtn" title="تبديل الوضع الليلي/النهاري" aria-label="تبديل الوضع الليلي/النهاري">${document.documentElement.getAttribute("data-theme") === "dark" ? "☀️" : "🌙"}</button>
-    </div>
     <nav>
       ${NAV.map(g => {
         const visibleItems = g.items.filter(navItemVisible);
@@ -1921,19 +1920,13 @@ function renderSidebar() {
         <button class="btn ghost sm" id="sidebarChangePasswordBtn" title="تغيير كلمة المرور">🔑 كلمة المرور</button>
         <button class="btn ghost sm" id="sidebarLogoutBtn">تسجيل الخروج</button>
       </div>
-    </div>` : `<div class="sidebar-foot" id="storageIndicator">جارٍ التحقق...</div>`}
+    </div>` : ""}
   `;
   el.querySelectorAll(".nav-item").forEach(n => {
     n.addEventListener("click", () => { state.page = n.dataset.page; state.editId = null; state.editDocId = null; state.editEmpId = null; state.showAnnualReport = false; document.body.classList.remove("sidebar-open"); route(); });
   });
   const newNav = el.querySelector("nav");
   if (newNav) newNav.scrollTop = prevScroll;
-  const sidebarThemeToggleBtn = document.getElementById("sidebarThemeToggleBtn");
-  if (sidebarThemeToggleBtn) sidebarThemeToggleBtn.addEventListener("click", () => {
-    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
-    applyTheme(next);
-    renderSidebar();
-  });
   const sidebarChangePasswordBtn = document.getElementById("sidebarChangePasswordBtn");
   if (sidebarChangePasswordBtn) sidebarChangePasswordBtn.addEventListener("click", openChangeMyPasswordModal);
   const sidebarLogoutBtn = document.getElementById("sidebarLogoutBtn");
@@ -2020,12 +2013,19 @@ function renderTopbar() {
       <div class="title">${PAGE_TITLES[state.page]}</div>
       <div id="topConnectionIndicator" class="top-connection-indicator" aria-live="polite">جارٍ التحقق من الاتصال...</div>
     </div>
-    <div style="display:flex; align-items:center; gap:16px;">
+    <div style="display:flex; align-items:center; gap:8px;">
+      <button class="btn ghost sm top-theme-toggle" id="topThemeToggleBtn" title="تبديل الوضع الليلي/النهاري" aria-label="تبديل الوضع الليلي/النهاري">${document.documentElement.getAttribute("data-theme") === "dark" ? "☀️" : "🌙"}</button>
       <div class="date">${dateStr}</div>
     </div>
   `;
   const hamburgerBtn = document.getElementById("hamburgerBtn");
   if (hamburgerBtn) hamburgerBtn.addEventListener("click", () => document.body.classList.toggle("sidebar-open"));
+  const topThemeToggleBtn = document.getElementById("topThemeToggleBtn");
+  if (topThemeToggleBtn) topThemeToggleBtn.addEventListener("click", () => {
+    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    applyTheme(next);
+    renderTopbar();
+  });
   const backBtn = document.getElementById("backBtn");
   if (backBtn) backBtn.addEventListener("click", navigateBack);
   renderStorageIndicator();
@@ -2710,6 +2710,9 @@ function renderVisitsPage(kind) {
     e.preventDefault();
     if (formLocked) return;
     if (editing ? !canEdit : !canAdd) { showToast("⚠️ ليس لديك صلاحية كافية لهذا الإجراء"); return; }
+    const saveKey = isDental ? "visitsDental" : "visitsClinic";
+    if (ACTIVE_UI_SAVES.has(saveKey)) return;
+    ACTIVE_UI_SAVES.add(saveKey);
     formLocked = true;
     // إصلاح جوهري: لو حصل أي خطأ غير متوقع أثناء الحفظ (مثلاً بيانات ناقصة أو
     // خطأ برمجي فى خطوة فرعية)، كان النموذج يفضل "مقفولًا" للأبد بصمت بسبب القفل
@@ -2722,6 +2725,8 @@ function renderVisitsPage(kind) {
       console.error("Visit save error:", err);
       formLocked = false;
       showToast("⚠️ حدث خطأ غير متوقع أثناء الحفظ - حاول مرة أخرى");
+    } finally {
+      ACTIVE_UI_SAVES.delete(saveKey);
     }
     async function runVisitSave() {
     const fd = new FormData(e.target);
@@ -2769,6 +2774,12 @@ function renderVisitsPage(kind) {
     // سننتظر حفظ الدخل والزيارة بترتيب واضح حتى لا تعيد realtime أو طابور
     // الكتابة نسخة قديمة فوق الزيارة الجديدة.
     syncVisitIncomeLink(rec, kind, true);
+    // نعرض السجل المحلي فورًا أثناء رفعه إلى Firestore، ثم نؤكد النتيجة
+    // برسالة نهائية بعد اكتمال persist() الفعلي.
+    state.editId = null;
+    if (!editing) state.tablePage[`visits_${kind}`] = 1;
+    route();
+    showToast(`💾 ${editing ? "تم تحديث السجل محليًا" : "تمت إضافة المعاملة محليًا"} — جارٍ المزامنة...`, 2400);
     // إصلاح جوهري: ننتظر persist() فعليًا هنا (بدل إطلاقها بدون انتظار كما كان
 
     // سابقًا) قبل استدعاء route(). هذا يضمن أن أى تحديث خلفى آخر (مثلًا
@@ -2789,7 +2800,6 @@ function renderVisitsPage(kind) {
       console.error("Visit sync push failed (saved locally, will retry):", err);
       pushFailedOnline = true;
     }
-    state.editId = null;
     if (pushFailedOnline) {
       showToast(`💾 ${editing ? "تم حفظ التعديل" : "تم تسجيل الزيارة"} محليًا — تعذّر رفعه للسحابة الآن وسيُعاد رفعه تلقائيًا عند توفر الاتصال`, 3800);
     } else {
@@ -3008,6 +3018,9 @@ function renderServiceVisitsPage(kind) {
     e.preventDefault();
     if (formLocked) return;
     if (editing ? !canEdit : !canAdd) { showToast("⚠️ ليس لديك صلاحية كافية لهذا الإجراء"); return; }
+    const saveKey = cfg.listKey;
+    if (ACTIVE_UI_SAVES.has(saveKey)) return;
+    ACTIVE_UI_SAVES.add(saveKey);
     formLocked = true;
     try {
       await runServiceSave();
@@ -3015,6 +3028,8 @@ function renderServiceVisitsPage(kind) {
       console.error("Service visit save error:", err);
       formLocked = false;
       showToast("⚠️ حدث خطأ غير متوقع أثناء الحفظ - حاول مرة أخرى");
+    } finally {
+      ACTIVE_UI_SAVES.delete(saveKey);
     }
     async function runServiceSave() {
       const fd = new FormData(e.target);
@@ -3042,6 +3057,10 @@ function renderServiceVisitsPage(kind) {
       // نفس ترتيب الحفظ المضمون للعيادات: حدّث الدخل المرتبط محليًا ثم
       // انتظر حفظه قبل حفظ سجل الزيارة وإعادة رسم الشاشة.
       syncVisitIncomeLink(rec, kind, true);
+      state.editId = null;
+      if (!editing) state.tablePage[`visits_${kind}`] = 1;
+      route();
+      showToast(`💾 ${editing ? "تم تحديث السجل محليًا" : "تمت إضافة المعاملة محليًا"} — جارٍ المزامنة...`, 2400);
       let pushFailedOnline = false;
       try {
         const incomeChanged = Number(rec.paid) > 0 || !!(editing && editing.linkedIncomeId);
@@ -3051,7 +3070,6 @@ function renderServiceVisitsPage(kind) {
         console.error("Service visit sync push failed (saved locally, will retry):", err);
         pushFailedOnline = true;
       }
-      state.editId = null;
       if (pushFailedOnline) {
         showToast(`💾 ${editing ? "تم حفظ التعديل" : "تم التسجيل"} محليًا — تعذّر رفعه للسحابة الآن وسيُعاد رفعه تلقائيًا عند توفر الاتصال`, 3800);
       } else {
@@ -3731,6 +3749,9 @@ function renderMoneyPage(kind) {
       }
     }
     rec[isIncome ? "receiver" : "responsible"] = fd.get("person");
+    const moneySaveKey = isIncome ? "income" : "expense";
+    if (ACTIVE_UI_SAVES.has(moneySaveKey)) return;
+    ACTIVE_UI_SAVES.add(moneySaveKey);
     if (editing) {
       const idx = list.findIndex(v => v.id === editing.id);
       list[idx] = rec;
@@ -3739,6 +3760,11 @@ function renderMoneyPage(kind) {
       list.push(rec);
       logActivity(isIncome ? "إضافة عملية وارد" : "إضافة عملية منصرف", kind, null, rec);
     }
+    state.editId = null;
+    if (rec.date) state[monthStateKey] = rec.date.slice(0, 7);
+    if (!editing) state.tablePage[`money_${kind}`] = 1;
+    route();
+    showToast(`💾 ${editing ? "تم تحديث العملية محليًا" : "تمت إضافة العملية محليًا"} — جارٍ المزامنة...`, 2400);
     // إصلاح جوهري (نفس سبب اختفاء الزيارة الجديدة مؤقتًا فى العيادات): ننتظر
     // persist() فعليًا هنا قبل route()، بدل إطلاقها بدون انتظار كما كان سابقًا،
     // حتى لا يبدأ أى تحديث خلفى (backgroundRefreshAll) ويقرأ نسخة سحابية لم تصل
@@ -3753,14 +3779,13 @@ function renderMoneyPage(kind) {
       console.error("Money entry sync push failed (saved locally, will retry):", err);
       pushFailedOnline = true;
     }
-    state.editId = null;
-    if (rec.date) state[monthStateKey] = rec.date.slice(0, 7); // اعرض الشهر اللى اتسجّلت فيه العملية تلقائيًا
     if (pushFailedOnline) {
       showToast(`💾 ${editing ? "تم حفظ التعديل" : "تم التسجيل"} محليًا — تعذّر رفعه للسحابة الآن وسيُعاد رفعه تلقائيًا عند توفر الاتصال`, 3800);
     } else {
       saveToast(editing ? "تم حفظ التعديل" : "تم التسجيل بنجاح");
     }
     route();
+    ACTIVE_UI_SAVES.delete(moneySaveKey);
   });
 
   const cancelBtn = document.getElementById("cancelEdit");
