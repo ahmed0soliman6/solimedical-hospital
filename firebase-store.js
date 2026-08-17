@@ -266,10 +266,28 @@
     return true;
   }
 
+  const READ_METRICS = { queries: 0, documents: 0, byKey: Object.create(null), lastReadAt: null };
+  function recordReadMetric(key, count) {
+    READ_METRICS.queries += 1;
+    READ_METRICS.documents += Number(count || 0);
+    const name = String(key || "unknown");
+    READ_METRICS.byKey[name] = Number(READ_METRICS.byKey[name] || 0) + Number(count || 0);
+    READ_METRICS.lastReadAt = new Date().toISOString();
+  }
+  function getReadMetrics() {
+    return JSON.parse(JSON.stringify(READ_METRICS));
+  }
+  function resetReadMetrics() {
+    READ_METRICS.queries = 0;
+    READ_METRICS.documents = 0;
+    READ_METRICS.byKey = Object.create(null);
+    READ_METRICS.lastReadAt = null;
+  }
   async function getTable(key, options = {}) {
     await ready();
     const query = db.collection(collectionName(key));
     const snap = options && options.source ? await query.get({ source: options.source }) : await query.get();
+    recordReadMetric(key, snap.docs.length);
     return snap.docs.map((doc) => {
       const record = Object.assign({ id: doc.id }, doc.data());
       if (key === "staffAccounts") { delete record.password; delete record.passwordHash; }
@@ -382,6 +400,8 @@
     getTable,
     setTable,
     getValue,
+    getReadMetrics,
+    resetReadMetrics,
     setValue,
     upsertRecord,
     upsertRecords,

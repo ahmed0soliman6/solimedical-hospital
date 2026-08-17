@@ -881,6 +881,7 @@ async function storeGet(key, fallback, options = {}) {
         }
       } catch (e) {
         console.warn("Firestore read failed; using local cache:", key, e);
+        if (options.requireServer) throw e;
       }
       return cached !== undefined ? cached : fallback;
     }
@@ -1380,6 +1381,74 @@ async function loadAll(options = {}) {
   });
   if (upgraded) persist("staffAccounts");
   DATA_VERSION++;
+}
+// سياسة القراءة الاقتصادية: لا نقرأ كل جداول المستشفى عند كل إقلاع أو تنقل.
+// الكاش المحلي يعرض البيانات فورًا، ثم تُحدَّث فقط الجداول اللازمة للصفحة الحالية.
+// لا نعتبر الكاش "نسخة حديثة" إلا لمدة قصيرة؛ زر التحديث يطلب نسخة خادم صريحة.
+const READ_CACHE_TTL_MS = 5 * 60 * 1000;
+const CORE_BOOT_KEYS = ["staffAccounts", "settings", "doctors", "employees", "categories", "specialties"];
+const PAGE_DATA_KEYS = {
+  dashboard: ["doctors", "visitsClinic", "visitsDental", "income", "expense"],
+  clinic: ["doctors", "visitsClinic"], dental: ["doctors", "visitsDental"],
+  operations: ["doctors", "visitsOperations"], labs: ["doctors", "visitsLabs", "labExpenses"],
+  radiology: ["doctors", "visitsRadiology"], income: ["income"], expense: ["expense"],
+  ledger: ["income", "expense", "settings"], payroll: ["employees", "payroll"],
+  reports: ["doctors", "employees", "visitsClinic", "visitsDental", "visitsOperations", "visitsLabs", "visitsRadiology", "income", "expense", "payroll"],
+  settings: ["doctors", "employees", "settings", "categories", "specialties"],
+  users: ["staffAccounts"], permissions: ["staffAccounts"], auditlog: ["auditLog", "staffAccounts"],
+  patientFilesClinic: ["doctors", "visitsClinic"], patientFilesDental: ["doctors", "visitsDental"],
+  outstandingBalances: ["doctors", "visitsClinic", "visitsDental", "visitsOperations", "visitsLabs", "visitsRadiology"],
+  outstandingBalancesClinic: ["doctors", "visitsClinic"], outstandingBalancesDental: ["doctors", "visitsDental"],
+  outstandingBalancesOperations: ["doctors", "visitsOperations"], outstandingBalancesLabs: ["doctors", "visitsLabs"],
+  outstandingBalancesRadiology: ["doctors", "visitsRadiology"], dataConflicts: []
+};
+const PAGE_DATA_LOADING = new Map();
+const PAGE_DATA_LOADED_AT = Object.create(null);
+function readFallbackForKey(key) {
+  if (key === "settings") return DB.settings || { openingBalance: 10000 };
+  if (key === "categories") return DB.categories || seedCategories();
+  if (key === "specialties") return DB.specialties || seedSpecialties();
+  if (key === "doctors") return Array.isArray(DB.doctors) && DB.doctors.length ? DB.doctors : seedDoctors();
+  if (key === "employees") return Array.isArray(DB.employees) && DB.employees.length ? DB.employees : seedEmployees();
+  if (key === "staffAccounts") return Array.isArray(DB.staffAccounts) ? DB.staffAccounts : [];
+  return Array.isArray(DB[key]) ? DB[key] : [];
+}
+async function loadKeys(keys, options = {}) {
+  await detectStorageMode();
+  const unique = [...new Set((keys || []).filter(Boolean))];
+  if (!unique.length) return;
+  const values = await Promise.all(unique.map(key => storeGet(key, readFallbackForKey(key), {
+    preferCache: !!options.preferCache,
+    requireServer: !!options.requireServer,
+  })));
+  unique.forEach((key, index) => {
+    const value = values[index];
+    if (value !== undefined && value !== null) DB[key] = value;
+  });
+  DATA_VERSION++;
+}
+function pageKeys(page) { return PAGE_DATA_KEYS[page] || ["doctors", "employees", "settings"]; }
+async function ensurePageDataLoaded(page, options = {}) {
+  if (STORAGE_MODE !== "firestore" || !currentUser) return;
+  const keys = pageKeys(page);
+  if (!keys.length) return;
+  const now = Date.now();
+  const fresh = !options.force && keys.every(key => PAGE_DATA_LOADED_AT[key] && now - PAGE_DATA_LOADED_AT[key] < READ_CACHE_TTL_MS);
+  if (fresh) return;
+  const queueKey = [...keys].sort().join(",");
+  if (!PAGE_DATA_LOADING.has(queueKey)) {
+    const task = loadKeys(keys, { preferCache: false, requireServer: !!options.requireServer })
+      .then(() => keys.forEach(key => { PAGE_DATA_LOADED_AT[key] = Date.now(); }))
+      .finally(() => PAGE_DATA_LOADING.delete(queueKey));
+    PAGE_DATA_LOADING.set(queueKey, task);
+  }
+  try { await PAGE_DATA_LOADING.get(queueKey); }
+  catch (error) { console.warn("Page data refresh failed:", page, error && (error.code || error.message)); return; }
+  if (currentUser && !isMidEdit() && !isUserActivelyTyping()) route();
+}
+function schedulePageDataLoad(page) {
+  if (STORAGE_MODE !== "firestore" || !currentUser) return;
+  Promise.resolve().then(() => ensurePageDataLoaded(page)).catch(error => console.warn("Scheduled page refresh failed:", error));
 }
 // جداول السجلات التى تحمل طابعًا زمنيًا (updatedAt) لكل عنصر فيها لأغراض حل
 // التعارضات (مرحلة ج). الوسم يتم فقط على السجلات التى تغيّرت فعليًا منذ آخر
@@ -1945,8 +2014,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.21";
-const APP_RELEASE_NOTES = "معالجة خطأ Firebase 8 • حفظ الصلاحيات دون استدعاء زائد • حذف الحسابات القابل لإعادة المحاولة";
+const APP_VERSION = "v1.3.22";
+const APP_RELEASE_NOTES = "تقليل قراءات Firestore • تحميل البيانات عند الحاجة • حماية الحصة المجانية مع كاش محلي";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -2314,7 +2383,8 @@ async function reloadLatestDataNow() {
   if (button) { button.disabled = true; button.innerHTML = "⟳ <span>تحميل...</span>"; }
   renderStorageIndicator();
   try {
-    await loadAll({ preferCache: false });
+    await loadKeys(pageKeys(state.page), { preferCache: false, requireServer: true });
+    pageKeys(state.page).forEach(key => { PAGE_DATA_LOADED_AT[key] = Date.now(); });
     subscribeFirestoreRealtime();
     if (currentUser && !isMidEdit() && !isUserActivelyTyping()) route();
     showToast("تم تحميل أحدث البيانات من Firebase");
@@ -2610,6 +2680,7 @@ function route() {
   if ((state.page === "users" || state.page === "permissions") && !isAdminUser()) { renderAccessDenied(); return; }
   if (state.page === "dataConflicts" && !can("settings","edit")) { renderAccessDenied(); return; }
   (renderers[state.page] || renderDashboard)();
+  schedulePageDataLoad(state.page);
 }
 
 function option(list, selected) {
@@ -6660,7 +6731,7 @@ function renderLogin(errorMsg) {
       try {
         // لا نعيد انتظار شبكة Firestore مرتين في مسار الدخول؛ نستخدم الكاش
         // المحلي فورًا، ثم realtime/التحديث الخلفي يجلبان أحدث السجلات بعد عرض الواجهة.
-        loadAll({ preferCache: true }).then(() => {
+        loadKeys(CORE_BOOT_KEYS, { preferCache: true }).then(() => {
           if (currentUser && state.page !== "login") route();
         }).catch(reloadError => console.warn("Firestore account reload after login failed:", reloadError));
         account = (DB.staffAccounts || []).find(a => a.firebaseUid === firebaseAuthAccount.firebaseUid) || account;
@@ -6695,11 +6766,11 @@ async function logout() {
   }
   stopIdleTimer();
   clearSession();
-  // أعد تحميل كل البيانات من السحابة عند الخروج (وليس الحسابات فقط) حتى تكون
-  // شاشة الدخول - وأى دخول يليها - مبنية على أحدث نسخة متاحة دائمًا، بدل الاعتماد
-  // على نسخة الذاكرة القديمة التى حُمِّلت منذ فتح الصفحة لأول مرة. هذا يجعل كل
-  // جهاز يتصرف كأنه أعاد تحميل الصفحة فعليًا عند كل تسجيل خروج.
-  try { await loadAll(); } catch (e) { /* تعذّر التحديث الآن - نكمل بالبيانات المتاحة محليًا */ }
+  // لا نعيد تحميل كل جداول المستشفى عند تسجيل الخروج؛ تبقى النسخة المحلية
+  // متاحة لشاشة الدخول والعمل دون إنترنت، ويقرأ الدخول الجديد profile/account
+  // من المصدر الرئيسي عند الحاجة فقط.
+  PAGE_DATA_LOADING.clear();
+  Object.keys(PAGE_DATA_LOADED_AT).forEach(key => delete PAGE_DATA_LOADED_AT[key]);
   renderLogin();
 }
 // ======================================================================
@@ -6739,7 +6810,7 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && cu
 // ======================================================================
 const realtimeRefreshInProgress = new Set();
 const firestoreRealtimeUnsubs = new Map();
-const FIRESTORE_REALTIME_KEYS = [...FIRESTORE_MIGRATION_KEYS];
+  const FIRESTORE_REALTIME_KEYS = ["staffAccounts"];
 function cleanupRealtimeChannels(reason) {
   firestoreRealtimeUnsubs.forEach((unsubscribe) => {
     try { unsubscribe(); } catch (e) { console.warn("Firestore listener cleanup failed:", reason, e); }
@@ -6811,9 +6882,10 @@ function subscribeFirestoreRealtime() {
 async function boot() {
   document.getElementById("content").innerHTML = `<div style="text-align:center; padding:80px; color:var(--muted);">جارٍ تحميل النظام...</div>`;
   try {
-    // الجلسة المحفوظة تسمح بعرض آخر صفحة وبياناتها من IndexedDB فورًا؛
-    // أما من لا يملك جلسة فيبقى على قراءة Firestore الكاملة للتحقق من الحسابات.
-    await loadAll({ preferCache: !!getSession() });
+    // الجلسة المحفوظة تعرض الكاش المحلي فورًا؛ نقرأ staffAccounts فقط عند
+    // شاشة الدخول، ثم نقرأ بيانات الصفحة الحالية بعد نجاح الجلسة.
+    const bootKeys = getSession() ? CORE_BOOT_KEYS : ["staffAccounts"];
+    await loadKeys(bootKeys, { preferCache: !!getSession() });
   } catch (e) {
     console.error("Load error, using defaults:", e);
     DB.doctors = seedDoctors(); DB.employees = seedEmployees(); DB.settings = { openingBalance: 10000 };
@@ -6839,11 +6911,7 @@ async function boot() {
     subscribeFirestoreRealtime();
     flushSyncQueue();
   }
-  if (currentUser && STORAGE_MODE === "firestore") {
-    loadAll().then(() => {
-      if (currentUser && !isMidEdit() && !isUserActivelyTyping()) route();
-    }).catch(e => console.warn("Background startup refresh failed:", e));
-  }
+  if (currentUser && STORAGE_MODE === "firestore") schedulePageDataLoad(state.page);
 }
 boot();
 
