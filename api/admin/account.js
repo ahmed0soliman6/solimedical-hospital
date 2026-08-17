@@ -190,14 +190,36 @@ async function deleteAccount(api, input) {
   const uid = String(input.uid || '');
   if (!uid) throw Object.assign(new Error('missing-uid'), { status: 400 });
   const current = await readProfile(api, uid);
-  if (!current) throw Object.assign(new Error('account-not-found'), { status: 404 });
-  await ensureNotLastManager(api, uid, 'موظف', 'موقوف');
+  let authUser = null;
+  try {
+    const authApi = api.auth();
+    authUser = typeof authApi.getUser === 'function' ? await authApi.getUser(uid) : null;
+  } catch (error) {
+    if (error && error.code === 'auth/user-not-found') authUser = null;
+    else throw error;
+  }
+
+  // الحذف قابل لإعادة المحاولة: قد تكون محاولة سابقة قد حذفت الوثيقتين
+  // أو مستخدم Authentication ثم انقطع الاتصال قبل تحديث واجهة المدير. لا
+  // نعيد 404 في هذه الحالة، بل نعيد نجاحًا واضحًا كي يختفي الصف المحلي القديم.
+  if (!current && !authUser) return { id: uid, alreadyRemoved: true };
+  if (current) await ensureNotLastManager(api, uid, 'موظف', 'موقوف');
+
   const batch = api.firestore().batch();
   batch.delete(api.firestore().collection('users').doc(uid));
   batch.delete(api.firestore().collection('staff_accounts').doc(uid));
   await batch.commit();
-  await api.auth().deleteUser(uid);
-  return { id: uid };
+
+  if (authUser) {
+    try {
+      await api.auth().deleteUser(uid);
+    } catch (error) {
+      // الوثائق حُذفت بالفعل؛ تسمح هذه المعالجة بإعادة المحاولة الآمنة إذا
+      // كان مستخدم Authentication قد اختفى بين getUser وdeleteUser.
+      if (!error || error.code !== 'auth/user-not-found') throw error;
+    }
+  }
+  return { id: uid, alreadyRemoved: false };
 }
 
 module.exports = async function handler(req, res) {
