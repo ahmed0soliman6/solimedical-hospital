@@ -2015,7 +2015,7 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.22";
+const APP_VERSION = "v1.3.23";
 const APP_RELEASE_NOTES = "تقليل قراءات Firestore • تحميل البيانات عند الحاجة • حماية الحصة المجانية مع كاش محلي";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
@@ -2397,6 +2397,47 @@ async function reloadLatestDataNow() {
     renderStorageIndicator();
   }
 }
+let DESKTOP_UPDATE_STATE = { status: "idle", version: null, percent: 0, error: null };
+let DESKTOP_UPDATE_UI_READY = false;
+function desktopUpdateLabel(state) {
+  if (!state) return "";
+  if (state.status === "checking") return "جارٍ فحص التحديث...";
+  if (state.status === "available") return `يتوفر تحديث ${esc(state.version || "جديد")}`;
+  if (state.status === "downloading") return `جارٍ تنزيل التحديث ${Math.round(Number(state.percent || 0))}%`;
+  if (state.status === "downloaded") return `التحديث ${esc(state.version || "الجديد")} جاهز للتثبيت`;
+  if (state.status === "error") return "تعذر فحص التحديث";
+  return "";
+}
+function renderDesktopUpdateIndicator() {
+  const el = document.getElementById("desktopUpdateIndicator");
+  if (!el || !window.MitaliDesktop?.isDesktop) return;
+  const state = DESKTOP_UPDATE_STATE || {};
+  const visible = ["available", "downloading", "downloaded", "error"].includes(state.status);
+  el.hidden = !visible;
+  if (!visible) { el.innerHTML = ""; return; }
+  const action = state.status === "available" ? `<button type="button" id="desktopUpdateAction" class="btn ghost sm">تنزيل</button>`
+    : state.status === "downloaded" ? `<button type="button" id="desktopUpdateAction" class="btn sm">إعادة التشغيل والتثبيت</button>`
+    : state.status === "error" ? `<button type="button" id="desktopUpdateAction" class="btn ghost sm">إعادة الفحص</button>` : "";
+  el.innerHTML = `<span>${desktopUpdateLabel(state)}</span>${action}`;
+  const button = document.getElementById("desktopUpdateAction");
+  if (button) button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      if (state.status === "available") await window.MitaliDesktop.downloadUpdate();
+      else if (state.status === "error") await window.MitaliDesktop.checkForUpdate();
+      else if (state.status === "downloaded") await window.MitaliDesktop.installUpdate();
+    } catch (error) {
+      DESKTOP_UPDATE_STATE = { status: "error", error: String(error?.message || error) };
+      renderDesktopUpdateIndicator();
+    }
+  });
+}
+function setupDesktopUpdateUi() {
+  if (!window.MitaliDesktop?.isDesktop || DESKTOP_UPDATE_UI_READY) { renderDesktopUpdateIndicator(); return; }
+  DESKTOP_UPDATE_UI_READY = true;
+  window.MitaliDesktop.onUpdateState(state => { DESKTOP_UPDATE_STATE = state || {}; renderDesktopUpdateIndicator(); });
+  window.MitaliDesktop.getUpdateState().then(state => { DESKTOP_UPDATE_STATE = state || {}; renderDesktopUpdateIndicator(); }).catch(() => {});
+}
 function renderTopbar() {
   const el = document.getElementById("topbar");
   const now = new Date();
@@ -2408,6 +2449,7 @@ function renderTopbar() {
       <div class="title">${PAGE_TITLES[state.page]}</div>
       <div id="topConnectionIndicator" class="top-connection-indicator" aria-live="polite">جارٍ التحقق من الاتصال...</div>
       <div id="offlineSaveNotice" class="offline-save-notice" role="status" aria-live="polite"></div>
+      ${window.MitaliDesktop?.isDesktop ? `<div id="desktopUpdateIndicator" class="top-connection-indicator" role="status" aria-live="polite" hidden></div>` : ""}
     </div>
     <div style="display:flex; align-items:center; gap:8px;">
        <div class="top-alerts-wrap">
@@ -2444,6 +2486,8 @@ function renderTopbar() {
   const backBtn = document.getElementById("backBtn");
   if (backBtn) backBtn.addEventListener("click", navigateBack);
   renderStorageIndicator();
+  setupDesktopUpdateUi();
+  renderDesktopUpdateIndicator();
   renderTopAlerts();
 }
 
