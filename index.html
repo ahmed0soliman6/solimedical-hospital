@@ -1945,8 +1945,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.19";
-const APP_RELEASE_NOTES = "إشعارات الهاتف • outbox محلي دائم للعمل دون إنترنت • رفع تلقائي بعد عودة الاتصال";
+const APP_VERSION = "v1.3.20";
+const APP_RELEASE_NOTES = "إصلاح حذف الحسابات المكررة • تثبيت حفظ الصلاحيات • outbox محلي دائم للعمل دون إنترنت";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -5867,7 +5867,7 @@ async function refreshAccountsFromAdminApi(shouldRoute = true) {
   ADMIN_ACCOUNTS_REFRESH_IN_PROGRESS = true;
   try {
     const accounts = await window.MitaliFirebase.adminListAccounts();
-    if (Array.isArray(accounts) && accounts.length) {
+    if (Array.isArray(accounts)) {
       DB.staffAccounts = accounts;
       await cacheLocally("staffAccounts", accounts);
       await writeSyncBaseline("staffAccounts", accounts);
@@ -6093,10 +6093,24 @@ function renderUsersPage() {
     if (!confirm(`سيُحذف حساب الدخول وملف الصلاحيات للمستخدم "${a.displayName}" من النظام. لن تتأثر بيانات المرضى أو الزيارات. هل تتابع؟`)) return;
     b.disabled = true; b.textContent = "جارٍ الحذف...";
     try {
-      await window.MitaliFirebase.adminAccountRequest({ action: "delete", uid: a.firebaseUid });
+      const response = await window.MitaliFirebase.adminAccountRequest({ action: "delete", uid: a.firebaseUid });
       DB.staffAccounts = DB.staffAccounts.filter(x => x.id !== a.id); await cacheLocally("staffAccounts", DB.staffAccounts); await writeSyncBaseline("staffAccounts", DB.staffAccounts);
-      logActivity("حذف حساب مستخدم", "users", { username: a.username }, null); showToast("تم حذف حساب الدخول وملف الصلاحيات"); route();
-    } catch (err) { console.error(err); b.disabled = false; showToast("⚠️ لم يكتمل حذف الحساب على الخادم", 7000); }
+      try { await refreshAccountsFromAdminApi(false); } catch (refreshError) { console.warn("Fresh account list unavailable after delete:", refreshError); }
+      logActivity("حذف حساب مستخدم", "users", { username: a.username }, null);
+      showToast(response?.deleted?.alreadyRemoved ? "الحساب محذوف بالفعل؛ تم تحديث القائمة" : "تم حذف حساب الدخول وملف الصلاحيات"); route();
+    } catch (err) {
+      console.error(err);
+      if (err && (err.code === "account-not-found" || err.code === "account-already-removed")) {
+        DB.staffAccounts = DB.staffAccounts.filter(x => x.id !== a.id);
+        await cacheLocally("staffAccounts", DB.staffAccounts);
+        await writeSyncBaseline("staffAccounts", DB.staffAccounts);
+        showToast("الحساب غير موجود على الخادم؛ تم تنظيف القائمة المحلية");
+        route();
+      } else {
+        b.disabled = false;
+        showToast(`⚠️ ${adminAccountFailureMessage(err, "لم يكتمل حذف الحساب على الخادم")}`, 7000);
+      }
+    }
   }));
 
 }
@@ -6166,6 +6180,9 @@ function renderPermissionsPage() {
       const updated = response && response.account; if (!updated) throw new Error("invalid-admin-api-response");
       const index = DB.staffAccounts.findIndex(x => x.id === t.id); if (index >= 0) DB.staffAccounts[index] = Object.assign({}, DB.staffAccounts[index], updated);
       await cacheLocally("staffAccounts", DB.staffAccounts); await writeSyncBaseline("staffAccounts", DB.staffAccounts);
+      // اقرأ النسخة التي أكدها API قبل إعادة الرسم، حتى لا تعيد realtime أو
+      // كاش جهاز آخر صلاحيات قديمة مباشرة بعد ظهور رسالة النجاح.
+      try { await refreshAccountsFromAdminApi(false); } catch (refreshError) { console.warn("Fresh permissions list unavailable:", refreshError); }
       logActivity("تعديل صلاحيات مستخدم وإلغاء اعتماد الأجهزة", "permissions", null, t.displayName);
       showToast("تم حفظ الصلاحيات على Firestore وإلغاء الاعتمادات القديمة"); route();
     } catch (err) {
