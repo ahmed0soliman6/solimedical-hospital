@@ -300,11 +300,14 @@
   }
 
   async function setValue(key, value) {
+    // هذه الجداول الثلاثة تُخزَّن منطقيًا في وثيقة واحدة باسم app. استخدام
+    // upsertRecord هنا يتجنب collection.get() الكامل في كل تغيير للإعدادات
+    // أو أنواع التخصصات، مع إبقاء setTable متاحًا للهجرة/الاستعادة الكاملة.
     if (key === "specialties") {
-      return setTable(key, [{ id: "app", value: Array.isArray(value) ? value : [] }]);
+      return upsertRecord(key, { id: "app", value: Array.isArray(value) ? value : [] });
     }
     if (key === "settings" || key === "categories") {
-      return setTable(key, [{ id: "app", ...(value || {}) }]);
+      return upsertRecord(key, { id: "app", ...(value || {}) });
     }
     return setTable(key, Array.isArray(value) ? value : []);
   }

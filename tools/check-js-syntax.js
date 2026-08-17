@@ -1,6 +1,8 @@
 const fs = require('fs');
+const path = require('path');
 const vm = require('vm');
-const html = fs.readFileSync('/home/ubuntu/mitali-repo/index.html', 'utf8');
+const projectRoot = path.resolve(__dirname, '..');
+const html = fs.readFileSync(path.join(projectRoot, 'index.html'), 'utf8');
 const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)]
   .map((m) => m[1])
   .filter((s) => s.trim());
@@ -13,7 +15,7 @@ for (let i = 0; i < scripts.length; i++) {
     process.exitCode = 1;
   }
 }
-const adapter = fs.readFileSync('/home/ubuntu/mitali-repo/firebase-store.js', 'utf8');
+const adapter = fs.readFileSync(path.join(projectRoot, 'firebase-store.js'), 'utf8');
 try {
   new vm.Script(adapter, { filename: 'firebase-store.js' });
   console.log('OK firebase-store.js');
