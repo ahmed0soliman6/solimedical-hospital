@@ -12,7 +12,8 @@
     "test:performance": "node tools/store-setvalue-performance-test.js",
     "test:account-delete": "node tools/account-api-delete-test.js",
     "test:account-permissions": "node tools/account-api-permissions-test.js",
-    "test": "npm run check && npm run test:contracts && npm run test:security && npm run test:performance && npm run test:account-delete && npm run test:account-permissions"
+    "test:account-errors": "node tools/account-api-error-test.js",
+    "test": "npm run check && npm run test:contracts && npm run test:security && npm run test:performance && npm run test:account-delete && npm run test:account-permissions && npm run test:account-errors"
   },
   "dependencies": {
     "firebase-admin": "^13.5.0"

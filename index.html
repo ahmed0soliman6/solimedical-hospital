@@ -1945,8 +1945,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.20";
-const APP_RELEASE_NOTES = "إصلاح حذف الحسابات المكررة • تثبيت حفظ الصلاحيات • outbox محلي دائم للعمل دون إنترنت";
+const APP_VERSION = "v1.3.21";
+const APP_RELEASE_NOTES = "معالجة خطأ Firebase 8 • حفظ الصلاحيات دون استدعاء زائد • حذف الحسابات القابل لإعادة المحاولة";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -5860,6 +5860,9 @@ function adminAccountFailureMessage(error, fallback) {
   if (code === "auth/weak-password") return "كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل";
   if (code === "cannot-remove-last-manager") return "لا يمكن إزالة آخر مدير نشط";
   if (code === "admin-api-unavailable") return "خدمة إدارة الحسابات غير متاحة حاليًا";
+  if (code === "firestore-resource-exhausted") return "Firestore رفض الكتابة مؤقتًا بسبب الحصة أو كثافة الطلبات؛ لم تتغير البيانات، أعد المحاولة بعد قليل أو افحص Usage في Firebase Console";
+  if (code === "firebase-deadline-exceeded") return "انتهت مهلة الاتصال بـ Firebase؛ لم تتغير البيانات، أعد المحاولة بعد قليل";
+  if (code === "firebase-unavailable") return "خدمة Firebase غير متاحة مؤقتًا؛ لم تتغير البيانات وسيجب إعادة المحاولة عند عودة الخدمة";
   return fallback;
 }
 async function refreshAccountsFromAdminApi(shouldRoute = true) {

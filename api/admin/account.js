@@ -39,6 +39,21 @@ function requirePassword(value) {
   return password;
 }
 
+function normalizedFirebaseError(error) {
+  const rawCode = String(error && error.code != null ? error.code : '').toLowerCase();
+  const rawMessage = String(error && error.message || '').toLowerCase();
+  if (rawCode === '8' || rawCode.includes('resource-exhausted') || rawMessage.includes('resource exhausted') || rawMessage.includes('quota exceeded')) {
+    return { code: 'firestore-resource-exhausted', status: 503, retryable: true };
+  }
+  if (rawCode === '4' || rawCode.includes('deadline-exceeded') || rawMessage.includes('deadline exceeded')) {
+    return { code: 'firebase-deadline-exceeded', status: 503, retryable: true };
+  }
+  if (rawCode === '14' || rawCode.includes('unavailable') || rawMessage.includes('service unavailable')) {
+    return { code: 'firebase-unavailable', status: 503, retryable: true };
+  }
+  return { code: (error && (error.code || error.message)) || 'account-operation-failed', status: Number(error && error.status) || 500, retryable: false };
+}
+
 async function ensureNotLastManager(api, uid, nextRole, nextStatus) {
   const current = await readProfile(api, uid);
   if (!current || current.role !== 'مدير' || nextRole === 'مدير' && nextStatus !== 'موقوف') return;
@@ -134,9 +149,15 @@ async function updateAccount(api, input) {
   const authPatch = { displayName, disabled: nextStatus === 'موقوف' };
   if (username && username !== current.username) authPatch.email = authEmailForUsername(username);
   if (password.length > 0) authPatch.password = password;
-  await api.auth().updateUser(uid, authPatch);
+  // تعديل الصلاحيات لا يحتاج إلى استدعاء updateUser في Authentication؛ هذا
+  // الاستدعاء الإضافي كان يوسع نافذة الفشل قبل حفظ Firestore. نُبقي إلغاء
+  // الاعتماد بعد نجاح حفظ الوثائق فقط، بينما تغييرات كلمة المرور/الحالة/الاسم
+  // تستمر في تحديث Authentication كالمعتاد.
+  const authNeedsUpdate = input.action !== 'permissions' || password.length > 0 || username !== current.username || displayName !== current.displayName || nextStatus !== current.status;
+  if (authNeedsUpdate) await api.auth().updateUser(uid, authPatch);
+  const updated = await writeProfilePair(api, uid, patch);
   if (sensitiveChange) await api.auth().revokeRefreshTokens(uid);
-  return writeProfilePair(api, uid, patch);
+  return updated;
 }
 
 const RECOVERY_DOC_ID = 'admin_manager';
@@ -223,9 +244,10 @@ async function deleteAccount(api, input) {
 }
 
 module.exports = async function handler(req, res) {
+  let input = {};
   try {
     if (req.method !== 'GET' && req.method !== 'POST') return json(res, 405, { error: 'method-not-allowed' });
-    const input = bodyOf(req);
+    input = bodyOf(req);
     if (req.method === 'POST' && input.action === 'recoverManagerPassword') {
       const api = getAdmin();
       const profile = await recoverManagerPassword(api, input);
@@ -241,7 +263,9 @@ module.exports = async function handler(req, res) {
     else return json(res, 400, { error: 'unknown-action' });
     return json(res, 200, { ok: true, account: publicProfile(profile) });
   } catch (error) {
-    console.error('account-api-error', error.code || error.message || 'unknown');
-    return json(res, Number(error.status) || 500, { error: error.code || error.message || 'account-operation-failed' });
+    const info = normalizedFirebaseError(error);
+    console.error('account-api-error', JSON.stringify({ action: input.action || '', code: error && error.code != null ? String(error.code) : '', message: String(error && error.message || '').slice(0, 240), normalized: info.code }));
+    if (info.status === 503) res.setHeader('Retry-After', '30');
+    return json(res, info.status, { error: info.code, retryable: info.retryable });
   }
 };
