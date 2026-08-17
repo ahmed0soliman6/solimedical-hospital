@@ -19,7 +19,7 @@
     "test:read-reduction": "node tools/read-reduction-test.js",
     "test": "npm run check && npm run test:contracts && npm run test:security && npm run test:performance && npm run test:account-delete && npm run test:account-permissions && npm run test:account-errors && npm run test:read-reduction",
     "desktop:start": "electron .",
-    "desktop:dist": "electron-builder --win nsis --x64"
+    "desktop:dist": "electron-builder --win nsis --x64 --publish never"
   },
   "dependencies": {
     "firebase-admin": "^13.5.0"
