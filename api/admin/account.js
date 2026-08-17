@@ -12,6 +12,15 @@ const {
   recoveryCodeMatches,
 } = require('../_lib/firebase-admin');
 
+function setCors(req, res) {
+  const origin = String((req.headers && req.headers.origin) || '');
+  if (origin === 'null' || origin === 'https://mitali1.vercel.app') {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Vary', 'Origin');
+  }
+}
 function json(res, status, body) {
   res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
   res.end(JSON.stringify(body));
@@ -244,6 +253,8 @@ async function deleteAccount(api, input) {
 }
 
 module.exports = async function handler(req, res) {
+  setCors(req, res);
+  if (req.method === 'OPTIONS') return json(res, 204, {});
   let input = {};
   try {
     if (req.method !== 'GET' && req.method !== 'POST') return json(res, 405, { error: 'method-not-allowed' });

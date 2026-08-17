@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#173B4A">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
   
 <title>نظام إدارة مستشفى لجنة زكاة ميت على التخصصي</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -16,7 +16,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script src="/firebase-store.js"></script>
+<script>window.MITALI_API_BASE = window.location.protocol === "file:" ? "https://mitali1.vercel.app" : "";</script>
+<script src="./firebase-store.js"></script>
 <style>
   :root{
     --navy:#173B4A;
@@ -6922,7 +6923,8 @@ boot();
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      if (window.location.protocol === "file:") return;
+      navigator.serviceWorker.register('./sw.js', { scope: './' })
         .then(reg => console.log('Service Worker Registered'))
         .catch(err => console.log('Service Worker Failed', err));
     });

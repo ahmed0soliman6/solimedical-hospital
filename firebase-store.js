@@ -159,11 +159,14 @@
     return true;
   }
 
+  const API_BASE = String(window.MITALI_API_BASE || "").replace(/\/$/, "");
+  function apiUrl(path) { return API_BASE + path; }
+
   async function adminAccountRequest(payload) {
     init();
     if (!auth || !auth.currentUser) throw new Error('auth/not-authenticated');
     const token = await auth.currentUser.getIdToken(true);
-    const response = await fetch('/api/admin/account', {
+    const response = await fetch(apiUrl('/api/admin/account'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify(payload || {})
@@ -188,7 +191,7 @@
 
   async function recoverManagerPassword(payload) {
     init();
-    const response = await fetch('/api/admin/account', {
+    const response = await fetch(apiUrl('/api/admin/account'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(Object.assign({ action: 'recoverManagerPassword' }, payload || {}))
@@ -210,7 +213,7 @@
     init();
     if (!auth || !auth.currentUser) throw new Error('auth/not-authenticated');
     const token = await auth.currentUser.getIdToken(true);
-    const response = await fetch('/api/admin/account', { headers: { 'Authorization': `Bearer ${token}` } });
+    const response = await fetch(apiUrl('/api/admin/account'), { headers: { 'Authorization': `Bearer ${token}` } });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw Object.assign(new Error(body.error || `admin-api-${response.status}`), { code: body.error });
     return body.accounts || [];
