@@ -5,6 +5,13 @@
   "engines": {
     "node": ">=18"
   },
+  "scripts": {
+    "check": "node tools/check-js-syntax.js",
+    "test:contracts": "node tools/api-contract-tests.js",
+    "test:security": "node tools/security-auth-tests.js",
+    "test:performance": "node tools/store-setvalue-performance-test.js",
+    "test": "npm run check && npm run test:contracts && npm run test:security && npm run test:performance"
+  },
   "dependencies": {
     "firebase-admin": "^13.5.0"
   }
