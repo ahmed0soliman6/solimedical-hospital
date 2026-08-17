@@ -73,9 +73,9 @@ vm.runInNewContext(fs.readFileSync('api/admin/account.js', 'utf8'), sandbox, { f
   assert.equal(writtenProfile.profile.permissions.clinic.add, true);
   assert.equal(writtenProfile.profile.credentialVersion, 3);
   assert.equal(writtenProfile.profile.securityVersion, 3);
-  assert.equal(authUpdate.id, uid);
+  assert.equal(authUpdate, null);
   assert.equal(revokedUid, uid);
-  console.log('PASS account-api-permissions-test: permission updates are persisted before the success response and invalidate trusted sessions.');
+  console.log('PASS account-api-permissions-test: permission updates persist before success, skip unnecessary Auth writes, and invalidate trusted sessions.');
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;
