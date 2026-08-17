@@ -27,9 +27,17 @@ jobs:
       - name: Run application tests
         run: npm test
 
+      - name: Prepare release token
+        shell: pwsh
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
+        run: |
+          $token = $env:RELEASE_TOKEN.Trim() -replace '\s', ''
+          if ($token -notmatch '^[.\w/=+\-]+$') { throw 'RELEASE_REPO_TOKEN contains unsupported characters' }
+          "GH_TOKEN=$token" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Build and publish Windows release
         run: npm run desktop:publish
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
           EP_PUBLISH_REPO: ahmed0soliman6/mitali-hospital-releases
 
