@@ -175,6 +175,8 @@
   .diary-form .diary-primary-row .field,.diary-form .diary-triple-row .field,.diary-form .diary-bottom-row .field{grid-column:auto !important;}
   .top-alerts-wrap{position:relative; display:inline-flex; flex:0 0 auto;}
   .top-alerts-btn{position:relative; display:inline-flex; align-items:center; justify-content:center; width:34px; min-width:34px; height:30px; padding:0; border:1px solid var(--line); border-radius:9px; background:var(--card); color:var(--ink); font-size:16px; cursor:pointer;}
+  .top-reload-btn{display:inline-flex; align-items:center; justify-content:center; gap:4px; min-width:34px; height:30px; padding:4px 8px; border:1px solid var(--line); border-radius:9px; background:var(--card); color:var(--ink); font-size:12px; font-weight:800; cursor:pointer;}
+  .top-reload-btn:disabled{opacity:.6; cursor:wait;}
   .top-alerts-badge{position:absolute; top:-7px; right:-7px; min-width:18px; height:18px; padding:0 4px; border-radius:999px; background:var(--expense); color:#fff; font-size:10px; line-height:18px; font-weight:900; text-align:center;}
   .top-alerts-panel{position:absolute; top:calc(100% + 9px); inset-inline-end:0; z-index:30; width:min(360px,calc(100vw - 22px)); padding:10px; border:1px solid var(--line); border-radius:12px; background:var(--card); box-shadow:0 14px 36px rgba(0,0,0,.18); color:var(--ink);}
   .top-alerts-panel[hidden]{display:none;}
@@ -219,6 +221,8 @@
     #topConnectionIndicator{display:inline-flex; margin-inline-start:43px; margin-top:2px;}
     .top-connection-indicator{padding:4px 7px; font-size:10px; gap:4px;}
     #topThemeToggleBtn{display:inline-flex; align-items:center; justify-content:center; width:32px; min-width:32px; height:30px; padding:0;}
+    .top-reload-btn{min-width:32px; width:32px; padding:0; font-size:15px;}
+    .top-reload-btn span{display:none;}
     #topbar .btn.sm{padding:5px 7px; font-size:11px;}
     #content{padding:12px 10px 42px; width:100%; min-width:0;}
     .form-grid{grid-template-columns:1fr !important; gap:10px;}
@@ -1376,11 +1380,13 @@ async function persist(key) {
   TABLE_MUTATION_GENERATION[key] = (TABLE_MUTATION_GENERATION[key] || 0) + 1;
   TABLE_MUTATION_AT[key] = Date.now();
   PENDING_WRITES++;
+  renderStorageIndicator();
   try {
     await stampChangedRecords(key, DB[key]);
   } catch (e) {
     PENDING_WRITES--;
     DATA_VERSION++;
+    renderStorageIndicator();
     throw e;
   }
   const map = {
@@ -1401,6 +1407,7 @@ async function persist(key) {
   } finally {
     PENDING_WRITES--;
     DATA_VERSION++;
+    renderStorageIndicator();
   }
 }
 // شبكة أمان: عشرات النقاط فى النظام تستدعى persist() دون انتظارها (fire-and-forget)
@@ -1851,8 +1858,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.15";
-const APP_RELEASE_NOTES = "تنسيق اليوميات للهاتف • تنبيهات المتابعات والمستحقات • حفظ إعدادات أسرع";
+const APP_VERSION = "v1.3.16";
+const APP_RELEASE_NOTES = "إصلاح مؤشر المزامنة • زر تحديث بيانات Firebase • تحسين إعدادات المستخدمين";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -2175,6 +2182,38 @@ function renderTopAlerts() {
     : `<div class="top-alert-item"><span>✅</span><div><strong>لا توجد تنبيهات حالية</strong><span class="hint">لا توجد متابعات قريبة أو مستحقات ظاهرة الآن.</span></div></div>`;
   panel.querySelectorAll("[data-alert-backup]").forEach(btn => btn.addEventListener("click", downloadSystemBackup));
 }
+let manualDataReloadInProgress = false;
+async function reloadLatestDataNow() {
+  if (manualDataReloadInProgress) return;
+  if (!currentUser || STORAGE_MODE !== "firestore") {
+    showToast("⚠️ لا يمكن تحميل Firebase قبل تسجيل الدخول والاتصال بالمصدر السحابي");
+    return;
+  }
+  if (PENDING_WRITES > 0) {
+    showToast("⚠️ توجد تغييرات محلية بانتظار الرفع — انتظر اكتمال المزامنة حتى لا تُستبدل تعديلاتك");
+    return;
+  }
+  if (isMidEdit() || isUserActivelyTyping()) {
+    showToast("⚠️ أنهِ التعديل الحالي أو احفظه أولًا، ثم أعد تحميل البيانات");
+    return;
+  }
+  const button = document.getElementById("topReloadBtn");
+  manualDataReloadInProgress = true;
+  if (button) { button.disabled = true; button.innerHTML = "⟳ <span>تحميل...</span>"; }
+  renderStorageIndicator();
+  try {
+    await loadAll({ preferCache: false });
+    subscribeFirestoreRealtime();
+    if (currentUser && !isMidEdit() && !isUserActivelyTyping()) route();
+    showToast("تم تحميل أحدث البيانات من Firebase");
+  } catch (error) {
+    console.error("Manual Firebase reload failed:", error);
+    showToast("⚠️ تعذر تحميل أحدث البيانات — احتفظ بالنسخة المحلية وحاول مرة أخرى");
+  } finally {
+    manualDataReloadInProgress = false;
+    renderStorageIndicator();
+  }
+}
 function renderTopbar() {
   const el = document.getElementById("topbar");
   const now = new Date();
@@ -2190,6 +2229,7 @@ function renderTopbar() {
     <div style="display:flex; align-items:center; gap:8px;">
        <div class="top-alerts-wrap">
          <button type="button" class="top-alerts-btn" id="topAlertsBtn" title="التنبيهات" aria-label="التنبيهات">⚠️<span class="top-alerts-badge" id="topAlertsBadge" hidden>0</span></button>
+         <button type="button" class="top-reload-btn" id="topReloadBtn" title="تحميل أحدث البيانات من Firebase" aria-label="تحميل أحدث البيانات">↻ <span>تحديث</span></button>
          <div class="top-alerts-panel" id="topAlertsPanel" hidden></div>
        </div>
        <button class="btn ghost sm top-theme-toggle" id="topThemeToggleBtn" title="تبديل الوضع الليلي/النهاري" aria-label="تبديل الوضع الليلي/النهاري">${document.documentElement.getAttribute("data-theme") === "dark" ? "☀️" : "🌙"}</button>
@@ -2201,6 +2241,8 @@ function renderTopbar() {
   const topThemeToggleBtn = document.getElementById("topThemeToggleBtn");
   const topAlertsBtn = document.getElementById("topAlertsBtn");
   const topAlertsPanel = document.getElementById("topAlertsPanel");
+  const topReloadBtn = document.getElementById("topReloadBtn");
+  if (topReloadBtn) topReloadBtn.addEventListener("click", reloadLatestDataNow);
   if (topAlertsBtn && topAlertsPanel) topAlertsBtn.addEventListener("click", (event) => {
     event.stopPropagation();
     topAlertsPanel.hidden = !topAlertsPanel.hidden;
