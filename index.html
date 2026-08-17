@@ -673,6 +673,79 @@ async function readLocalCache(key, fallback) {
 async function readSyncBaseline(key) { return await readLocalCache(key + "__base", []); }
 async function writeSyncBaseline(key, value) { await cacheLocally(key + "__base", value); }
 
+// Outbox دائم محليًا: IDB_STORE_QUEUE كان مُعرّفًا منذ الإصدار السابق، لكن لم
+// يكن هناك مسار يستخدمه. نحفظ اسم الجدول المتعثر فقط لأن أحدث قيمة كاملة موجودة
+// بالفعل في IDB_STORE_DATA، وبذلك لا نكرر نسخ بيانات المرضى داخل المتصفح.
+const SYNC_QUEUE_LOCAL_KEY = APP_PREFIX + "sync_queue_keys";
+const SYNC_QUEUE_KEYS = new Set();
+let SYNC_QUEUE_READY = false;
+let SYNC_FLUSH_IN_PROGRESS = false;
+async function loadSyncQueueState() {
+  if (SYNC_QUEUE_READY) return;
+  try {
+    if (IDB_OK) {
+      const keys = await idbGetAllKeys(IDB_STORE_QUEUE);
+      (keys || []).forEach(key => SYNC_QUEUE_KEYS.add(String(key)));
+    } else {
+      const raw = localStorage.getItem(SYNC_QUEUE_LOCAL_KEY);
+      const keys = raw ? JSON.parse(raw) : [];
+      (Array.isArray(keys) ? keys : []).forEach(key => SYNC_QUEUE_KEYS.add(String(key)));
+    }
+  } catch (e) { /* الكاش المحلي يظل صالحًا حتى لو تعذر فتح قائمة الانتظار */ }
+  SYNC_QUEUE_READY = true;
+}
+async function persistSyncQueueFallback() {
+  if (IDB_OK) return;
+  try { localStorage.setItem(SYNC_QUEUE_LOCAL_KEY, JSON.stringify([...SYNC_QUEUE_KEYS])); } catch (e) { /* ignore */ }
+}
+async function markSyncPending(key) {
+  await loadSyncQueueState();
+  const name = String(key || "");
+  if (!name) return;
+  SYNC_QUEUE_KEYS.add(name);
+  try {
+    if (IDB_OK) await idbSet(IDB_STORE_QUEUE, name, { key: name, queuedAt: nowISO() });
+    else await persistSyncQueueFallback();
+  } catch (e) { /* لا نمنع الحفظ المحلي بسبب فشل تحديث مؤشر الطابور */ }
+  renderStorageIndicator();
+}
+async function clearSyncPending(key) {
+  await loadSyncQueueState();
+  const name = String(key || "");
+  if (!name || !SYNC_QUEUE_KEYS.delete(name)) return;
+  try {
+    if (IDB_OK) await idbDeleteKey(IDB_STORE_QUEUE, name);
+    else await persistSyncQueueFallback();
+  } catch (e) { /* يبقى المفتاح في الذاكرة ويُعاد التعامل معه في الجلسة التالية */ }
+  renderStorageIndicator();
+}
+async function flushSyncQueue() {
+  await loadSyncQueueState();
+  if (SYNC_FLUSH_IN_PROGRESS || !navigator.onLine || STORAGE_MODE !== "firestore" || !currentUser || !SYNC_QUEUE_KEYS.size) {
+    renderStorageIndicator();
+    return;
+  }
+  SYNC_FLUSH_IN_PROGRESS = true;
+  try {
+    for (const key of [...SYNC_QUEUE_KEYS]) {
+      if (!navigator.onLine || !currentUser) break;
+      const latest = await readLocalCache(key, undefined);
+      if (latest === undefined) { await clearSyncPending(key); continue; }
+      try {
+        await storeSet(key, latest);
+        await clearSyncPending(key);
+      } catch (e) {
+        // خطأ الشبكة أو الصلاحية لا يمسح القيمة المحلية؛ نتوقف وننتظر online
+        // أو المحاولة الدورية التالية بدل إنشاء طلبات متوازية على نفس الجدول.
+        break;
+      }
+    }
+  } finally {
+    SYNC_FLUSH_IN_PROGRESS = false;
+    renderStorageIndicator();
+  }
+}
+
 function stripUpdatedAt(o) { const c = Object.assign({}, o); delete c.updatedAt; return c; }
 function recordsEqual(a, b) {
   if (!a || !b) return false;
@@ -767,6 +840,7 @@ async function resolveConflict(table, id, winner) {
 
 async function detectStorageMode() {
   await initIDB();
+  await loadSyncQueueState();
   if (window.MitaliFirebase) {
     try {
       await window.MitaliFirebase.init();
@@ -843,6 +917,7 @@ async function storeSetInner(key, value) {
   try {
     if (STORAGE_MODE === "firestore" && window.MitaliFirebase) {
       await cacheLocally(key, value);
+      if (!navigator.onLine) await markSyncPending(key);
       if (Array.isArray(value) && !["settings", "categories", "specialties"].includes(key) && window.MitaliFirebase.upsertRecords) {
         const previous = await readSyncBaseline(key);
         const previousMap = new Map((previous || []).filter(r => r && r.id != null).map(r => [String(r.id), r]));
@@ -859,7 +934,12 @@ async function storeSetInner(key, value) {
           window.MitaliFirebase.setUserProfile(account.firebaseUid, account)
         ));
       }
-      if (Array.isArray(value)) await writeSyncBaseline(key, value);
+      if (navigator.onLine) {
+        if (Array.isArray(value)) await writeSyncBaseline(key, value);
+        await clearSyncPending(key);
+      } else {
+        await markSyncPending(key);
+      }
       renderStorageIndicator();
       return;
     }
@@ -870,6 +950,7 @@ async function storeSetInner(key, value) {
     }
     renderStorageIndicator();
   } catch (e) {
+    if (STORAGE_MODE === "firestore") await markSyncPending(key);
     STORAGE_OK = false;
     throw e;
   }
@@ -1355,7 +1436,7 @@ function mergeRemoteSnapshot(key, remoteValue) {
   return merged;
 }
 window.addEventListener("beforeunload", (e) => {
-  if (PENDING_WRITES > 0) { e.preventDefault(); e.returnValue = ""; }
+  if (PENDING_WRITES > 0 || SYNC_QUEUE_KEYS.size > 0) { e.preventDefault(); e.returnValue = ""; }
 });
 
 // إصلاح أداء (تخزين مؤقت للتقارير): عداد بسيط يزيد كل ما تتغيّر البيانات فعليًا
@@ -1864,8 +1945,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.17";
-const APP_RELEASE_NOTES = "إشعارات الهاتف • روابط مباشرة للأقسام • تنقل حسب الصلاحية";
+const APP_VERSION = "v1.3.18";
+const APP_RELEASE_NOTES = "إشعارات الهاتف • outbox محلي دائم للعمل دون إنترنت • رفع تلقائي بعد عودة الاتصال";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -2070,7 +2151,7 @@ function renderSidebar() {
 
 async function renderStorageIndicator() {
   const offline = !navigator.onLine;
-  const pending = Number(typeof PENDING_WRITES === "number" ? PENDING_WRITES : 0) > 0;
+  const pending = Number(typeof PENDING_WRITES === "number" ? PENDING_WRITES : 0) > 0 || SYNC_QUEUE_KEYS.size > 0;
   const connectionLabel = offline ? "غير متصل" : (pending ? "جارٍ المزامنة" : "متصل");
   const html = `<span class="connection-dot"></span><span>${connectionLabel}</span>`;
   const side = document.getElementById("storageIndicator");
@@ -2090,11 +2171,13 @@ async function renderStorageIndicator() {
 window.addEventListener("online", async () => {
   renderStorageIndicator();
   if (STORAGE_MODE === "firestore" && currentUser) {
+    await flushSyncQueue();
     subscribeFirestoreRealtime();
     if (!isMidEdit() && !isUserActivelyTyping()) route();
   }
 });
 window.addEventListener("offline", renderStorageIndicator);
+setInterval(() => { if (navigator.onLine) flushSyncQueue(); }, 30000);
 
 document.getElementById("sidebarOverlay").addEventListener("click", () => document.body.classList.remove("sidebar-open"));
 
@@ -2121,23 +2204,23 @@ async function backgroundRefreshAll() {
   if (BACKGROUND_REFRESH_IN_PROGRESS || STORAGE_MODE !== "firestore" || !navigator.onLine || !currentUser) return;
   if (firestoreRealtimeUnsubs && firestoreRealtimeUnsubs.size) return;
   if (isMidEdit() || isUserActivelyTyping()) return;
-  if (PENDING_WRITES > 0) return;
+  if (PENDING_WRITES > 0 || SYNC_QUEUE_KEYS.size > 0) return;
   BACKGROUND_REFRESH_IN_PROGRESS = true;
   try {
     let changed = false;
     for (const key of BACKGROUND_REFRESH_KEYS) {
-      if (PENDING_WRITES > 0 || isMidEdit() || isUserActivelyTyping()) break;
+      if (PENDING_WRITES > 0 || SYNC_QUEUE_KEYS.size > 0 || isMidEdit() || isUserActivelyTyping()) break;
       try {
         const before = JSON.stringify(DB[key]);
         const fresh = await storeGet(key, DB[key]);
-        if (PENDING_WRITES > 0 || isMidEdit() || isUserActivelyTyping()) break;
+        if (PENDING_WRITES > 0 || SYNC_QUEUE_KEYS.size > 0 || isMidEdit() || isUserActivelyTyping()) break;
         if (fresh !== undefined && JSON.stringify(fresh) !== before) {
           DB[key] = fresh;
           changed = true;
         }
       } catch (e) { /* continue with the remaining collections */ }
     }
-    if (changed && currentUser && !isMidEdit() && !isUserActivelyTyping() && PENDING_WRITES === 0) route();
+    if (changed && currentUser && !isMidEdit() && !isUserActivelyTyping() && PENDING_WRITES === 0 && SYNC_QUEUE_KEYS.size === 0) route();
   } finally {
     BACKGROUND_REFRESH_IN_PROGRESS = false;
   }
@@ -2218,7 +2301,7 @@ async function reloadLatestDataNow() {
     showToast("⚠️ لا يمكن تحميل Firebase قبل تسجيل الدخول والاتصال بالمصدر السحابي");
     return;
   }
-  if (PENDING_WRITES > 0) {
+  if (PENDING_WRITES > 0 || SYNC_QUEUE_KEYS.size > 0) {
     showToast("⚠️ توجد تغييرات محلية بانتظار الرفع — انتظر اكتمال المزامنة حتى لا تُستبدل تعديلاتك");
     return;
   }
@@ -6575,6 +6658,7 @@ function renderLogin(errorMsg) {
       console.warn("Could not persist login metadata:", persistError && persistError.code ? persistError.code : "remote-write-error");
     }
     setSession({ id: account.id, username: account.username, displayName: account.displayName, role: account.role, firebaseUid: account.firebaseUid || null, securityVersion: Number(account.securityVersion || 1), credentialVersion: Number(account.credentialVersion || account.securityVersion || 1) });
+    if (navigator.onLine) flushSyncQueue();
     if (navigator.onLine && account.firebaseUid) rememberTrustedDevice(account, password).catch(error => console.warn("Trusted device enrollment failed:", error));
     logActivity("تسجيل دخول", "login");
     state.page = firstAccessiblePage(); state.editId = null;
@@ -6731,7 +6815,10 @@ async function boot() {
   // عند وجود كاش محلي، نعرض الصفحة فورًا ثم نجلب النسخة الأحدث من Firebase
   // في الخلفية؛ لا نغيّر شاشة الدخول ولا جلسة المستخدم أثناء هذا التحديث.
   route();
-  if (STORAGE_MODE === "firestore") subscribeFirestoreRealtime();
+  if (STORAGE_MODE === "firestore") {
+    subscribeFirestoreRealtime();
+    flushSyncQueue();
+  }
   if (currentUser && STORAGE_MODE === "firestore") {
     loadAll().then(() => {
       if (currentUser && !isMidEdit() && !isUserActivelyTyping()) route();
