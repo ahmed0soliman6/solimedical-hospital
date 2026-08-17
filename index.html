@@ -178,10 +178,13 @@
   .top-reload-btn{display:inline-flex; align-items:center; justify-content:center; gap:4px; min-width:34px; height:30px; padding:4px 8px; border:1px solid var(--line); border-radius:9px; background:var(--card); color:var(--ink); font-size:12px; font-weight:800; cursor:pointer;}
   .top-reload-btn:disabled{opacity:.6; cursor:wait;}
   .top-alerts-badge{position:absolute; top:-7px; right:-7px; min-width:18px; height:18px; padding:0 4px; border-radius:999px; background:var(--expense); color:#fff; font-size:10px; line-height:18px; font-weight:900; text-align:center;}
-  .top-alerts-panel{position:absolute; top:calc(100% + 9px); inset-inline-end:0; z-index:30; width:min(360px,calc(100vw - 22px)); padding:10px; border:1px solid var(--line); border-radius:12px; background:var(--card); box-shadow:0 14px 36px rgba(0,0,0,.18); color:var(--ink);}
+  .top-alerts-panel{position:absolute; top:calc(100% + 9px); inset-inline-end:0; z-index:1000; width:min(360px,calc(100vw - 22px)); max-height:min(60vh,430px); overflow-y:auto; overscroll-behavior:contain; padding:10px; border:1px solid var(--line); border-radius:12px; background:var(--card); box-shadow:0 14px 36px rgba(0,0,0,.18); color:var(--ink);}
   .top-alerts-panel[hidden]{display:none;}
   .top-alert-item{display:flex; align-items:flex-start; gap:8px; padding:9px 7px; border-bottom:1px solid var(--line); font-size:12px; line-height:1.55;}
   .top-alert-item:last-child{border-bottom:0;}
+  .top-alert-link{cursor:pointer; border-radius:8px; transition:background-color .16s ease, transform .16s ease;}
+  .top-alert-link:hover,.top-alert-link:focus-visible{background:var(--soft,#eef5f5); outline:none;}
+  .top-alert-link:active{transform:scale(.99);}
   .top-alert-item strong{display:block; font-size:12px;}
   .top-alert-item .hint{display:block; margin-top:2px;}
   .top-alert-action{margin-top:8px; width:100%;}
@@ -223,6 +226,9 @@
     #topThemeToggleBtn{display:inline-flex; align-items:center; justify-content:center; width:32px; min-width:32px; height:30px; padding:0;}
     .top-reload-btn{min-width:32px; width:32px; padding:0; font-size:15px;}
     .top-reload-btn span{display:none;}
+    .top-alerts-panel{position:fixed; top:clamp(88px,14vh,150px); inset-inline-start:10px; inset-inline-end:10px; width:auto; max-width:none; max-height:calc(100dvh - clamp(118px,18vh,190px)); overflow-y:auto; z-index:1100;}
+    .top-alert-item{font-size:13px; padding:12px 9px;}
+    .top-alert-item strong{font-size:13px;}
     #topbar .btn.sm{padding:5px 7px; font-size:11px;}
     #content{padding:12px 10px 42px; width:100%; min-width:0;}
     .form-grid{grid-template-columns:1fr !important; gap:10px;}
@@ -231,7 +237,7 @@
     .diary-form .diary-bottom-row{grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px;}
     .diary-form .field label{font-size:12px; line-height:1.35;}
     .diary-form input,.diary-form select,.diary-form textarea{min-width:0; font-size:13px;}
-    .top-alerts-panel{inset-inline-end:-4px;}
+    .top-alerts-panel{inset-inline-start:10px; inset-inline-end:10px;}
     .two-col{grid-template-columns:1fr; gap:10px;}
     .table-wrap{width:100%; max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch;}
     .table-wrap table{min-width:620px;}
@@ -1858,8 +1864,8 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.16";
-const APP_RELEASE_NOTES = "إصلاح مؤشر المزامنة • زر تحديث بيانات Firebase • تحسين إعدادات المستخدمين";
+const APP_VERSION = "v1.3.17";
+const APP_RELEASE_NOTES = "إشعارات الهاتف • روابط مباشرة للأقسام • تنقل حسب الصلاحية";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
@@ -2158,14 +2164,24 @@ function topAlertData() {
   const today = todayISO();
   const followupUntil = localISO(new Date(Date.now() + 7 * 86400000));
   const visits = allVisits();
-  const followups = visits.filter(v => v.nextVisitDate && v.nextVisitDate >= today && v.nextVisitDate <= followupUntil);
-  const debtPatients = new Set(visits.filter(v => visitRemaining(v) > 0).map(v => `${v.patient || ""}|${v.phone || ""}`));
   let lastBackup = 0;
   try { lastBackup = Date.parse(localStorage.getItem("lastBackupAt") || "") || 0; } catch (e) { /* ignore */ }
   const backupDue = !lastBackup || (Date.now() - lastBackup > 7 * 86400000);
   const items = [];
-  if (followups.length) items.push({ icon: "📅", title: "متابعات قريبة", detail: `${followups.length} موعد متابعة خلال الأيام السبعة القادمة` });
-  if (debtPatients.size) items.push({ icon: "💰", title: "مرضى عليهم مستحقات", detail: `${debtPatients.size} مريض يحتاج مراجعة مستحقاته` });
+  const addPageAlert = (icon, title, detail, page) => {
+    if (page && isPageAccessible(page)) items.push({ icon, title, detail, page });
+  };
+  const addDebtAlert = (sectionKey) => {
+    const meta = OUTSTANDING_SECTION_META[sectionKey];
+    if (!meta || !canOutstandingSection(sectionKey)) return;
+    const count = groupPatients(outstandingVisits(meta)).filter(g => g.totalDue > 0.01).length;
+    if (count) addPageAlert(meta.icon || "⚠️", meta.label, `${count} مريض يحتاج مراجعة مستحقاته`, `outstandingBalances${sectionKey[0].toUpperCase()}${sectionKey.slice(1)}`);
+  };
+  ["clinic", "dental", "operations", "labs", "radiology"].forEach(addDebtAlert);
+  const followupClinic = visits.filter(v => v.nextVisitDate && v.nextVisitDate >= today && v.nextVisitDate <= followupUntil && v.kind !== "أسنان");
+  const followupDental = visits.filter(v => v.nextVisitDate && v.nextVisitDate >= today && v.nextVisitDate <= followupUntil && v.kind === "أسنان");
+  if (followupClinic.length && isPageAccessible("clinic")) addPageAlert("📅", "متابعات العيادات", `${followupClinic.length} موعد خلال الأيام السبعة القادمة`, "clinic");
+  if (followupDental.length && isPageAccessible("dental")) addPageAlert("📅", "متابعات الأسنان", `${followupDental.length} موعد خلال الأيام السبعة القادمة`, "dental");
   if (backupDue) items.push({ icon: "💾", title: "النسخة الاحتياطية", detail: lastBackup ? "مرّ أكثر من 7 أيام على آخر نسخة احتياطية" : "لم يتم تنزيل نسخة احتياطية على هذا الجهاز بعد", backup: true });
   return items;
 }
@@ -2178,9 +2194,22 @@ function renderTopAlerts() {
   badge.textContent = String(items.length);
   badge.hidden = !items.length;
   panel.innerHTML = items.length
-    ? `${items.map(item => `<div class="top-alert-item"><span>${item.icon}</span><div><strong>${item.title}</strong><span class="hint">${item.detail}</span>${item.backup ? `<button type="button" class="btn sm top-alert-action" data-alert-backup>تحميل آخر نسخة احتياطية</button>` : ""}</div></div>`).join("")}`
+    ? items.map(item => `<div class="top-alert-item${item.page ? " top-alert-link" : ""}" ${item.page ? `data-alert-page="${esc(item.page)}" role="button" tabindex="0"` : ""}><span>${item.icon}</span><div><strong>${item.title}</strong><span class="hint">${item.detail}</span>${item.backup ? `<button type="button" class="btn sm top-alert-action" data-alert-backup>تحميل آخر نسخة احتياطية</button>` : ""}</div></div>`).join("")
     : `<div class="top-alert-item"><span>✅</span><div><strong>لا توجد تنبيهات حالية</strong><span class="hint">لا توجد متابعات قريبة أو مستحقات ظاهرة الآن.</span></div></div>`;
+  panel.querySelectorAll("[data-alert-backup]").forEach(btn => btn.addEventListener("click", event => event.stopPropagation()));
   panel.querySelectorAll("[data-alert-backup]").forEach(btn => btn.addEventListener("click", downloadSystemBackup));
+  const openAlertPage = element => {
+    const page = element.dataset.alertPage;
+    if (!page || !isPageAccessible(page)) { showToast("⚠️ لا تملك صلاحية فتح هذه الصفحة"); return; }
+    panel.hidden = true;
+    state.page = page;
+    state.skipPageHistory = false;
+    route();
+  };
+  panel.querySelectorAll("[data-alert-page]").forEach(item => {
+    item.addEventListener("click", event => { if (!event.target.closest("[data-alert-backup]")) openAlertPage(item); });
+    item.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openAlertPage(item); } });
+  });
 }
 let manualDataReloadInProgress = false;
 async function reloadLatestDataNow() {
