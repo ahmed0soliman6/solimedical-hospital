@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const { authEmailForUsername, cleanPermissions, sanitizeProfile } = require('../api/_lib/firebase-admin');
 
 assert.equal(authEmailForUsername(' Ahmed '), 'u-YWhtZWQ@accounts.mitali-hospital.internal');
@@ -19,4 +20,7 @@ assert.equal(profile.id, 'uid-1');
 assert.equal(profile.credentialVersion, 1);
 assert.equal(Object.prototype.hasOwnProperty.call(profile, 'password'), false);
 assert.equal(Object.prototype.hasOwnProperty.call(profile, 'passwordHash'), false);
-console.log('PASS api-contract-tests: account identity, permission allow-list, and secret-free profile output.');
+const indexSource = fs.readFileSync('index.html', 'utf8');
+assert.match(indexSource, /const postLoginKeys = CORE_BOOT_KEYS\.filter\(key => key !== "staffAccounts"\)/);
+assert.match(indexSource, /permissions: perms \}, "permissions"\)/);
+console.log('PASS api-contract-tests: account identity, permission allow-list, secret-free profile output, and client permission refresh contract.');

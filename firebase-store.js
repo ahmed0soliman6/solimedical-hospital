@@ -205,8 +205,8 @@
     return body;
   }
 
-  async function adminUpdateAccount(payload) {
-    return adminAccountRequest(Object.assign({ action: 'update' }, payload || {}));
+  async function adminUpdateAccount(payload, action = 'update') {
+    return adminAccountRequest(Object.assign({ action }, payload || {}));
   }
 
   async function adminListAccounts() {

@@ -141,10 +141,19 @@ async function requireManager(req) {
 }
 
 async function readProfile(api, uid) {
-  const snap = await api.firestore().collection('users').doc(String(uid)).get();
-  if (snap.exists) return sanitizeProfile(uid, snap.data());
-  const legacy = await api.firestore().collection('staff_accounts').doc(String(uid)).get();
-  return legacy.exists ? sanitizeProfile(uid, legacy.data()) : null;
+  const normalizedUid = String(uid);
+  const usersSnap = await api.firestore().collection('users').doc(normalizedUid).get();
+  if (usersSnap.exists) return sanitizeProfile(normalizedUid, usersSnap.data());
+  const staffSnap = await api.firestore().collection('staff_accounts').doc(normalizedUid).get();
+  if (staffSnap.exists) return sanitizeProfile(normalizedUid, staffSnap.data());
+  // دعم السجلات القديمة التي كان معرّف مستندها محليًا بينما حقل firebaseUid
+  // يحتوي على معرّف Firebase الحقيقي.
+  for (const collectionName of ['users', 'staff_accounts']) {
+    const matches = await api.firestore().collection(collectionName)
+      .where('firebaseUid', '==', normalizedUid).limit(1).get();
+    if (!matches.empty) return sanitizeProfile(normalizedUid, matches.docs[0].data());
+  }
+  return null;
 }
 
 async function writeProfilePair(api, uid, profile) {
@@ -162,11 +171,19 @@ async function writeProfilePair(api, uid, profile) {
 }
 
 async function listProfiles(api) {
-  const snap = await api.firestore().collection('users').get();
-  const profiles = snap.docs.map(doc => sanitizeProfile(doc.id, doc.data()));
-  if (profiles.length) return profiles;
-  const legacy = await api.firestore().collection('staff_accounts').get();
-  return legacy.docs.map(doc => sanitizeProfile(doc.id, doc.data()));
+  const [usersSnap, staffSnap] = await Promise.all([
+    api.firestore().collection('users').get(),
+    api.firestore().collection('staff_accounts').get(),
+  ]);
+  const byUid = new Map();
+  for (const doc of [...staffSnap.docs, ...usersSnap.docs]) {
+    const data = doc.data() || {};
+    const uid = String(data.firebaseUid || doc.id);
+    const profile = sanitizeProfile(uid, data);
+    // users هو المصدر المفضل عند وجود النسختين، لأنه يُقرأ أولًا عند تسجيل الدخول.
+    if (!byUid.has(uid) || doc.ref?.parent?.id === 'users' || doc.id === uid) byUid.set(uid, profile);
+  }
+  return Array.from(byUid.values());
 }
 
 module.exports = {

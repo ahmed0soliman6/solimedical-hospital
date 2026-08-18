@@ -236,8 +236,17 @@ async function deleteAccount(api, input) {
   if (current) await ensureNotLastManager(api, uid, 'موظف', 'موقوف');
 
   const batch = api.firestore().batch();
-  batch.delete(api.firestore().collection('users').doc(uid));
-  batch.delete(api.firestore().collection('staff_accounts').doc(uid));
+  const usersRef = api.firestore().collection('users');
+  const staffRef = api.firestore().collection('staff_accounts');
+  batch.delete(usersRef.doc(uid));
+  batch.delete(staffRef.doc(uid));
+  // حذف أي نسخ legacy يكون معرّف مستندها محليًا، مع عدم لمس أي حساب آخر.
+  for (const collectionRef of [usersRef, staffRef]) {
+    const legacyMatches = await collectionRef.where('firebaseUid', '==', uid).get();
+    for (const doc of legacyMatches.docs) {
+      if (doc.id !== uid) batch.delete(doc.ref);
+    }
+  }
   await batch.commit();
 
   if (authUser) {
