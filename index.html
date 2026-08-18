@@ -2048,7 +2048,7 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.25";
+const APP_VERSION = "v1.3.26";
 const APP_RELEASE_NOTES = "تقليل قراءات Firestore • تحميل البيانات عند الحاجة • حماية الحصة المجانية مع كاش محلي";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
@@ -6328,7 +6328,7 @@ function renderPermissionsPage() {
     const btn = form.querySelector('button[type="submit"]');
     if (btn) { btn.disabled = true; btn.textContent = "جارٍ الحفظ على الخادم..."; }
     try {
-      const response = await window.MitaliFirebase.adminUpdateAccount({ uid: t.firebaseUid, displayName: t.displayName, username: t.username, role: t.role, status: t.status || "نشط", permissions: perms });
+      const response = await window.MitaliFirebase.adminUpdateAccount({ uid: t.firebaseUid, displayName: t.displayName, username: t.username, role: t.role, status: t.status || "نشط", permissions: perms }, "permissions");
       const updated = response && response.account; if (!updated) throw new Error("invalid-admin-api-response");
       const index = DB.staffAccounts.findIndex(x => x.id === t.id); if (index >= 0) DB.staffAccounts[index] = Object.assign({}, DB.staffAccounts[index], updated);
       await cacheLocally("staffAccounts", DB.staffAccounts); await writeSyncBaseline("staffAccounts", DB.staffAccounts);
@@ -6809,9 +6809,14 @@ function renderLogin(errorMsg) {
       try {
         // لا نعيد انتظار شبكة Firestore مرتين في مسار الدخول؛ نستخدم الكاش
         // المحلي فورًا، ثم realtime/التحديث الخلفي يجلبان أحدث السجلات بعد عرض الواجهة.
-        loadKeys(CORE_BOOT_KEYS, { preferCache: true }).then(() => {
+        // لا نعيد تحميل staffAccounts من الكاش هنا؛ فقد وصلنا قبل قليل إلى
+        // النسخة المؤكدة من الخادم، وإعادة تحميلها محليًا كانت تستبدل الصلاحيات
+        // الحديثة ببيانات قديمة وتُظهر الحساب كأنه بلا صلاحيات. نحمّل بقية
+        // بيانات التشغيل فقط، وتبقى قائمة الحسابات من النسخة server-confirmed.
+        const postLoginKeys = CORE_BOOT_KEYS.filter(key => key !== "staffAccounts");
+        loadKeys(postLoginKeys, { preferCache: true }).then(() => {
           if (currentUser && state.page !== "login") route();
-        }).catch(reloadError => console.warn("Firestore account reload after login failed:", reloadError));
+        }).catch(reloadError => console.warn("Firestore post-login data reload failed:", reloadError));
         account = (DB.staffAccounts || []).find(a => a.firebaseUid === firebaseAuthAccount.firebaseUid) || account;
       } catch (reloadError) {
         console.warn("Firestore account reload after login failed:", reloadError);

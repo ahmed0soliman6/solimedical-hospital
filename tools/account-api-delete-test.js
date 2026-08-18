@@ -16,6 +16,7 @@ function loadHandler(scenario) {
           return { exists: !!profile, data: () => profile || {} };
         },
       }),
+      where: () => ({ get: async () => ({ docs: [] }) }),
     }),
     batch: () => ({
       delete: (ref) => deletedRefs.push({ name: ref.name, id: ref.id }),

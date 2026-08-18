@@ -14,7 +14,7 @@ assert.match(index, /const READ_CACHE_TTL_MS\s*=\s*5\s*\*\s*60\s*\*\s*1000/);
 assert.match(index, /const CORE_BOOT_KEYS\s*=\s*\["staffAccounts"/);
 assert.match(index, /function ensurePageDataLoaded\(page, options = \{\}\)/);
 assert.match(index, /await loadKeys\(pageKeys\(state\.page\), \{ preferCache: false, requireServer: true \}\)/);
-assert.match(index, /loadKeys\(CORE_BOOT_KEYS, \{ preferCache: true \}\)/);
+assert.match(index, /const postLoginKeys = CORE_BOOT_KEYS\.filter\(key => key !== "staffAccounts"\)/);
 
 const store = fs.readFileSync('firebase-store.js', 'utf8');
 assert.match(store, /function getReadMetrics\(\)/);
