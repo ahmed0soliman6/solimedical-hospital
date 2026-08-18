@@ -1366,7 +1366,7 @@ async function loadAll(options = {}) {
   }
   const staffAccountsWasEmpty = !staffAccountsRaw || staffAccountsRaw.length === 0;
   DB.staffAccounts = or(staffAccountsRaw, seedStaffAccounts());
-  if (staffAccountsWasEmpty) persist("staffAccounts");
+  // لا نُنشئ أو نكتب حسابات من الكاش المحلي؛ الحسابات تُدار عبر users/API فقط.
   DB.labExpenses = labExpensesRaw || [];
   DB.categories = categoriesRaw;
   if (!DB.categories || (!DB.categories.income?.length && !DB.categories.expense?.length)) {
@@ -1387,7 +1387,7 @@ async function loadAll(options = {}) {
   // تأكد من وجود حسابات الموظفين حتى لو لم تكن أول تشغيل (ترقية من نسخة قديمة)
   if (!DB.staffAccounts || DB.staffAccounts.length === 0) {
     DB.staffAccounts = seedStaffAccounts();
-    persist("staffAccounts");
+    // لا تُكتب قائمة الحسابات كاملة من المتصفح؛ هذه حالة كاش محلي فقط.
   }
   // ترقية الحسابات القديمة: أي حساب لم تُضَف له الحقول الجديدة يحصل تلقائيًا
   // على كل الصلاحيات حتى لا ينقطع عمله الحالى، والمدير يبقى دائمًا صاحب كل الصلاحيات.
@@ -1413,7 +1413,8 @@ async function loadAll(options = {}) {
       });
     });
   });
-  if (upgraded) persist("staffAccounts");
+  // لا تُرفع ترقيات الصلاحيات الجماعية من الكاش؛ يثبتها API الإداري فقط.
+  if (upgraded) console.info("Local account permission defaults normalized without remote bulk write");
   DATA_VERSION++;
 }
 // سياسة القراءة الاقتصادية: لا نقرأ كل جداول المستشفى عند كل إقلاع أو تنقل.
@@ -1429,7 +1430,7 @@ const PAGE_DATA_KEYS = {
   ledger: ["income", "expense", "settings"], payroll: ["employees", "payroll"],
   reports: ["doctors", "employees", "visitsClinic", "visitsDental", "visitsOperations", "visitsLabs", "visitsRadiology", "income", "expense", "payroll"],
   settings: ["doctors", "employees", "settings", "categories", "specialties"],
-  users: ["staffAccounts"], permissions: ["staffAccounts"], auditlog: ["auditLog", "staffAccounts"],
+  users: [], permissions: [], auditlog: ["auditLog"],
   patientFilesClinic: ["doctors", "visitsClinic"], patientFilesDental: ["doctors", "visitsDental"],
   outstandingBalances: ["doctors", "visitsClinic", "visitsDental", "visitsOperations", "visitsLabs", "visitsRadiology"],
   outstandingBalancesClinic: ["doctors", "visitsClinic"], outstandingBalancesDental: ["doctors", "visitsDental"],
@@ -2048,7 +2049,7 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.26";
+const APP_VERSION = "v1.3.27";
 const APP_RELEASE_NOTES = "تقليل قراءات Firestore • تحميل البيانات عند الحاجة • حماية الحصة المجانية مع كاش محلي";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
@@ -2635,14 +2636,8 @@ function openChangeMyPasswordModal() {
       currentUser.sessionIssuedAt = Date.now();
       currentUser.sessionExpiresAt = Date.now() + SESSION_TTL_MS;
       setSession(currentUser);
-      if (isAdminUser()) {
-        try {
-          await persist("staffAccounts");
-        } catch (stateError) {
-          appStateSyncFailed = true;
-          console.warn("Password changed, but local staff state sync failed:", stateError);
-        }
-      }
+      // تحديث كلمة المرور ونسخة الأمان تم تأكيده عبر Firebase/API؛ لا نعيد
+      // كتابة قائمة users كاملة من المتصفح بعد تغيير كلمة مرور الحساب الحالي.
       logActivity("تغيير كلمة المرور الشخصية", "settings");
       showToast(metadataSyncFailed || appStateSyncFailed
         ? "تم تغيير كلمة المرور بنجاح، وسيُعاد تحديث بيانات الجلسة تلقائيًا"
@@ -5552,7 +5547,7 @@ function renderSettings() {
       await window.MitaliFirebase.setUserProfile(firebaseUid, profile);
       DB.staffAccounts = DB.staffAccounts || [];
       DB.staffAccounts.push(Object.assign({ id: firebaseUid }, profile, { password: "" }));
-      await persist("staffAccounts");
+      // لا تُكتب قائمة الحسابات كاملة من المتصفح؛ users يُحدَّث عبر API الإداري فقط.
       logActivity("إضافة مستخدم وربطه بـ Firebase", "users", null, { username, role, firebaseUid });
       showToast("تم إنشاء الحساب وربطه بـ Firebase Authentication");
       route();
@@ -5561,14 +5556,28 @@ function renderSettings() {
       showToast(error && error.code === "auth/email-already-in-use" ? "⚠️ اسم المستخدم مرتبط بحساب موجود بالفعل" : "⚠️ تعذر إنشاء الحساب في Firebase");
     }
   });
-  c.querySelectorAll("[data-delstaff]").forEach(b => b.addEventListener("click", () => {
+  c.querySelectorAll("[data-delstaff]").forEach(b => b.addEventListener("click", async () => {
     if (!can("users","delete")) { showToast("⚠️ ليس لديك صلاحية"); return; }
     if (currentUser && currentUser.id === b.dataset.delstaff) { showToast("⚠️ لا يمكنك حذف حسابك الحالي أثناء تسجيل الدخول به"); return; }
     const acc = DB.staffAccounts.find(x => x.id === b.dataset.delstaff);
     if (acc && acc.role === "مدير" && countActiveAdmins(acc.id) === 0) { showToast("⚠️ لا يمكن حذف آخر مدير نشط فى النظام"); return; }
     if (!confirm("حذف هذا الحساب؟ لن يتمكن صاحبه من تسجيل الدخول بعد الآن.")) return;
-    DB.staffAccounts.splice(DB.staffAccounts.findIndex(x => x.id === b.dataset.delstaff), 1);
-    persist("staffAccounts"); showToast("تم الحذف"); route();
+    if (!window.MitaliFirebase?.adminDeleteAccount) { showToast("⚠️ خدمة حذف الحسابات غير متاحة"); return; }
+    const button = b;
+    button.disabled = true;
+    try {
+      const response = await window.MitaliFirebase.adminDeleteAccount(b.dataset.delstaff);
+      if (!response || !response.deleted) throw new Error("invalid-admin-delete-response");
+      DB.staffAccounts = DB.staffAccounts.filter(x => x.id !== b.dataset.delstaff && x.firebaseUid !== b.dataset.delstaff);
+      await cacheLocally("staffAccounts", DB.staffAccounts);
+      await writeSyncBaseline("staffAccounts", DB.staffAccounts);
+      showToast("تم حذف الحساب من Firebase وإلغاء دخوله");
+      route();
+    } catch (error) {
+      console.error("Account deletion failed:", error);
+      button.disabled = false;
+      showToast(`⚠️ ${adminAccountFailureMessage(error, "لم يُحذف الحساب؛ لم تتغير البيانات")}`, 7000);
+    }
   }));
 
   // ---- إدارة التصنيفات ----
@@ -6737,16 +6746,9 @@ function renderLogin(errorMsg) {
     // تسجيل خروج ثم دخول داخل نفس الجلسة - وهو ما كان يبدو "تعارضًا" فى البيانات.
     // اسحب أحدث ملف صلاحيات من Firestore قبل التحقق من كلمة المرور عند توفر الشبكة.
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "جارٍ التحقق..."; }
-    try {
-      if (STORAGE_MODE === "firestore" && navigator.onLine) {
-        // الجهاز الجديد لا يستخدم cache للحسابات؛ يجب أن تنجح قراءة الخادم قبل المصادقة.
-        const freshAccounts = await storeGet("staffAccounts", null, { requireServer: true });
-        if (!freshAccounts || !freshAccounts.length) throw new Error("fresh-account-read-empty");
-        DB.staffAccounts = freshAccounts;
-      }
-    } catch (err) {
-      if (!trustedDevice) { renderLogin("تعذر مزامنة أحدث بيانات الحساب من Firestore. تحقق من الاتصال ثم حاول مرة أخرى."); return; }
-    }
+    // لا نقرأ users بالكامل قبل المصادقة؛ هذا كان يستهلك الحصة وقد يفشل
+    // للموظف بسبب قواعد users. بعد نجاح Firebase Auth نقرأ ملف المستخدم نفسه
+    // من الخادم عبر getUserProfile({source:"server"}).
     let account = null;
     let firebaseAuthAccount = null;
     let offlineAuthenticated = false;
@@ -6893,7 +6895,7 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && cu
 // ======================================================================
 const realtimeRefreshInProgress = new Set();
 const firestoreRealtimeUnsubs = new Map();
-  const FIRESTORE_REALTIME_KEYS = ["staffAccounts"];
+  const FIRESTORE_REALTIME_KEYS = []; // الحسابات تُحدَّث عبر users/API الإداري فقط
 function cleanupRealtimeChannels(reason) {
   firestoreRealtimeUnsubs.forEach((unsubscribe) => {
     try { unsubscribe(); } catch (e) { console.warn("Firestore listener cleanup failed:", reason, e); }
@@ -6967,8 +6969,10 @@ async function boot() {
   try {
     // الجلسة المحفوظة تعرض الكاش المحلي فورًا؛ نقرأ staffAccounts فقط عند
     // شاشة الدخول، ثم نقرأ بيانات الصفحة الحالية بعد نجاح الجلسة.
-    const bootKeys = getSession() ? CORE_BOOT_KEYS : ["staffAccounts"];
-    await loadKeys(bootKeys, { preferCache: !!getSession() });
+    // لا نقرأ users بالكامل قبل المصادقة. نحمّل كاش الحسابات محليًا فقط
+    // لاستخدام اعتماد الجهاز السابق، ثم يقرأ Firebase Auth ملف المستخدم الحالي.
+    const bootKeys = getSession() ? CORE_BOOT_KEYS.filter(key => key !== "staffAccounts") : ["staffAccounts"];
+    await loadKeys(bootKeys, { preferCache: true });
   } catch (e) {
     console.error("Load error, using defaults:", e);
     DB.doctors = seedDoctors(); DB.employees = seedEmployees(); DB.settings = { openingBalance: 10000 };

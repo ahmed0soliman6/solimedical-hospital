@@ -30,9 +30,9 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // staff_accounts مخزن انتقالي قديم؛ لا يُستخدم من العميل ولا تُكتب إليه بيانات جديدة.
     match /staff_accounts/{document} {
-      allow read: if activeUser();
-      allow write: if isAdmin();
+      allow read, write: if false;
     }
 
     // Basic authenticated access for the first migration stage. Before enabling
