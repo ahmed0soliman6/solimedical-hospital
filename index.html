@@ -681,6 +681,26 @@ const SYNC_QUEUE_LOCAL_KEY = APP_PREFIX + "sync_queue_keys";
 const SYNC_QUEUE_KEYS = new Set();
 let SYNC_QUEUE_READY = false;
 let SYNC_FLUSH_IN_PROGRESS = false;
+// حماية من عاصفة إعادة المحاولة عند RESOURCE_EXHAUSTED؛ إبقاء البيانات محليًا
+// آمن، لكن إعادة كتابة الجدول كل 30 ثانية تزيد استهلاك الحصة ولا تساعد أثناء الرفض.
+let SYNC_RETRY_BLOCKED_UNTIL = 0;
+let SYNC_RETRY_REASON = "";
+const FIRESTORE_QUOTA_BACKOFF_MS = 15 * 60 * 1000;
+function isFirestoreQuotaError(error) {
+  const code = String(error && (error.code || error.status || "")).toLowerCase();
+  const message = String(error && error.message || "").toLowerCase();
+  return code === "8" || code.includes("resource-exhausted") || code.includes("quota")
+    || message.includes("resource exhausted") || message.includes("quota exceeded");
+}
+function noteFirestoreQuotaError(error) {
+  if (!isFirestoreQuotaError(error)) return;
+  SYNC_RETRY_BLOCKED_UNTIL = Math.max(SYNC_RETRY_BLOCKED_UNTIL, Date.now() + FIRESTORE_QUOTA_BACKOFF_MS);
+  SYNC_RETRY_REASON = String(error && (error.code || error.message) || "resource-exhausted");
+}
+function clearFirestoreQuotaBackoff() {
+  SYNC_RETRY_BLOCKED_UNTIL = 0;
+  SYNC_RETRY_REASON = "";
+}
 async function loadSyncQueueState() {
   if (SYNC_QUEUE_READY) return;
   try {
@@ -722,6 +742,11 @@ async function clearSyncPending(key) {
 }
 async function flushSyncQueue() {
   await loadSyncQueueState();
+  if (SYNC_RETRY_BLOCKED_UNTIL > Date.now()) {
+    renderStorageIndicator();
+    return;
+  }
+  if (SYNC_RETRY_BLOCKED_UNTIL && SYNC_RETRY_BLOCKED_UNTIL <= Date.now()) clearFirestoreQuotaBackoff();
   if (SYNC_FLUSH_IN_PROGRESS || !navigator.onLine || STORAGE_MODE !== "firestore" || !currentUser || !SYNC_QUEUE_KEYS.size) {
     renderStorageIndicator();
     return;
@@ -736,8 +761,9 @@ async function flushSyncQueue() {
         await storeSet(key, latest);
         await clearSyncPending(key);
       } catch (e) {
-        // خطأ الشبكة أو الصلاحية لا يمسح القيمة المحلية؛ نتوقف وننتظر online
-        // أو المحاولة الدورية التالية بدل إنشاء طلبات متوازية على نفس الجدول.
+        // لا نمسح القيمة المحلية. عند امتلاء الحصة نوقف إعادة المحاولة مؤقتًا
+        // بدل إرسال نفس الكتابة كل 30 ثانية وإطالة فترة الرفض.
+        noteFirestoreQuotaError(e);
         break;
       }
     }
@@ -881,6 +907,7 @@ async function storeGet(key, fallback, options = {}) {
           return safeRemote;
         }
       } catch (e) {
+        noteFirestoreQuotaError(e);
         console.warn("Firestore read failed; using local cache:", key, e);
         if (options.requireServer) throw e;
       }
@@ -919,7 +946,11 @@ async function storeSetInner(key, value) {
   try {
     if (STORAGE_MODE === "firestore" && window.MitaliFirebase) {
       await cacheLocally(key, value);
-      if (!navigator.onLine) await markSyncPending(key);
+      if (!navigator.onLine || SYNC_RETRY_BLOCKED_UNTIL > Date.now()) {
+        await markSyncPending(key);
+        renderStorageIndicator();
+        return;
+      }
       if (Array.isArray(value) && !["settings", "categories", "specialties"].includes(key) && window.MitaliFirebase.upsertRecords) {
         const previous = await readSyncBaseline(key);
         const previousMap = new Map((previous || []).filter(r => r && r.id != null).map(r => [String(r.id), r]));
@@ -931,14 +962,13 @@ async function storeSetInner(key, value) {
       } else {
         await window.MitaliFirebase.setValue(key, value);
       }
-      if (key === "staffAccounts" && Array.isArray(value) && window.MitaliFirebase.setUserProfile) {
-        await Promise.all(value.filter(account => account && account.firebaseUid).map(account =>
-          window.MitaliFirebase.setUserProfile(account.firebaseUid, account)
-        ));
-      }
+      // إدارة users وstaff_accounts الحساسة تتم عبر /api/admin/account فقط.
+      // لا نعيد كتابة users لكل الحسابات عند كل حفظ محلي؛ فهذا يضاعف الكتابات
+      // وقد يخالف قواعد Firestore ويستنزف الحصة دون حاجة.
       if (navigator.onLine) {
         if (Array.isArray(value)) await writeSyncBaseline(key, value);
         await clearSyncPending(key);
+        if (!SYNC_QUEUE_KEYS.size) clearFirestoreQuotaBackoff();
       } else {
         await markSyncPending(key);
       }
@@ -952,7 +982,10 @@ async function storeSetInner(key, value) {
     }
     renderStorageIndicator();
   } catch (e) {
-    if (STORAGE_MODE === "firestore") await markSyncPending(key);
+    if (STORAGE_MODE === "firestore") {
+      noteFirestoreQuotaError(e);
+      await markSyncPending(key);
+    }
     STORAGE_OK = false;
     throw e;
   }
@@ -2015,7 +2048,7 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.24";
+const APP_VERSION = "v1.3.25";
 const APP_RELEASE_NOTES = "تقليل قراءات Firestore • تحميل البيانات عند الحاجة • حماية الحصة المجانية مع كاش محلي";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
