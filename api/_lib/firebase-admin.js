@@ -143,17 +143,7 @@ async function requireManager(req) {
 async function readProfile(api, uid) {
   const normalizedUid = String(uid);
   const usersSnap = await api.firestore().collection('users').doc(normalizedUid).get();
-  if (usersSnap.exists) return sanitizeProfile(normalizedUid, usersSnap.data());
-  const staffSnap = await api.firestore().collection('staff_accounts').doc(normalizedUid).get();
-  if (staffSnap.exists) return sanitizeProfile(normalizedUid, staffSnap.data());
-  // دعم السجلات القديمة التي كان معرّف مستندها محليًا بينما حقل firebaseUid
-  // يحتوي على معرّف Firebase الحقيقي.
-  for (const collectionName of ['users', 'staff_accounts']) {
-    const matches = await api.firestore().collection(collectionName)
-      .where('firebaseUid', '==', normalizedUid).limit(1).get();
-    if (!matches.empty) return sanitizeProfile(normalizedUid, matches.docs[0].data());
-  }
-  return null;
+  return usersSnap.exists ? sanitizeProfile(normalizedUid, usersSnap.data()) : null;
 }
 
 async function writeProfilePair(api, uid, profile) {
@@ -163,27 +153,15 @@ async function writeProfilePair(api, uid, profile) {
     password: api.firestore.FieldValue.delete(),
     passwordHash: api.firestore.FieldValue.delete(),
   };
-  const batch = api.firestore().batch();
-  batch.set(api.firestore().collection('users').doc(String(uid)), safeData, { merge: true });
-  batch.set(api.firestore().collection('staff_accounts').doc(String(uid)), safeData, { merge: true });
-  await batch.commit();
+  // users هو المصدر الوحيد للحسابات والصلاحيات. staff_accounts يُنظّف
+  // لاحقًا ولا تتم الكتابة إليه مرة أخرى.
+  await api.firestore().collection('users').doc(String(uid)).set(safeData, { merge: true });
   return data;
 }
 
 async function listProfiles(api) {
-  const [usersSnap, staffSnap] = await Promise.all([
-    api.firestore().collection('users').get(),
-    api.firestore().collection('staff_accounts').get(),
-  ]);
-  const byUid = new Map();
-  for (const doc of [...staffSnap.docs, ...usersSnap.docs]) {
-    const data = doc.data() || {};
-    const uid = String(data.firebaseUid || doc.id);
-    const profile = sanitizeProfile(uid, data);
-    // users هو المصدر المفضل عند وجود النسختين، لأنه يُقرأ أولًا عند تسجيل الدخول.
-    if (!byUid.has(uid) || doc.ref?.parent?.id === 'users' || doc.id === uid) byUid.set(uid, profile);
-  }
-  return Array.from(byUid.values());
+  const snap = await api.firestore().collection('users').get();
+  return snap.docs.map(doc => sanitizeProfile(doc.id, doc.data()));
 }
 
 module.exports = {

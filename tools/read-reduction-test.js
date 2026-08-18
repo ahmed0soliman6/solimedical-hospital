@@ -2,9 +2,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const index = fs.readFileSync('index.html', 'utf8');
-const realtimeMatch = index.match(/const FIRESTORE_REALTIME_KEYS\s*=\s*\[([^\]]+)\]/);
+const realtimeMatch = index.match(/const FIRESTORE_REALTIME_KEYS\s*=\s*\[([^\]]*)\]/);
 assert.ok(realtimeMatch, 'FIRESTORE_REALTIME_KEYS must be declared');
-assert.match(realtimeMatch[1], /staffAccounts/);
+assert.doesNotMatch(realtimeMatch[1], /staffAccounts/);
 assert.doesNotMatch(realtimeMatch[1], /visitsClinic|visitsDental|income|expense|payroll|auditLog/);
 
 const codeWithoutLineComments = index.replace(/^\s*\/\/.*$/gm, '');

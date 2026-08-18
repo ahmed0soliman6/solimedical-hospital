@@ -29,7 +29,8 @@
     income: "income",
     expense: "expense",
     payroll: "payroll",
-    staffAccounts: "staff_accounts",
+    // users هو مصدر الحقيقة الوحيد للحسابات والصلاحيات.
+    staffAccounts: "users",
     auditLog: "audit_log",
     labExpenses: "lab_expenses",
     categories: "categories",
@@ -217,6 +218,10 @@
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw Object.assign(new Error(body.error || `admin-api-${response.status}`), { code: body.error });
     return body.accounts || [];
+  }
+
+  async function adminDeleteAccount(uid) {
+    return adminAccountRequest({ action: 'delete', uid: String(uid || '') });
   }
 
   async function signOut() {
@@ -420,6 +425,7 @@
     recoverManagerPassword,
     adminUpdateAccount,
     adminListAccounts,
+    adminDeleteAccount,
     signOut,
     authUser,
     waitForAuth,
