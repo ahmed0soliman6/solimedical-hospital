@@ -1,0 +1,24 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+
+const index = fs.readFileSync('index.html', 'utf8');
+assert.match(index, /const SYNC_QUEUE_LOCAL_KEY\s*=\s*APP_PREFIX\s*\+\s*["']sync_queue_keys["']/);
+assert.match(index, /async function markSyncPending\(key\)/);
+assert.match(index, /async function clearSyncPending\(key\)/);
+assert.match(index, /async function flushSyncQueue\(\)/);
+assert.match(index, /const SYNC_RETRY_STATE_KEY\s*=\s*APP_PREFIX\s*\+\s*["']sync_retry_state["']/);
+assert.match(index, /function loadSyncRetryState\(\)/);
+assert.match(index, /function persistSyncRetryState\(\)/);
+assert.match(index, /SYNC_RETRY_BLOCKED_UNTIL\s*>\s*Date\.now\(\)/);
+assert.match(index, /const STORE_SET_QUEUES\s*=\s*\{\}/);
+assert.match(index, /const run = prev\.catch\(\(\) => \{\}\)\.then\(\(\) => storeSetInner\(key, value\)\)/);
+assert.match(index, /await markSyncPending\(key\)/);
+assert.match(index, /await clearSyncPending\(key\)/);
+assert.match(index, /!SYNC_QUEUE_KEYS\.has\(String\(key\)\).*writeSyncBaseline/);
+const realtime = index.match(/const FIRESTORE_REALTIME_KEYS\s*=\s*\[([^\]]*)\]/);
+assert.ok(realtime);
+assert.doesNotMatch(realtime[1], /staffAccounts/);
+const background = index.match(/const BACKGROUND_REFRESH_KEYS\s*=\s*\[([^\]]*)\]/);
+assert.ok(background);
+assert.doesNotMatch(background[1], /staffAccounts/);
+console.log('PASS sync-outbox-test: persistent queue/backoff, per-table serialization, and no global account refresh listeners.');

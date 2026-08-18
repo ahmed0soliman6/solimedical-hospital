@@ -685,7 +685,24 @@ let SYNC_FLUSH_IN_PROGRESS = false;
 // آمن، لكن إعادة كتابة الجدول كل 30 ثانية تزيد استهلاك الحصة ولا تساعد أثناء الرفض.
 let SYNC_RETRY_BLOCKED_UNTIL = 0;
 let SYNC_RETRY_REASON = "";
+const SYNC_RETRY_STATE_KEY = APP_PREFIX + "sync_retry_state";
 const FIRESTORE_QUOTA_BACKOFF_MS = 15 * 60 * 1000;
+function loadSyncRetryState() {
+  try {
+    const raw = localStorage.getItem(SYNC_RETRY_STATE_KEY);
+    const state = raw ? JSON.parse(raw) : null;
+    if (state && Number(state.blockedUntil) > Date.now()) {
+      SYNC_RETRY_BLOCKED_UNTIL = Number(state.blockedUntil);
+      SYNC_RETRY_REASON = String(state.reason || "");
+    } else if (raw) localStorage.removeItem(SYNC_RETRY_STATE_KEY);
+  } catch (e) { /* لا نمنع التشغيل بسبب فشل كاش حالة الحظر */ }
+}
+function persistSyncRetryState() {
+  try {
+    if (SYNC_RETRY_BLOCKED_UNTIL > Date.now()) localStorage.setItem(SYNC_RETRY_STATE_KEY, JSON.stringify({ blockedUntil: SYNC_RETRY_BLOCKED_UNTIL, reason: SYNC_RETRY_REASON }));
+    else localStorage.removeItem(SYNC_RETRY_STATE_KEY);
+  } catch (e) { /* ignore */ }
+}
 function isFirestoreQuotaError(error) {
   const code = String(error && (error.code || error.status || "")).toLowerCase();
   const message = String(error && error.message || "").toLowerCase();
@@ -696,13 +713,16 @@ function noteFirestoreQuotaError(error) {
   if (!isFirestoreQuotaError(error)) return;
   SYNC_RETRY_BLOCKED_UNTIL = Math.max(SYNC_RETRY_BLOCKED_UNTIL, Date.now() + FIRESTORE_QUOTA_BACKOFF_MS);
   SYNC_RETRY_REASON = String(error && (error.code || error.message) || "resource-exhausted");
+  persistSyncRetryState();
 }
 function clearFirestoreQuotaBackoff() {
   SYNC_RETRY_BLOCKED_UNTIL = 0;
   SYNC_RETRY_REASON = "";
+  persistSyncRetryState();
 }
 async function loadSyncQueueState() {
   if (SYNC_QUEUE_READY) return;
+  loadSyncRetryState();
   try {
     if (IDB_OK) {
       const keys = await idbGetAllKeys(IDB_STORE_QUEUE);
@@ -903,7 +923,10 @@ async function storeGet(key, fallback, options = {}) {
         if (remote !== undefined && remote !== null) {
           const safeRemote = Array.isArray(remote) ? mergeRemoteSnapshot(key, remote) : remote;
           await cacheLocally(key, safeRemote);
-          if (Array.isArray(safeRemote)) await writeSyncBaseline(key, safeRemote);
+          // إذا كان الجدول داخل outbox، فقد تحتوي safeRemote على سجل محلي
+          // محفوظ مؤقتًا لحمايته من لقطة سحابية أقدم. لا نضع هذه اللقطة في
+          // baseline، وإلا سيُعتبر السجل غير المرفوع مؤكدًا ولن يرفعه flush لاحقًا.
+          if (Array.isArray(safeRemote) && !SYNC_QUEUE_KEYS.has(String(key))) await writeSyncBaseline(key, safeRemote);
           return safeRemote;
         }
       } catch (e) {
@@ -2049,9 +2072,9 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.27";
+const APP_VERSION = "v1.3.28";
 const APP_RELEASE_NOTES = "تقليل قراءات Firestore • تحميل البيانات عند الحاجة • حماية الحصة المجانية مع كاش محلي";
-const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","auditLog","labExpenses","categories","specialties","settings"];
+const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
   const payloads = {
@@ -2293,7 +2316,7 @@ document.getElementById("sidebarOverlay").addEventListener("click", () => docume
 // المطبَّق في storeGet - ولا يُعيد رسم الشاشة أثناء تعديل سجل قائم أو
 // كتابة نشطة فى أى حقل إدخال، تجنبًا لفقدان أى بيانات لم تُحفظ بعد.
 // ======================================================================
-const BACKGROUND_REFRESH_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","staffAccounts","categories","specialties","settings","labExpenses"];
+const BACKGROUND_REFRESH_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","categories","specialties","settings","labExpenses"];
 let BACKGROUND_REFRESH_IN_PROGRESS = false;
 function isUserActivelyTyping() {
   const el = document.activeElement;
