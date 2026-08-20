@@ -1610,8 +1610,20 @@ async function loadAll(options = {}) {
 // لا نعتبر الكاش "نسخة حديثة" إلا لمدة قصيرة؛ زر التحديث يطلب نسخة خادم صريحة.
 const READ_CACHE_TTL_MS = 5 * 60 * 1000;
 const CORE_BOOT_KEYS = ["staffAccounts", "settings", "doctors", "employees", "categories", "specialties"];
+// مصدر مركزي واحد لكل أقسام الزيارات؛ يمنع نسيان قسم جديد في التحميل أو التقارير أو ملفات المرضى.
+const VISIT_SOURCE_DEFINITIONS = Object.freeze([
+  { dbKey: "visitsClinic", kind: "عيادات", kindKey: "clinic" },
+  { dbKey: "visitsDental", kind: "أسنان", kindKey: "dental" },
+  { dbKey: "visitsOperations", kind: "عمليات", kindKey: "operations" },
+  { dbKey: "visitsLabs", kind: "تحاليل", kindKey: "labs" },
+  { dbKey: "visitsRadiology", kind: "أشعة", kindKey: "radiology" },
+]);
+const REVENUE_VISIT_DB_KEYS = Object.freeze(
+  VISIT_SOURCE_DEFINITIONS.map(source => source.dbKey)
+);
+
 const PAGE_DATA_KEYS = {
-  dashboard: ["doctors", "visitsClinic", "visitsDental", "income", "expense"],
+  dashboard: ["doctors", ...REVENUE_VISIT_DB_KEYS, "income", "expense"],
   clinic: ["doctors", "visitsClinic"], dental: ["doctors", "visitsDental"],
   operations: ["doctors", "visitsOperations"], labs: ["doctors", "visitsLabs", "labExpenses"],
   radiology: ["doctors", "visitsRadiology"], income: ["income"], expense: ["expense"],
@@ -2010,19 +2022,21 @@ function aggregateAccountingShares(visits, incomeRows, labExpenses) {
   }
   return { gross, doc, clinic };
 }
+function visitsFromSources(sources = VISIT_SOURCE_DEFINITIONS) {
+  return sources.flatMap(source => {
+    const rows = Array.isArray(DB[source.dbKey]) ? DB[source.dbKey] : [];
+    return rows.map(visit => ({
+      ...visit,
+      kind: source.kind,
+      kindKey: source.kindKey,
+    }));
+  });
+}
 function allVisits() {
-  return [
-    ...DB.visitsClinic.map(v => ({ ...v, kind: "عيادات" })),
-    ...DB.visitsDental.map(v => ({ ...v, kind: "أسنان" })),
-  ];
+  return visitsFromSources(VISIT_SOURCE_DEFINITIONS.slice(0, 2));
 }
 function allRevenueVisits() {
-  return [
-    ...allVisits(),
-    ...DB.visitsOperations.map(v => ({ ...v, kind: "عمليات" })),
-    ...DB.visitsLabs.map(v => ({ ...v, kind: "تحاليل" })),
-    ...DB.visitsRadiology.map(v => ({ ...v, kind: "أشعة" })),
-  ];
+  return visitsFromSources(VISIT_SOURCE_DEFINITIONS);
 }
 
 // الحساب المالي للفترة المختارة في لوحة القيادة. مصدر الإيرادات والمنصرف هو
@@ -2075,10 +2089,7 @@ function doctorRevenue(doctorId) {
 // ملفات المرضى: توحيد زيارات المريض عبر العيادات والأسنان فى بطاقة واحدة
 // ======================================================================
 function allPatientVisits() {
-  return [
-    ...DB.visitsClinic.map(v => ({ ...v, kind: "عيادات", kindKey: "clinic" })),
-    ...DB.visitsDental.map(v => ({ ...v, kind: "أسنان", kindKey: "dental" })),
-  ];
+  return visitsFromSources(VISIT_SOURCE_DEFINITIONS);
 }
 // مفتاح تجميع المريض: رقم الملف إن وُجد، وإلا الاسم + الهاتف
 // ======================================================================
@@ -2349,7 +2360,7 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.39";
+const APP_VERSION = "v1.3.40";
 const APP_RELEASE_NOTES = "تقليل قراءات Firestore • تحميل البيانات عند الحاجة • حماية الحصة المجانية مع كاش محلي";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
@@ -2593,7 +2604,8 @@ document.getElementById("sidebarOverlay").addEventListener("click", () => docume
 // المطبَّق في storeGet - ولا يُعيد رسم الشاشة أثناء تعديل سجل قائم أو
 // كتابة نشطة فى أى حقل إدخال، تجنبًا لفقدان أى بيانات لم تُحفظ بعد.
 // ======================================================================
-const BACKGROUND_REFRESH_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","categories","specialties","settings","labExpenses"];
+// التحديث الخلفي يقتصر على الصفحة الحالية فقط. الجداول التي لديها realtime
+// listener لا تُقرأ مرة ثانية، بينما يبقى outbox مسؤولًا عن الرفع لا عن القراءة.
 let BACKGROUND_REFRESH_IN_PROGRESS = false;
 function isUserActivelyTyping() {
   const el = document.activeElement;
@@ -2604,15 +2616,21 @@ function isUserActivelyTyping() {
 function isMidEdit() {
   return !!(state.editId || state.editDocId || state.editUserId || state.editEmpId);
 }
-async function backgroundRefreshAll() {
+function backgroundRefreshKeysForPage(page = state.page) {
+  const keys = pageKeys(page);
+  const realtimeKeys = new Set(Array.isArray(PAGE_REALTIME_KEYS[page]) ? PAGE_REALTIME_KEYS[page] : []);
+  return keys.filter(key => !realtimeKeys.has(key) && !firestoreRealtimeUnsubs.has(String(key)));
+}
+async function backgroundRefreshCurrentPage() {
   if (BACKGROUND_REFRESH_IN_PROGRESS || STORAGE_MODE !== "firestore" || !navigator.onLine || !currentUser) return;
-  if (firestoreRealtimeUnsubs && firestoreRealtimeUnsubs.size) return;
   if (isMidEdit() || isUserActivelyTyping()) return;
   if (PENDING_WRITES > 0 || SYNC_QUEUE_KEYS.size > 0) return;
+  const keys = backgroundRefreshKeysForPage(state.page);
+  if (!keys.length) return;
   BACKGROUND_REFRESH_IN_PROGRESS = true;
   try {
     let changed = false;
-    for (const key of BACKGROUND_REFRESH_KEYS) {
+    for (const key of keys) {
       if (PENDING_WRITES > 0 || SYNC_QUEUE_KEYS.size > 0 || isMidEdit() || isUserActivelyTyping()) break;
       try {
         const before = JSON.stringify(DB[key]);
@@ -2622,14 +2640,14 @@ async function backgroundRefreshAll() {
           DB[key] = fresh;
           changed = true;
         }
-      } catch (e) { /* continue with the remaining collections */ }
+      } catch (e) { /* continue with the remaining page keys */ }
     }
     if (changed && currentUser && !isMidEdit() && !isUserActivelyTyping() && PENDING_WRITES === 0 && SYNC_QUEUE_KEYS.size === 0) route();
   } finally {
     BACKGROUND_REFRESH_IN_PROGRESS = false;
   }
 }
-setInterval(backgroundRefreshAll, 300000);
+setInterval(backgroundRefreshCurrentPage, 300000);
 
 const BACKUP_EXPORT_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","settings","staffAccounts","categories","specialties","auditLog","labExpenses"];
 function downloadSystemBackup() {
@@ -3641,10 +3659,10 @@ function renderVisitsPage(kind) {
     // إصلاح جوهري: ننتظر persist() فعليًا هنا (بدل إطلاقها بدون انتظار كما كان
 
     // سابقًا) قبل استدعاء route(). هذا يضمن أن أى تحديث خلفى آخر (مثلًا
-    // backgroundRefreshAll أو سحب فورى بعد التنقل) لا يمكن أبدًا أن يبدأ ويقرأ
+    // backgroundRefreshCurrentPage أو سحب فورى بعد التنقل) لا يمكن أبدًا أن يبدأ ويقرأ
     // نسخة سحابية لم تصل إليها هذه الزيارة بعد - وهو السبب الجذرى وراء اختفاء
     // الزيارة الجديدة مؤقتًا. PENDING_WRITES (المُحدَّث داخل persist نفسها) يبقى
-    // > 0 طوال مدة هذا الانتظار، وهو ما يحمى منه backgroundRefreshAll أعلاه أيضًا.
+    // > 0 طوال مدة هذا الانتظار، وهو ما يحمى منه backgroundRefreshCurrentPage أعلاه أيضًا.
     let pushFailedOnline = false;
     try {
       const incomeChanged = Number(rec.paid) > 0 || !!(editing && editing.linkedIncomeId);
@@ -4695,7 +4713,7 @@ function renderMoneyPage(kind) {
     showToast(`💾 ${editing ? "تم تحديث العملية محليًا" : "تمت إضافة العملية محليًا"} — جارٍ المزامنة...`, 2400);
     // إصلاح جوهري (نفس سبب اختفاء الزيارة الجديدة مؤقتًا فى العيادات): ننتظر
     // persist() فعليًا هنا قبل route()، بدل إطلاقها بدون انتظار كما كان سابقًا،
-    // حتى لا يبدأ أى تحديث خلفى (backgroundRefreshAll) ويقرأ نسخة سحابية لم تصل
+    // حتى لا يبدأ أى تحديث خلفى (backgroundRefreshCurrentPage) ويقرأ نسخة سحابية لم تصل
     // إليها هذه العملية بعد فتختفى مؤقتًا حتى إعادة رسم تالية. PENDING_WRITES
     // (المُحدَّث داخل persist نفسها) يحمى من هذا التضارب طوال مدة هذا الانتظار.
     let pushFailedOnline = false;
@@ -7233,10 +7251,15 @@ let realtimePageKey = "";
 // تحديث شبه لحظي للجدول المفتوح فقط. لا نراقب users أو كل جداول المستشفى،
 // ونترك بقية البيانات لقراءة الصفحة عند فتحها لتقليل الاستهلاك.
 const PAGE_REALTIME_KEYS = {
+  dashboard: ["income", "expense", ...REVENUE_VISIT_DB_KEYS],
   clinic: ["visitsClinic"], dental: ["visitsDental"],
   operations: ["visitsOperations"], labs: ["visitsLabs"], radiology: ["visitsRadiology"],
   income: ["income"], expense: ["expense"], payroll: ["payroll"],
+  ledger: ["income", "expense", "settings"],
+  reports: ["income", "expense", "payroll", ...REVENUE_VISIT_DB_KEYS],
+  settings: ["doctors", "employees", "settings", "categories", "specialties"],
   patientFilesClinic: ["visitsClinic"], patientFilesDental: ["visitsDental"],
+  outstandingBalances: ["doctors", ...REVENUE_VISIT_DB_KEYS],
   outstandingBalancesClinic: ["visitsClinic"], outstandingBalancesDental: ["visitsDental"],
   outstandingBalancesOperations: ["visitsOperations"], outstandingBalancesLabs: ["visitsLabs"],
   outstandingBalancesRadiology: ["visitsRadiology"]
