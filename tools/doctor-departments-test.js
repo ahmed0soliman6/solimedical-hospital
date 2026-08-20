@@ -5,8 +5,12 @@ const source = fs.readFileSync('index.html', 'utf8');
 
 assert.match(source, /<option value="تحاليل"/, 'doctor type dropdown must include laboratories');
 assert.match(source, /<option value="أشعة"/, 'doctor type dropdown must include radiology');
-assert.match(source, /const PERCENT_DOCTOR_TYPES = new Set\(\["أسنان", "تحاليل", "أشعة"\]\)/, 'lab and radiology doctors must use percentage mode');
-assert.match(source, /doctorTypeUsesPercent\(d\.type\) \? "percent"/, 'share calculations must recognize department doctor types');
+assert.match(source, /const FORCED_PERCENT_DOCTOR_TYPES = new Set\(\["أسنان"\]\)/, 'only dental doctors remain forced percentage mode');
+assert.match(source, /const feeMode = doctorTypeUsesPercent\(type\) \? "percent" : \(fd\.get\("feeMode"\) \|\| "fixed_visit"\)/, 'lab and radiology doctors must honor the selected fee mode');
+assert.match(source, /<option value="fixed_visit"/, 'lab/radiology doctor form must offer fixed visit amount');
+assert.match(source, /<option value="percent"/, 'lab/radiology doctor form must offer percentage mode');
+assert.match(source, /<option value="fixed_daily"/, 'lab/radiology doctor form must offer fixed daily mode');
+assert.match(source, /doctorTypeUsesPercent\(d\.type\) \? "percent"/, 'share calculations must recognize forced department types');
 assert.match(source, /labs:.*doctorType: "تحاليل"/, 'lab diary must be mapped to lab doctors');
 assert.match(source, /radiology:.*doctorType: "أشعة"/, 'radiology diary must be mapped to radiology doctors');
 assert.match(source, /const serviceDoctors = cfg\.doctorType \? sortedDoctors\(\)\.filter\(d => d\.type === cfg\.doctorType/, 'service diaries must filter doctors by department');
@@ -18,4 +22,4 @@ assert.match(source, /const visits = allRevenueVisits\(\)\.filter\(v => v\.docto
 assert.match(source, /const allMonthVisits = allRevenueVisits\(\)\.filter/, 'monthly doctor settlement must include lab/radiology visits');
 assert.match(source, /allRevenueVisits\(\)\.some\(v => v\.doctorId === docId\)/, 'doctor deletion history must include lab/radiology visits');
 
-console.log('PASS doctor-departments-test: lab/radiology doctor types, diary assignment, percentage shares, and cross-department settlements.');
+console.log('PASS doctor-departments-test: lab/radiology doctor types, selectable fee modes, diary assignment, shares, and cross-department settlements.');

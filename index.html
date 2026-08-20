@@ -1859,8 +1859,8 @@ function logActivity(action, page, oldValue, newValue) {
 // تُحسب بنفس نسبة الطبيب/المجمع مثل "كشف" تمامًا (فى computeShare وفى شاشة
 // تسوية حساب الأطباء)، لأنها قد تحمل مبالغ علاج حقيقية مدفوعة.
 // دالة مساعدة عامة لمعرفة نوع احتساب الطبيب (نسبة أم مبلغ ثابت).
-const PERCENT_DOCTOR_TYPES = new Set(["أسنان", "تحاليل", "أشعة"]);
-function doctorTypeUsesPercent(type) { return PERCENT_DOCTOR_TYPES.has(type); }
+const FORCED_PERCENT_DOCTOR_TYPES = new Set(["أسنان"]);
+function doctorTypeUsesPercent(type) { return FORCED_PERCENT_DOCTOR_TYPES.has(type); }
 function isPercentFeeMode(doctorId) {
   const d = dInfo(doctorId);
   if (!d) return true;
@@ -2227,7 +2227,7 @@ function syncVisitIncomeLink(rec, kind, skipPersist) {
 }
 // بيانات تقرير الإقفال الشهري لشهر مُحدَّد بصيغة "YYYY-MM"
 function monthlyClosingData(ym) {
-  const visits = allVisits().filter(v => (v.date || "").startsWith(ym));
+  const visits = allRevenueVisits().filter(v => (v.date || "").startsWith(ym));
   const visitRevenue = visits.reduce((s, v) => s + (Number(v.paid) || 0), 0);
   const docShare = visits.reduce((s, v) => s + computeShare(v).doc, 0);
   const clinicShare = visits.reduce((s, v) => s + computeShare(v).clinic, 0);
@@ -2275,7 +2275,7 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.37";
+const APP_VERSION = "v1.3.38";
 const APP_RELEASE_NOTES = "تقليل قراءات Firestore • تحميل البيانات عند الحاجة • حماية الحصة المجانية مع كاش محلي";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
@@ -5993,8 +5993,8 @@ function renderSettings() {
     const editId = fd.get("editId");
     if (editId ? !can("doctors","edit") : !can("doctors","add")) { showToast("⚠️ ليس لديك صلاحية كافية"); return; }
     const type = fd.get("type");
-    // الأسنان والتحاليل والأشعة تعمل بنظام النسبة، بينما تبقى العيادات
-    // قابلة للاختيار بين مبلغ ثابت أو نسبة أو أجر يومي.
+    // الأسنان تبقى بنظام النسبة الإلزامي، بينما يمكن للعيادات والتحاليل والأشعة
+    // اختيار مبلغ ثابت أو نسبة أو أجر يومي.
     const feeMode = doctorTypeUsesPercent(type) ? "percent" : (fd.get("feeMode") || "fixed_visit");
     const docPctVal = Number(fd.get("docPct")) || 0, clinicPctVal = Number(fd.get("clinicPct")) || 0;
     const docFollowupPctVal = Number(fd.get("docFollowupPct")) || 0, clinicFollowupPctVal = Number(fd.get("clinicFollowupPct")) || 0;
@@ -6071,7 +6071,7 @@ function renderSettings() {
   bindPctPair(docFollowupPctInput, clinicFollowupPctInput);
   updatePctHints();
   // إظهار/إخفاء حقول طريقة احتساب الحصة حسب "النوع" و"طريقة الاحتساب" المختارَين:
-  // الأسنان والتحاليل والأشعة تُقفَل دائمًا على "نسبة"، والعيادات تختار من الثلاث طرق.
+  // الأسنان تُقفَل دائمًا على "نسبة"، بينما تختار العيادات والتحاليل والأشعة من الطرق الثلاث.
   const docTypeInput = document.getElementById("docTypeInput");
   const feeModeField = document.getElementById("feeModeField");
   const feeModeInput = document.getElementById("feeModeInput");
