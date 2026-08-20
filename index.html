@@ -1311,7 +1311,7 @@ function entryTimeDisplay(createdAt) {
 // أي مكان بالواجهة يعرض بيانات الطبيب، لأنه بعد إضافة أنظمة "مبلغ ثابت لكل
 // زيارة" و"أجر يومي ثابت" لم يعد كل الأطباء على نظام النسبة.
 function doctorFeeSummary(d) {
-  const mode = d.type === "أسنان" ? "percent" : (d.feeMode || "fixed_visit");
+  const mode = doctorTypeUsesPercent(d.type) ? "percent" : (d.feeMode || "fixed_visit");
   if (mode === "percent") return `كشف: طبيب ${pctDisplay(d.docPct)}% / مجمع ${pctDisplay(d.clinicPct)}% · متابعة: طبيب ${pctDisplay(d.docFollowupPct ?? d.docPct)}% / مجمع ${pctDisplay(d.clinicFollowupPct ?? d.clinicPct)}%`;
   if (mode === "fixed_daily") return `أجر يومي ثابت ${fmt(d.dailyFixedAmount)} ج.م`;
   return `كشف ${fmt(d.checkupPrice)} (مجمع ${fmt(d.checkupClinicFee)}) · متابعة ${fmt(d.followupPrice)} (مجمع ${fmt(d.followupClinicFee)}) · استشارة ${fmt(d.consultationPrice ?? d.checkupPrice)} · جلسة ${fmt(d.sessionPrice ?? d.checkupPrice)}`;
@@ -1859,10 +1859,12 @@ function logActivity(action, page, oldValue, newValue) {
 // تُحسب بنفس نسبة الطبيب/المجمع مثل "كشف" تمامًا (فى computeShare وفى شاشة
 // تسوية حساب الأطباء)، لأنها قد تحمل مبالغ علاج حقيقية مدفوعة.
 // دالة مساعدة عامة لمعرفة نوع احتساب الطبيب (نسبة أم مبلغ ثابت).
+const PERCENT_DOCTOR_TYPES = new Set(["أسنان", "تحاليل", "أشعة"]);
+function doctorTypeUsesPercent(type) { return PERCENT_DOCTOR_TYPES.has(type); }
 function isPercentFeeMode(doctorId) {
   const d = dInfo(doctorId);
   if (!d) return true;
-  return (d.type === "أسنان" ? "percent" : (d.feeMode || "fixed_visit")) === "percent";
+  return (doctorTypeUsesPercent(d.type) ? "percent" : (d.feeMode || "fixed_visit")) === "percent";
 }
 function examPriceForDoctor(doctor, examType) {
   if (!doctor) return 0;
@@ -1890,7 +1892,7 @@ function computeShare(visit) {
   const d = dInfo(visit.doctorId);
   if (!d) return { doc: 0, clinic: 0 };
   const paid = Number(visit.paid) || 0;
-  const mode = d.type === "أسنان" ? "percent" : (d.feeMode || "fixed_visit");
+  const mode = doctorTypeUsesPercent(d.type) ? "percent" : (d.feeMode || "fixed_visit");
   if (mode === "fixed_daily") return { doc: 0, clinic: paid };
   if (mode === "fixed_visit") {
     const hasSnapshot = visit.clinicFeeSnapshot !== undefined && visit.clinicFeeSnapshot !== null;
@@ -1921,7 +1923,7 @@ function incomeDoctorShare(rec) {
   const d = dInfo(rec.doctorId);
   if (!d) return { doc: 0, clinic: 0 };
   const amt = Number(rec.amount) || 0;
-  const mode = d.type === "أسنان" ? "percent" : (d.feeMode || "fixed_visit");
+  const mode = doctorTypeUsesPercent(d.type) ? "percent" : (d.feeMode || "fixed_visit");
   if (mode === "fixed_visit" || mode === "fixed_daily") return { doc: 0, clinic: amt };
   const pct = percentShareForExam(d, rec.examType);
   return { doc: amt * pct.doc, clinic: amt * pct.clinic };
@@ -1937,6 +1939,14 @@ function allVisits() {
   return [
     ...DB.visitsClinic.map(v => ({ ...v, kind: "عيادات" })),
     ...DB.visitsDental.map(v => ({ ...v, kind: "أسنان" })),
+  ];
+}
+function allRevenueVisits() {
+  return [
+    ...allVisits(),
+    ...DB.visitsOperations.map(v => ({ ...v, kind: "عمليات" })),
+    ...DB.visitsLabs.map(v => ({ ...v, kind: "تحاليل" })),
+    ...DB.visitsRadiology.map(v => ({ ...v, kind: "أشعة" })),
   ];
 }
 
@@ -1980,7 +1990,7 @@ function periodRevenue(period) {
 // إيراد طبيب مُحدَّد (إجمالي المحصَّل من زياراته الفردية + قيود الوارد الإجمالية المرتبطة به، وحصته من الاثنين معًا)
 function doctorRevenue(doctorId) {
   if (!doctorId) return { count: 0, total: 0, share: 0 };
-  const visits = allVisits().filter(v => v.doctorId === doctorId);
+  const visits = allRevenueVisits().filter(v => v.doctorId === doctorId);
   const lumpIncome = DB.income.filter(r => r.doctorId === doctorId);
   const total = visits.reduce((s, v) => s + (Number(v.paid) || 0), 0) + lumpIncome.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const share = visits.reduce((s, v) => s + computeShare(v).doc, 0) + lumpIncome.reduce((s, r) => s + incomeDoctorShare(r).doc, 0);
@@ -2265,7 +2275,7 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.36";
+const APP_VERSION = "v1.3.37";
 const APP_RELEASE_NOTES = "تقليل قراءات Firestore • تحميل البيانات عند الحاجة • حماية الحصة المجانية مع كاش محلي";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
@@ -3158,8 +3168,9 @@ function renderDashboard() {
   const totalExpense = DB.expense.reduce((s, x) => s + (Number(x.amount) || 0), 0);
   const balance = currentBalance();
   const overdue = visits.filter(v => visitRemaining(v) > 0).length;
-  const clinicShare = visits.reduce((s, v) => s + computeShare(v).clinic, 0) + DB.income.reduce((s, r) => s + incomeDoctorShare(r).clinic, 0);
-  const docShare = visits.reduce((s, v) => s + computeShare(v).doc, 0) + DB.income.reduce((s, r) => s + incomeDoctorShare(r).doc, 0);
+  const revenueVisits = allRevenueVisits();
+  const clinicShare = revenueVisits.reduce((s, v) => s + computeShare(v).clinic, 0) + DB.income.reduce((s, r) => s + incomeDoctorShare(r).clinic, 0);
+  const docShare = revenueVisits.reduce((s, v) => s + computeShare(v).doc, 0) + DB.income.reduce((s, r) => s + incomeDoctorShare(r).doc, 0);
   const dentalRevenue = DB.income.filter(x => x.category === "أسنان").reduce((s, x) => s + (Number(x.amount) || 0), 0);
   const clinicRevenue = DB.income.filter(x => x.category === "كشف").reduce((s, x) => s + (Number(x.amount) || 0), 0);
   const selectedPeriod = state.dashboardPeriod || "today";
@@ -3662,8 +3673,8 @@ function renderVisitsPage(kind) {
 // ======================================================================
 const SERVICE_KIND_CONFIG = {
   operations: { listKey: "visitsOperations", label: "العمليات", serviceLabel: "اسم العملية", addLabel: "تسجيل عملية جديدة", waSection: "قسم العمليات", addAction: "إضافة عملية", editAction: "تعديل عملية", deleteAction: "حذف عملية" },
-  labs:       { listKey: "visitsLabs",       label: "التحاليل", serviceLabel: "نوع التحليل", addLabel: "تسجيل تحليل جديد", waSection: "قسم التحاليل", addAction: "إضافة تحليل", editAction: "تعديل تحليل", deleteAction: "حذف تحليل", serviceOptionsKey: "labTestTypes" },
-  radiology:  { listKey: "visitsRadiology",  label: "الأشعة",   serviceLabel: "نوع الأشعة",   addLabel: "تسجيل أشعة جديدة",  waSection: "قسم الأشعة",   addAction: "إضافة أشعة",   editAction: "تعديل أشعة",   deleteAction: "حذف أشعة",   serviceOptionsKey: "xrayTypes" },
+  labs:       { listKey: "visitsLabs",       label: "التحاليل", serviceLabel: "نوع التحليل", addLabel: "تسجيل تحليل جديد", waSection: "قسم التحاليل", addAction: "إضافة تحليل", editAction: "تعديل تحليل", deleteAction: "حذف تحليل", serviceOptionsKey: "labTestTypes", doctorType: "تحاليل" },
+  radiology:  { listKey: "visitsRadiology",  label: "الأشعة",   serviceLabel: "نوع الأشعة",   addLabel: "تسجيل أشعة جديدة",  waSection: "قسم الأشعة",   addAction: "إضافة أشعة",   editAction: "تعديل أشعة",   deleteAction: "حذف أشعة",   serviceOptionsKey: "xrayTypes", doctorType: "أشعة" },
 };
 function renderServiceVisitsPage(kind) {
   const cfg = SERVICE_KIND_CONFIG[kind];
@@ -3674,6 +3685,7 @@ function renderServiceVisitsPage(kind) {
   const editingPaid = editing ? (editing.paid ?? editing.amount ?? "") : "";
   const canAdd = can(kind, "add"), canEdit = can(kind, "edit"), canDelete = can(kind, "delete");
   const typeOptions = cfg.serviceOptionsKey ? (DB.settings[cfg.serviceOptionsKey] || []) : null;
+  const serviceDoctors = cfg.doctorType ? sortedDoctors().filter(d => d.type === cfg.doctorType && (d.status === "نشط" || d.id === editing?.doctorId)) : [];
 
   const granKey = `visitFilterGran_${kind}`, valKey = `visitFilterVal_${kind}`;
   ensurePeriodFilter(granKey, valKey);
@@ -3698,6 +3710,7 @@ function renderServiceVisitsPage(kind) {
         <input type="hidden" name="fileNo" id="svcFileNoInput" value="${esc(editing ? editing.fileNo : "")}">
         <div class="diary-triple-row">
           <div class="field"><label>رقم الهاتف</label><input type="text" name="phone" id="svcPhoneInput" value="${esc(editing?.phone)}"></div>
+          ${cfg.doctorType ? `<div class="field"><label>طبيب ${cfg.doctorType}</label><select name="doctorId" required><option value="">اختر طبيب ${cfg.doctorType}</option>${serviceDoctors.map(d => `<option value="${d.id}" ${editing?.doctorId === d.id ? "selected" : ""} data-doc-pct="${d.docPct || 0}" data-clinic-pct="${d.clinicPct || 0}">${esc(d.name)} — طبيب ${cfg.doctorType} (${pctDisplay((d.docPct || 0) * 100)}% طبيب)</option>`).join("")}</select></div>` : ""}
           <div class="field"><label>${cfg.serviceLabel}</label>
             ${typeOptions ? (() => {
                 const selectedNames = editing?.serviceName ? editing.serviceName.split(/،\s*|,\s*/).filter(Boolean) : [];
@@ -3732,21 +3745,23 @@ function renderServiceVisitsPage(kind) {
       </div>
       <div class="table-wrap"><table>
         <thead><tr>
-          <th>التاريخ</th><th>المريض</th><th>${cfg.serviceLabel}</th><th>الإجمالي</th><th>المدفوع</th>
-          <th>الباقي</th><th>الحالة</th><th></th>
+          <th>التاريخ</th><th>المريض</th>${cfg.doctorType ? `<th>الطبيب</th>` : ""}<th>${cfg.serviceLabel}</th><th>الإجمالي</th><th>المدفوع</th>
+          <th>الباقي</th>${cfg.doctorType ? `<th>حصة الطبيب</th>` : ""}<th>الحالة</th><th></th>
         </tr></thead>
         <tbody>
-          ${displayList.length === 0 ? `<tr class="empty-row"><td colspan="8">لا توجد سجلات فى هذه الفترة</td></tr>` : ""}
+          ${displayList.length === 0 ? `<tr class="empty-row"><td colspan="${cfg.doctorType ? 10 : 8}">لا توجد سجلات فى هذه الفترة</td></tr>` : ""}
           ${visitsPg.pageItems.map(v => {
             const remaining = visitRemaining(v);
             const pillClass = v.status === "تم" ? "paid" : v.status === "جزئي" ? "partial" : "unpaid";
             return `<tr>
               <td>${v.date || "-"}${entryTimeDisplay(v.createdAt) ? `<div class="hint" style="font-size:11px;">${entryTimeDisplay(v.createdAt)}</div>` : ""}</td>
               <td>${esc(v.patient)}</td>
+              ${cfg.doctorType ? `<td>${esc(dInfo(v.doctorId)?.name || "-")}</td>` : ""}
               <td>${esc(v.serviceName)}</td>
               <td>${fmt(v.total)}</td>
               <td>${fmt(v.paid)}</td>
               <td style="color:${remaining > 0 ? "var(--expense)" : "var(--ink)"}; font-weight:${remaining > 0 ? 700 : 400};">${fmt(remaining)}</td>
+              ${cfg.doctorType ? `<td style="font-weight:700; color:var(--income);">${fmt(computeShare(v).doc)}</td>` : ""}
               <td><span class="pill ${pillClass}">${v.status || "-"}</span>${v.linkedIncomeId ? ` <span class="hint" title="سُجِّل تلقائيًا فى دفتر الخزينة">🔗</span>` : ""}</td>
               <td style="display:flex; gap:6px; flex-wrap:wrap;">
                 ${canEdit ? `<button class="btn sm ghost" data-edit="${v.id}">تعديل</button>` : ""}
@@ -3824,6 +3839,8 @@ function renderServiceVisitsPage(kind) {
         date: fd.get("date"), fileNo: fd.get("fileNo"), patient: fd.get("patient"), phone: fd.get("phone"),
         serviceName: serviceNameVal,
         total, paid, paymentMethod: "نقدي",
+        doctorId: cfg.doctorType ? (fd.get("doctorId") || null) : null,
+        examType: "كشف",
         status: fd.get("status"), notes: fd.get("notes"),
         nextVisitDate: fd.get("nextVisitDate") || null,
         linkedIncomeId: editing ? (editing.linkedIncomeId || null) : null,
@@ -4420,7 +4437,7 @@ function renderMoneyPage(kind) {
           <select name="doctorId" id="incomeDoctorSelect">
             <option value="">بدون طبيب (تحصيل عادي)</option>
             ${DB.doctors.filter(d => d.status !== "موقوف").map(d => {
-              const mode = d.type === "أسنان" ? "percent" : (d.feeMode || "fixed_visit");
+              const mode = doctorTypeUsesPercent(d.type) ? "percent" : (d.feeMode || "fixed_visit");
               const label = mode === "percent" ? `كشف ${pctDisplay(d.docPct)}% / متابعة ${pctDisplay(d.docFollowupPct ?? d.docPct)}%` : (mode === "fixed_daily" ? `أجر يومي ثابت ${fmt(d.dailyFixedAmount)} ج.م` : "مبلغ ثابت لكل زيارة");
               return `<option value="${d.id}" ${editing?.doctorId === d.id ? "selected" : ""} data-fee-mode="${mode}" data-doc-pct="${d.docPct || 0}" data-clinic-pct="${d.clinicPct || 0}">${esc(d.name)} — ${esc(d.specialty)} (${label})</option>`;
             }).join("")}
@@ -4981,7 +4998,7 @@ function doctorSettlementSectionHTML() {
   const canEditLab = can("doctors", "edit");
   if (!state.settlementMonth) state.settlementMonth = todayISO().slice(0, 7);
   const ym = state.settlementMonth;
-  const allMonthVisits = allVisits().filter(v => (v.date || "").startsWith(ym));
+  const allMonthVisits = allRevenueVisits().filter(v => (v.date || "").startsWith(ym));
   const lumpIncome = DB.income.filter(r => r.doctorId && (r.date || "").startsWith(ym));
 
   // إصلاح محاسبي جوهري: هذه الشاشة كانت مبنية بالكامل على معادلة نسبة مئوية
@@ -4993,7 +5010,7 @@ function doctorSettlementSectionHTML() {
   // وُجد) من نصيب المجمع تحديدًا فى هذه الحالة - باعتباره تكلفة يتحمّلها المجمع لا
   // جزءًا من الاتفاق المُسعَّر مع الطبيب لكل زيارة.
   const rows = DB.doctors.filter(d => d.status !== "موقوف").map(d => {
-    const mode = d.type === "أسنان" ? "percent" : (d.feeMode || "fixed_visit");
+    const mode = doctorTypeUsesPercent(d.type) ? "percent" : (d.feeMode || "fixed_visit");
     const docVisits = allMonthVisits.filter(v => v.doctorId === d.id);
     const docLumpIncome = lumpIncome.filter(r => r.doctorId === d.id);
     const grossRevenue = docVisits.reduce((s, v) => s + (Number(v.paid) || 0), 0) + docLumpIncome.reduce((s, r) => s + (Number(r.amount) || 0), 0);
@@ -5536,7 +5553,7 @@ function renderSettings() {
           <div class="field"><label>الاسم</label><input type="text" name="name" required value="${esc(editingDoc?.name)}"></div>
           <div class="field"><label>التخصص</label><input type="text" name="specialty" list="specList" required value="${esc(editingDoc?.specialty)}"></div>
           <datalist id="specList">${specNames().map(s => `<option value="${esc(s)}">`).join("")}</datalist>
-          <div class="field"><label>النوع</label><select name="type" id="docTypeInput"><option value="عيادات" ${editingDoc?.type==="عيادات"||!editingDoc?"selected":""}>عيادات</option><option value="أسنان" ${editingDoc?.type==="أسنان"?"selected":""}>أسنان</option></select></div>
+          <div class="field"><label>النوع</label><select name="type" id="docTypeInput"><option value="عيادات" ${editingDoc?.type==="عيادات"||!editingDoc?"selected":""}>عيادات</option><option value="أسنان" ${editingDoc?.type==="أسنان"?"selected":""}>أسنان</option><option value="تحاليل" ${editingDoc?.type==="تحاليل"?"selected":""}>تحاليل</option><option value="أشعة" ${editingDoc?.type==="أشعة"?"selected":""}>أشعة</option></select></div>
           <div class="field"><label>الحالة</label><select name="status"><option value="نشط" ${!editingDoc || editingDoc.status==="نشط"?"selected":""}>نشط</option><option value="موقوف" ${editingDoc?.status==="موقوف"?"selected":""}>موقوف</option></select></div>
           <div class="field" id="feeModeField" style="grid-column:span 2;">
             <label>طريقة احتساب حصة المجمع</label>
@@ -5976,9 +5993,9 @@ function renderSettings() {
     const editId = fd.get("editId");
     if (editId ? !can("doctors","edit") : !can("doctors","add")) { showToast("⚠️ ليس لديك صلاحية كافية"); return; }
     const type = fd.get("type");
-    // قسم الأسنان يبقى دايمًا بنظام النسبة الثابتة (كما طُلب) - بغض النظر عمّا
-    // يظهر فى القائمة المنسدلة (المخفية أصلًا للأسنان فى الواجهة).
-    const feeMode = type === "أسنان" ? "percent" : (fd.get("feeMode") || "fixed_visit");
+    // الأسنان والتحاليل والأشعة تعمل بنظام النسبة، بينما تبقى العيادات
+    // قابلة للاختيار بين مبلغ ثابت أو نسبة أو أجر يومي.
+    const feeMode = doctorTypeUsesPercent(type) ? "percent" : (fd.get("feeMode") || "fixed_visit");
     const docPctVal = Number(fd.get("docPct")) || 0, clinicPctVal = Number(fd.get("clinicPct")) || 0;
     const docFollowupPctVal = Number(fd.get("docFollowupPct")) || 0, clinicFollowupPctVal = Number(fd.get("clinicFollowupPct")) || 0;
     // كل نوع له مجموع مستقل 100%: كشف، ثم متابعة.
@@ -6054,8 +6071,7 @@ function renderSettings() {
   bindPctPair(docFollowupPctInput, clinicFollowupPctInput);
   updatePctHints();
   // إظهار/إخفاء حقول طريقة احتساب الحصة حسب "النوع" و"طريقة الاحتساب" المختارَين:
-  // الأسنان تُقفَل دايمًا على "نسبة" (وتُخفى قائمة اختيار الطريقة أصلًا)، والعيادات
-  // تختار من الثلاث طرق بحرّية.
+  // الأسنان والتحاليل والأشعة تُقفَل دائمًا على "نسبة"، والعيادات تختار من الثلاث طرق.
   const docTypeInput = document.getElementById("docTypeInput");
   const feeModeField = document.getElementById("feeModeField");
   const feeModeInput = document.getElementById("feeModeInput");
@@ -6064,9 +6080,9 @@ function renderSettings() {
   const fixedDailyFeeFields = document.getElementById("fixedDailyFeeFields");
   function updateFeeModeVisibility() {
     if (!docTypeInput) return;
-    const isDentalDoc = docTypeInput.value === "أسنان";
-    if (feeModeField) feeModeField.style.display = isDentalDoc ? "none" : "";
-    const mode = isDentalDoc ? "percent" : (feeModeInput?.value || "fixed_visit");
+    const percentType = doctorTypeUsesPercent(docTypeInput.value);
+    if (feeModeField) feeModeField.style.display = percentType ? "none" : "";
+    const mode = percentType ? "percent" : (feeModeInput?.value || "fixed_visit");
     if (percentFeeFields) percentFeeFields.style.display = mode === "percent" ? "contents" : "none";
     if (fixedVisitFeeFields) fixedVisitFeeFields.style.display = mode === "fixed_visit" ? "contents" : "none";
     if (fixedDailyFeeFields) fixedDailyFeeFields.style.display = mode === "fixed_daily" ? "contents" : "none";
@@ -6125,7 +6141,7 @@ function renderSettings() {
     // التحصيل نفسه فى الخزينة. لتفادى فقد هذا التاريخ المالي، يُمنع الحذف النهائي
     // لأي طبيب له سجل تعاملات سابق، ويُقترح "إيقاف" بدلًا منه (يحافظ على كل شىء
     // ويخفيه فقط من قوائم الاختيار عند التسجيل الجديد).
-    const hasHistory = allVisits().some(v => v.doctorId === docId)
+    const hasHistory = allRevenueVisits().some(v => v.doctorId === docId)
       || DB.income.some(x => x.doctorId === docId)
       || DB.labExpenses.some(x => x.doctorId === docId);
     if (hasHistory) {
