@@ -13,8 +13,10 @@ assert.match(source, /isFollowup \? \(doctor\.clinicFollowupPct \?\? doctor\.cli
 assert.match(source, /const pct = percentShareForExam\(d, visit\.examType\)/, 'visit share must use the selected exam type percentage');
 assert.match(source, /mode === "fixed_daily"/, 'settlement must handle fixed daily doctors separately');
 assert.match(source, /Number\(d\.dailyFixedAmount\) \|\| 0\) \* activeDays\.size/, 'fixed daily doctor share must be daily amount times active days');
+assert.match(source, /const clinicShare = netRevenue - docShare;/, 'fixed daily settlement must preserve a signed clinic residual');
+assert.doesNotMatch(source, /clinicShare = Math\.max\(0, grossRevenue - labExpense - docShare\)/, 'settlement must not hide a fixed-daily deficit by clamping to zero');
 assert.match(source, /const activeDays = new Set\(/, 'active work days must be deduplicated');
 assert.doesNotMatch(source, /docShare = netRevenue \* \(d\.docPct \|\| 0\)/, 'settlement must not use the old single-percentage formula');
 assert.match(source, /مجموع نسب المتابعة/, 'follow-up percentage sum must be visible');
 
-console.log('PASS doctor-payroll-test: fixed daily doctor shares, independent exam/follow-up percentages, legacy fallback, and settlement safeguards.');
+console.log('PASS doctor-payroll-test: fixed daily shares, signed deficit reconciliation, independent percentages, legacy fallback, and settlement safeguards.');

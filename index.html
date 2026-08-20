@@ -1934,7 +1934,82 @@ function visitRemaining(v) {
   const paid = v.paid !== undefined && v.paid !== null ? Number(v.paid) || 0 : (v.amount !== undefined ? legacyAmount : 0);
   return total - paid;
 }
+// مصدر موحّد لتسوية الطبيب عبر العيادات والأسنان والعمليات والتحاليل والأشعة.
+// حصة الطبيب قد تكون نسبة، أو نصيب المجمع الثابت لكل زيارة، أو أجرًا يوميًا.
+// حصة المجمع هنا هي المتبقي بعد حصة الطبيب ومصروف المعمل، وتبقى سالبة إذا
+// تجاوزت تكلفة الطبيب/المعمل الإيراد؛ قصّها إلى صفر يخفي العجز ويكسر المراجعة.
+function doctorSettlementBreakdown(doctor, visits, lumpIncome, labExpense) {
+  const d = doctor || {};
+  const visitRows = Array.isArray(visits) ? visits : [];
+  const incomeRows = Array.isArray(lumpIncome) ? lumpIncome : [];
+  const grossRevenue = visitRows.reduce((s, v) => s + (Number(v.paid) || 0), 0)
+    + incomeRows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const lab = Number(labExpense) || 0;
+  const activeDays = new Set([
+    ...visitRows.map(v => v.date).filter(Boolean),
+    ...incomeRows.map(r => r.date).filter(Boolean),
+  ]);
+  const mode = doctorTypeUsesPercent(d.type) ? "percent" : (d.feeMode || "fixed_visit");
+  const visitShares = visitRows.reduce((s, v) => {
+    const sh = computeShare(v);
+    return { doc: s.doc + sh.doc, clinic: s.clinic + sh.clinic };
+  }, { doc: 0, clinic: 0 });
+  const incomeShares = incomeRows.reduce((s, r) => {
+    const sh = incomeDoctorShare(r);
+    return { doc: s.doc + sh.doc, clinic: s.clinic + sh.clinic };
+  }, { doc: 0, clinic: 0 });
+  const docShare = mode === "fixed_daily"
+    ? Math.max(0, Number(d.dailyFixedAmount) || 0) * activeDays.size
+    : visitShares.doc + incomeShares.doc;
+  const netRevenue = grossRevenue - lab;
+  const clinicShare = netRevenue - docShare;
+  return {
+    mode, grossRevenue, labExpense: lab, netRevenue, docShare, clinicShare,
+    activeDays: activeDays.size,
+    visitCount: visitRows.length + incomeRows.length,
+  };
+}
 
+function aggregateAccountingShares(visits, incomeRows, labExpenses) {
+  const visitList = Array.isArray(visits) ? visits : [];
+  const incomeList = Array.isArray(incomeRows) ? incomeRows : [];
+  const labList = Array.isArray(labExpenses) ? labExpenses : [];
+  const doctorIds = new Set([
+    ...visitList.map(v => v.doctorId).filter(Boolean),
+    ...incomeList.map(r => r.doctorId).filter(Boolean),
+  ]);
+  let doc = 0, clinic = 0, gross = 0;
+  const assignedVisitIds = new Set(), assignedIncomeIds = new Set();
+  for (const doctorId of doctorIds) {
+    const doctor = dInfo(doctorId);
+    const dv = visitList.filter(v => v.doctorId === doctorId);
+    const di = incomeList.filter(r => r.doctorId === doctorId);
+    const labs = labList.filter(x => x.doctorId === doctorId);
+    if (doctor) {
+      const b = doctorSettlementBreakdown(doctor, dv, di, labs.reduce((s, x) => s + (Number(x.amount) || 0), 0));
+      doc += b.docShare;
+      clinic += b.clinicShare;
+      gross += b.grossRevenue;
+      dv.forEach(v => assignedVisitIds.add(v.id));
+      di.forEach(r => assignedIncomeIds.add(r.id));
+    }
+  }
+  for (const v of visitList) {
+    if (!assignedVisitIds.has(v.id)) {
+      const amount = Number(v.paid) || 0;
+      gross += amount;
+      clinic += amount;
+    }
+  }
+  for (const r of incomeList) {
+    if (!assignedIncomeIds.has(r.id)) {
+      const amount = Number(r.amount) || 0;
+      gross += amount;
+      clinic += amount;
+    }
+  }
+  return { gross, doc, clinic };
+}
 function allVisits() {
   return [
     ...DB.visitsClinic.map(v => ({ ...v, kind: "عيادات" })),
@@ -1992,9 +2067,8 @@ function doctorRevenue(doctorId) {
   if (!doctorId) return { count: 0, total: 0, share: 0 };
   const visits = allRevenueVisits().filter(v => v.doctorId === doctorId);
   const lumpIncome = DB.income.filter(r => r.doctorId === doctorId);
-  const total = visits.reduce((s, v) => s + (Number(v.paid) || 0), 0) + lumpIncome.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-  const share = visits.reduce((s, v) => s + computeShare(v).doc, 0) + lumpIncome.reduce((s, r) => s + incomeDoctorShare(r).doc, 0);
-  return { count: visits.length + lumpIncome.length, total, share };
+  const breakdown = doctorSettlementBreakdown(dInfo(doctorId), visits, lumpIncome, 0);
+  return { count: breakdown.visitCount, total: breakdown.grossRevenue, share: breakdown.docShare };
 }
 
 // ======================================================================
@@ -2227,12 +2301,12 @@ function syncVisitIncomeLink(rec, kind, skipPersist) {
 }
 // بيانات تقرير الإقفال الشهري لشهر مُحدَّد بصيغة "YYYY-MM"
 function monthlyClosingData(ym) {
-  const visits = allRevenueVisits().filter(v => (v.date || "").startsWith(ym));
+    const visits = allRevenueVisits().filter(v => (v.date || "").startsWith(ym));
   const visitRevenue = visits.reduce((s, v) => s + (Number(v.paid) || 0), 0);
-  const docShare = visits.reduce((s, v) => s + computeShare(v).doc, 0);
-  const clinicShare = visits.reduce((s, v) => s + computeShare(v).clinic, 0);
-
   const incomeThisMonth = DB.income.filter(x => (x.date || "").startsWith(ym));
+  const closingShares = aggregateAccountingShares(visits, incomeThisMonth, DB.labExpenses.filter(x => x.month === ym));
+  const docShare = closingShares.doc;
+  const clinicShare = closingShares.clinic;
   const expenseThisMonth = DB.expense.filter(x => (x.date || "").startsWith(ym));
   const incomeByCat = {};
   incomeThisMonth.forEach(x => { incomeByCat[x.category || "غير مصنّف"] = (incomeByCat[x.category || "غير مصنّف"] || 0) + (Number(x.amount) || 0); });
@@ -2275,7 +2349,7 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.38";
+const APP_VERSION = "v1.3.39";
 const APP_RELEASE_NOTES = "تقليل قراءات Firestore • تحميل البيانات عند الحاجة • حماية الحصة المجانية مع كاش محلي";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
@@ -2576,7 +2650,7 @@ function downloadSystemBackup() {
 function topAlertData() {
   const today = todayISO();
   const followupUntil = localISO(new Date(Date.now() + 7 * 86400000));
-  const visits = allVisits();
+  const visits = allRevenueVisits();
   let lastBackup = 0;
   try { lastBackup = Date.parse(localStorage.getItem("lastBackupAt") || "") || 0; } catch (e) { /* ignore */ }
   const backupDue = !lastBackup || (Date.now() - lastBackup > 7 * 86400000);
@@ -3162,15 +3236,16 @@ function destroyCharts() { Object.values(charts).forEach(c => c && c.destroy());
 
 function renderDashboard() {
   const c = document.getElementById("content");
-  const visits = allVisits();
+  const visits = allRevenueVisits();
   const today = todayISO();
   const totalRevenue = DB.income.reduce((s, x) => s + (Number(x.amount) || 0), 0);
   const totalExpense = DB.expense.reduce((s, x) => s + (Number(x.amount) || 0), 0);
   const balance = currentBalance();
   const overdue = visits.filter(v => visitRemaining(v) > 0).length;
   const revenueVisits = allRevenueVisits();
-  const clinicShare = revenueVisits.reduce((s, v) => s + computeShare(v).clinic, 0) + DB.income.reduce((s, r) => s + incomeDoctorShare(r).clinic, 0);
-  const docShare = revenueVisits.reduce((s, v) => s + computeShare(v).doc, 0) + DB.income.reduce((s, r) => s + incomeDoctorShare(r).doc, 0);
+  const dashboardShares = aggregateAccountingShares(revenueVisits, DB.income, DB.labExpenses);
+  const clinicShare = dashboardShares.clinic;
+  const docShare = dashboardShares.doc;
   const dentalRevenue = DB.income.filter(x => x.category === "أسنان").reduce((s, x) => s + (Number(x.amount) || 0), 0);
   const clinicRevenue = DB.income.filter(x => x.category === "كشف").reduce((s, x) => s + (Number(x.amount) || 0), 0);
   const selectedPeriod = state.dashboardPeriod || "today";
@@ -3235,7 +3310,7 @@ function renderDashboard() {
       <div class="card kpi"><div class="label">إجمالي الإيرادات (كل الفترات)</div><div class="value">${fmt(totalRevenue)} ج.م</div></div>
       <div class="card kpi"><div class="label">إيراد العيادات</div><div class="value" style="color:#2A6DA6;">${fmt(clinicRevenue)} ج.م</div></div>
       <div class="card kpi"><div class="label">إيراد الأسنان</div><div class="value" style="color:#6A3FA0;">${fmt(dentalRevenue)} ج.م</div></div>
-      <div class="card kpi" title="حصة المجمع والأطباء من كل الزيارات (كشف ومتابعة) لكل أنواع الأطباء"><div class="label">حصة المجمع / حصة الأطباء</div><div class="value" style="font-size:16px;">${fmt(clinicShare)} / ${fmt(docShare)}</div></div>
+      <div class="card kpi" title="الصافي بعد حصة الطبيب ومصروف المعمل عبر كل الأقسام"><div class="label">صافى حصة المجمع / حصة الأطباء</div><div class="value" style="font-size:16px; color:${clinicShare < 0 ? "var(--expense)" : "var(--ink)"};">${fmt(clinicShare)} / ${fmt(docShare)}</div></div>
     </div>
 
     <div class="card" style="margin-bottom:16px;">
@@ -5013,28 +5088,11 @@ function doctorSettlementSectionHTML() {
     const mode = doctorTypeUsesPercent(d.type) ? "percent" : (d.feeMode || "fixed_visit");
     const docVisits = allMonthVisits.filter(v => v.doctorId === d.id);
     const docLumpIncome = lumpIncome.filter(r => r.doctorId === d.id);
-    const grossRevenue = docVisits.reduce((s, v) => s + (Number(v.paid) || 0), 0) + docLumpIncome.reduce((s, r) => s + (Number(r.amount) || 0), 0);
     const labRec = DB.labExpenses.find(x => x.doctorId === d.id && x.month === ym);
     const labExpense = Number(labRec?.amount) || 0;
-    let netRevenue, docShare, clinicShare;
-    const perVisit = docVisits.reduce((s, v) => { const sh = computeShare(v); return { doc: s.doc + sh.doc, clinic: s.clinic + sh.clinic }; }, { doc: 0, clinic: 0 });
-    const perLump = docLumpIncome.reduce((s, r) => { const sh = incomeDoctorShare(r); return { doc: s.doc + sh.doc, clinic: s.clinic + sh.clinic }; }, { doc: 0, clinic: 0 });
-    netRevenue = Math.max(0, grossRevenue - labExpense);
-    if (mode === "fixed_daily") {
-      // الأجر اليومي يُحسب مرة واحدة لكل يوم عمل فعلي، لا مرة لكل زيارة.
-      // يشمل أيام الزيارات وقيود الوارد اليومية المرتبطة بالطبيب.
-      const activeDays = new Set([
-        ...docVisits.map(v => v.date).filter(Boolean),
-        ...docLumpIncome.map(r => r.date).filter(Boolean),
-      ]);
-      docShare = Math.max(0, Number(d.dailyFixedAmount) || 0) * activeDays.size;
-      clinicShare = Math.max(0, grossRevenue - labExpense - docShare);
-    } else {
-      docShare = perVisit.doc + perLump.doc;
-      // مصروف المعمل تكلفة على المجمع، ولا يغيّر نسبة الطبيب حسب نوع الكشف.
-      clinicShare = Math.max(0, perVisit.clinic + perLump.clinic - labExpense);
-    }
-    return { doctor: d, grossRevenue, labExpense, netRevenue, docShare, clinicShare, visitCount: docVisits.length + docLumpIncome.length };
+    const breakdown = doctorSettlementBreakdown(d, docVisits, docLumpIncome, labExpense);
+    const { grossRevenue, labExpense: calculatedLabExpense, netRevenue, docShare, clinicShare, visitCount } = breakdown;
+    return { doctor: d, grossRevenue, labExpense: calculatedLabExpense, netRevenue, docShare, clinicShare, visitCount };
   }).filter(r => r.visitCount > 0 || r.labExpense > 0);
 
   const totals = rows.reduce((s, r) => ({ gross: s.gross + r.grossRevenue, lab: s.lab + r.labExpense, net: s.net + r.netRevenue, doc: s.doc + r.docShare, clinic: s.clinic + r.clinicShare }), { gross: 0, lab: 0, net: 0, doc: 0, clinic: 0 });
@@ -5045,14 +5103,14 @@ function doctorSettlementSectionHTML() {
         <div class="section-title" style="margin:0;">🧾 تسوية حساب الأطباء (بعد خصم مصروف المعمل) — ${monthLabel(ym)}</div>
         <input type="month" id="settlementMonthInput" value="${ym}" style="padding:6px 10px; border-radius:8px; border:1px solid var(--border,#ccc);">
       </div>
-      <p class="hint" style="margin-top:8px;">يُخصَم مصروف المعمل (إن وُجد) من إجمالى إيراد الطبيب أولًا لأطباء النسبة (الأسنان)، أو من نصيب المجمع مباشرة لأطباء المبلغ الثابت. مصروف المعمل المحفوظ هنا يُسجَّل تلقائيًا كحركة منصرف حقيقية فى دفتر الخزينة (فئة "معمل") — لا داعٍ لإدخاله يدويًا مرة أخرى هناك. <strong>ملاحظة:</strong> كل الزيارات (كشف ومتابعة) تدخل الآن ضمن حساب النسبة والحصص لكل أنواع الأطباء.</p>
+      <p class="hint" style="margin-top:8px;">يُخصَم مصروف المعمل من الإيراد قبل استخراج صافي حصة المجمع. حصة الطبيب تُحسب حسب نظامه: نسبة، مبلغ ثابت لكل زيارة، أو أجر يومي ثابت. إذا تجاوزت حصة الطبيب أو مصروف المعمل الإيراد، تظهر حصة المجمع سالبة باعتبارها <strong>عجزًا محاسبيًا</strong> بدل إخفائه عند الصفر. مصروف المعمل المحفوظ هنا يُسجَّل تلقائيًا كحركة منصرف حقيقية فى دفتر الخزينة، ولا يُدخل يدويًا مرة أخرى.</p>
     </div>
 
     <div class="grid grid-4" style="margin-bottom:16px;">
       <div class="card kpi"><div class="label">إجمالى الإيراد</div><div class="value">${fmt(totals.gross)} ج.م</div></div>
       <div class="card kpi"><div class="label">إجمالى مصروف المعمل</div><div class="value" style="color:var(--expense);">${fmt(totals.lab)} ج.م</div></div>
       <div class="card kpi"><div class="label">صافى حصص الأطباء</div><div class="value income">${fmt(totals.doc)} ج.م</div></div>
-      <div class="card kpi"><div class="label">صافى حصة المجمع</div><div class="value income">${fmt(totals.clinic)} ج.م</div></div>
+      <div class="card kpi"><div class="label">صافى حصة المجمع / العجز</div><div class="value" style="color:${totals.clinic < 0 ? "var(--expense)" : "var(--income)"};">${fmt(totals.clinic)} ج.م</div></div>
     </div>
 
     <div class="card" style="margin-bottom:18px;">
@@ -5070,9 +5128,9 @@ function doctorSettlementSectionHTML() {
               <td>
                 ${canEditLab ? `<input type="text" inputmode="decimal" step="0.01" min="0" class="lab-expense-input" data-doctor="${r.doctor.id}" value="${r.labExpense || ""}" placeholder="0" style="width:110px; padding:6px 8px; border-radius:8px; border:1px solid var(--border,#ccc);">` : fmt(r.labExpense)}
               </td>
-              <td style="font-weight:700;">${fmt(r.netRevenue)}</td>
+              <td style="font-weight:700; color:${r.netRevenue < 0 ? "var(--expense)" : "var(--ink)"};">${fmt(r.netRevenue)}</td>
               <td class="income">${fmt(r.docShare)}</td>
-              <td class="income">${fmt(r.clinicShare)}</td>
+              <td style="font-weight:700; color:${r.clinicShare < 0 ? "var(--expense)" : "var(--income)"};">${fmt(r.clinicShare)}${r.clinicShare < 0 ? " <span class=\"hint\" title=\"الأجر/المصروف تجاوز الإيراد\">(عجز)</span>" : ""}</td>
               ${canEditLab ? `<td><button class="btn sm" data-save-lab="${r.doctor.id}">حفظ</button></td>` : ""}
             </tr>`).join("")}
         </tbody>
@@ -5111,7 +5169,7 @@ function bindDoctorSettlementEvents(c) {
 // ======================================================================
 function renderAnnualReportPrint() {
   const c = document.getElementById("content");
-  const visits = allVisits();
+  const visits = allRevenueVisits();
   const allDatedItems = [...visits, ...DB.income, ...DB.expense];
   const availableYears = [...new Set(allDatedItems.map(x => (x.date || "").slice(0, 4)).filter(Boolean))].sort().reverse();
   const currentYear = String(new Date().getFullYear());
@@ -5193,7 +5251,7 @@ function renderAnnualReportPrint() {
 function renderReports() {
   const c = document.getElementById("content");
   if (state.showAnnualReport) { renderAnnualReportPrint(); return; }
-  const visits = allVisits();
+  const visits = allRevenueVisits();
   const monthNames = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
   const year = new Date().getFullYear();
 
@@ -5235,13 +5293,13 @@ function renderReports() {
 
   const byDoctor = DB.doctors.map(d => {
     const dv = visits.filter(v => v.doctorId === d.id);
-    const rev = dv.reduce((s, v) => s + (Number(v.paid) || 0), 0);
-    const shares = dv.reduce((s, v) => { const sh = computeShare(v); return { doc: s.doc + sh.doc, clinic: s.clinic + sh.clinic }; }, { doc: 0, clinic: 0 });
-    return { name: d.name, type: d.type, count: dv.length, rev, ...shares };
+    const di = DB.income.filter(r => r.doctorId === d.id);
+    const breakdown = doctorSettlementBreakdown(d, dv, di, 0);
+    return { name: d.name, type: d.type, count: breakdown.visitCount, rev: breakdown.grossRevenue, doc: breakdown.docShare, clinic: breakdown.clinicShare };
   }).filter(r => r.count > 0).sort((a, b) => b.rev - a.rev);
 
   const bySpecialty = {};
-  DB.visitsClinic.forEach(v => {
+  visits.forEach(v => {
     const d = dInfo(v.doctorId);
     const spec = d ? d.specialty : "غير محدد";
     bySpecialty[spec] = (bySpecialty[spec] || 0) + (Number(v.paid) || 0);
@@ -5288,8 +5346,8 @@ function renderReports() {
             </table></div>
           </div>
         </div>
-        <div class="grid grid-4" style="gap:10px;">
-          <div class="card kpi" style="box-shadow:none; border:1px solid var(--border,#eee);"><div class="label">زيارات الشهر (عيادات+أسنان)</div><div class="value">${fmtInt(closing.visitCount)}</div></div>
+                  <div class="grid grid-4" style="gap:10px;">
+          <div class="card kpi" style="box-shadow:none; border:1px solid var(--border,#eee);"><div class="label">زيارات الشهر (كل الأقسام)</div><div class="value">${fmtInt(closing.visitCount)}</div></div>
           <div class="card kpi" style="box-shadow:none; border:1px solid var(--border,#eee);"><div class="label">إيراد الزيارات المحصَّل</div><div class="value" style="color:#2A6DA6;">${fmt(closing.visitRevenue)} ج.م</div></div>
           <div class="card kpi" style="box-shadow:none; border:1px solid var(--border,#eee);" title="حصة المجمع والأطباء من كل الزيارات (كشف ومتابعة) لكل أنواع الأطباء"><div class="label">حصة المجمع / حصة الأطباء</div><div class="value" style="font-size:14px;">${fmt(closing.clinicShare)} / ${fmt(closing.docShare)}</div></div>
           <div class="card kpi" style="box-shadow:none; border:1px solid var(--border,#eee);"><div class="label">مرتبات الشهر (مدفوع / مستحق)</div><div class="value" style="font-size:14px;">${fmt(closing.payrollPaid)} / ${fmt(closing.payrollDue)}</div></div>
@@ -5311,7 +5369,7 @@ function renderReports() {
         </div>
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>الشهر</th><th>الإيرادات</th><th>الوارد</th><th>المنصرف</th><th>صافي الربح</th><th>عدد العمليات</th></tr></thead>
+        <thead><tr><th>الشهر</th><th>إيراد الزيارات</th><th>الوارد</th><th>المنصرف</th><th>صافي الربح</th><th>عدد العمليات</th></tr></thead>
         <tbody>${monthlyRows.map(r => `<tr><td>${esc(r.name)}</td><td>${fmt(r.rev)}</td><td class="income">${fmt(r.inc)}</td><td class="expense">${fmt(r.exp)}</td><td style="font-weight:700; color:${r.net>=0?'var(--income)':'var(--expense)'}">${fmt(r.net)}</td><td>${r.count}</td></tr>`).join("")}</tbody>
       </table></div>
     </div>
