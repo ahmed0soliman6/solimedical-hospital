@@ -8,6 +8,7 @@ const swSource = fs.readFileSync('sw.js', 'utf8');
 const storeSource = fs.readFileSync('firebase-store.js', 'utf8');
 const appSource = fs.readFileSync('index.html', 'utf8');
 const apiSource = fs.readFileSync('api/admin/account.js', 'utf8');
+let contextLastFetchOptions = null;
 
 (async () => {
 // Runtime simulation of the Service Worker fetch handler.
@@ -23,7 +24,7 @@ const context = {
     match: async () => undefined,
     keys: async () => [],
   },
-  fetch: async () => new Response('ok', { status: 200 }),
+  fetch: async (_request, options) => { contextLastFetchOptions = options; return new Response('ok', { status: 200 }); },
   URL,
   Request,
   Response,
@@ -45,6 +46,17 @@ awaitable(handlers.fetch({
   respondWith() { staticRespondWithCalled = true; },
 }));
 assert.equal(staticRespondWithCalled, true, 'Service Worker should still handle static GET requests');
+
+let navigationResponsePromise = null;
+awaitable(handlers.fetch({
+  request: { method: 'GET', mode: 'navigate', destination: 'document', url: 'https://mitali1.vercel.app/' },
+  respondWith(promise) { navigationResponsePromise = promise; },
+}));
+assert.ok(navigationResponsePromise, 'Service Worker must handle navigations');
+await navigationResponsePromise;
+assert.equal(contextLastFetchOptions.cache, 'no-store', 'navigation must prefer the network to avoid stale app shells');
+assert.match(swSource, /hospital-v1\.3\.46-firestore-only/);
+assert.doesNotMatch(swSource, /const urlsToCache = \[\'\.\/\',/);
 
 // Runtime check that the timeout wrapper forwards cache: no-store to fetch.
 let capturedOptions = null;

@@ -1,11 +1,29 @@
-const CACHE_NAME = 'hospital-v1.3.45-firestore-only';
-const urlsToCache = ['./', './index.html', './manifest.json', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './favicon-32.png'];
+const CACHE_NAME = 'hospital-v1.3.46-firestore-only';
+const urlsToCache = ['./index.html', './manifest.json', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './favicon-32.png'];
 
 function isApiRequest(request) {
   try {
     return new URL(request.url).pathname.startsWith('/api/');
   } catch (_) {
     return false;
+  }
+}
+
+function isNavigationRequest(request) {
+  return request.mode === 'navigate' || request.destination === 'document';
+}
+
+async function networkFirstDocument(request) {
+  const cache = await caches.open(CACHE_NAME);
+  try {
+    const response = await fetch(request, { cache: 'no-store' });
+    if (!response || !response.ok) throw new Error('document-fetch-failed');
+    await cache.put(request, response.clone());
+    return response;
+  } catch (_) {
+    return (await cache.match(request)) ||
+      (await cache.match(new URL('./index.html', self.registration.scope).toString())) ||
+      Response.error();
   }
 }
 
@@ -34,6 +52,10 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET' || isApiRequest(event.request)) return;
+  if (isNavigationRequest(event.request)) {
+    event.respondWith(networkFirstDocument(event.request));
+    return;
+  }
   event.respondWith(
     caches.match(event.request).then(response => {
       if (response) return response;
