@@ -2360,7 +2360,7 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.40";
+const APP_VERSION = "v1.3.41";
 const APP_RELEASE_NOTES = "تقليل قراءات Firestore • تحميل البيانات عند الحاجة • حماية الحصة المجانية مع كاش محلي";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
@@ -6359,19 +6359,44 @@ function adminAccountFailureMessage(error, fallback) {
   if (code === "firebase-unavailable") return "خدمة Firebase غير متاحة مؤقتًا؛ لم تتغير البيانات وسيجب إعادة المحاولة عند عودة الخدمة";
   return fallback;
 }
+let ADMIN_ACCOUNTS_REFRESH_PROMISE = null;
+let ADMIN_ACCOUNTS_REFRESH_REQUESTED = false;
+let ADMIN_ACCOUNTS_REFRESH_ROUTE_REQUESTED = false;
 async function refreshAccountsFromAdminApi(shouldRoute = true) {
-  if (ADMIN_ACCOUNTS_REFRESH_IN_PROGRESS || !navigator.onLine || !isAdminUser() || !window.MitaliFirebase?.adminListAccounts) return;
+  if (!navigator.onLine || !isAdminUser() || !window.MitaliFirebase?.adminListAccounts) return ADMIN_ACCOUNTS_REFRESH_PROMISE || undefined;
+  if (ADMIN_ACCOUNTS_REFRESH_IN_PROGRESS) {
+    // لا نهمل قراءة بدأت أثناء عملية أخرى؛ قد تكون الأولى بدأت قبل حفظ
+    // صلاحية جديدة، فتصل snapshot قديمة وتطمس التعديل الصحيح.
+    ADMIN_ACCOUNTS_REFRESH_REQUESTED = true;
+    ADMIN_ACCOUNTS_REFRESH_ROUTE_REQUESTED = ADMIN_ACCOUNTS_REFRESH_ROUTE_REQUESTED || !!shouldRoute;
+    return ADMIN_ACCOUNTS_REFRESH_PROMISE;
+  }
   ADMIN_ACCOUNTS_REFRESH_IN_PROGRESS = true;
-  try {
-    const accounts = await window.MitaliFirebase.adminListAccounts();
-    if (Array.isArray(accounts)) {
-      DB.staffAccounts = accounts;
-      await cacheLocally("staffAccounts", accounts);
-      await writeSyncBaseline("staffAccounts", accounts);
-      if (shouldRoute && state.page === "users" || shouldRoute && state.page === "permissions") route();
-    }
-  } catch (error) { console.warn("Fresh account list unavailable:", error && (error.code || error.message)); }
-  finally { ADMIN_ACCOUNTS_REFRESH_IN_PROGRESS = false; }
+  ADMIN_ACCOUNTS_REFRESH_REQUESTED = false;
+  ADMIN_ACCOUNTS_REFRESH_ROUTE_REQUESTED = !!shouldRoute;
+  const run = (async () => {
+    do {
+      ADMIN_ACCOUNTS_REFRESH_REQUESTED = false;
+      try {
+        const accounts = await window.MitaliFirebase.adminListAccounts();
+        if (Array.isArray(accounts)) {
+          DB.staffAccounts = accounts;
+          await cacheLocally("staffAccounts", accounts);
+          await writeSyncBaseline("staffAccounts", accounts);
+        }
+      } catch (error) {
+        console.warn("Fresh account list unavailable:", error && (error.code || error.message));
+      }
+    } while (ADMIN_ACCOUNTS_REFRESH_REQUESTED);
+    if (ADMIN_ACCOUNTS_REFRESH_ROUTE_REQUESTED && (state.page === "users" || state.page === "permissions")) route();
+  })();
+  ADMIN_ACCOUNTS_REFRESH_PROMISE = run.finally(() => {
+    ADMIN_ACCOUNTS_REFRESH_IN_PROGRESS = false;
+    ADMIN_ACCOUNTS_REFRESH_PROMISE = null;
+    ADMIN_ACCOUNTS_REFRESH_REQUESTED = false;
+    ADMIN_ACCOUNTS_REFRESH_ROUTE_REQUESTED = false;
+  });
+  return ADMIN_ACCOUNTS_REFRESH_PROMISE;
 }
 function renderUsersPage() {
   refreshAccountsFromAdminApi(true);

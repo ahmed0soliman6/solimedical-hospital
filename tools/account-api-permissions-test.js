@@ -12,7 +12,12 @@ const current = {
   status: 'نشط',
   credentialVersion: 2,
   securityVersion: 2,
-  permissions: { dashboard: { view: true }, clinic: { view: false, add: false, edit: false, delete: false } },
+  permissions: {
+    dashboard: { view: true },
+    clinic: { view: false, add: false, edit: false, delete: false },
+    operations: { view: false, add: false, edit: false, delete: false },
+    labs: { view: false, add: false, edit: false, delete: false },
+  },
 };
 let writtenProfile = null;
 let authUpdate = null;
@@ -62,7 +67,12 @@ vm.runInNewContext(fs.readFileSync('api/admin/account.js', 'utf8'), sandbox, { f
       action: 'permissions', uid,
       displayName: current.displayName, username: current.username,
       role: 'موظف', status: 'نشط',
-      permissions: { dashboard: { view: true }, clinic: { view: true, add: true, edit: false, delete: false } },
+      permissions: {
+        dashboard: { view: true },
+        clinic: { view: true, add: true, edit: false, delete: false },
+        operations: { view: true, add: true, edit: false, delete: false },
+        labs: { view: true, add: true, edit: false, delete: false },
+      },
     },
     headers: { authorization: 'Bearer test' },
   }, res);
@@ -71,11 +81,15 @@ vm.runInNewContext(fs.readFileSync('api/admin/account.js', 'utf8'), sandbox, { f
   assert.equal(payload.ok, true);
   assert.equal(writtenProfile.id, uid);
   assert.equal(writtenProfile.profile.permissions.clinic.add, true);
+  assert.equal(writtenProfile.profile.permissions.operations.view, true);
+  assert.equal(writtenProfile.profile.permissions.operations.add, true);
+  assert.equal(writtenProfile.profile.permissions.labs.view, true);
+  assert.equal(writtenProfile.profile.permissions.labs.add, true);
   assert.equal(writtenProfile.profile.credentialVersion, 3);
   assert.equal(writtenProfile.profile.securityVersion, 3);
   assert.equal(authUpdate, null);
   assert.equal(revokedUid, uid);
-  console.log('PASS account-api-permissions-test: permission updates persist before success, skip unnecessary Auth writes, and invalidate trusted sessions.');
+  console.log('PASS account-api-permissions-test: permission updates persist before success, preserve operations/labs, skip unnecessary Auth writes, and invalidate trusted sessions.');
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;
