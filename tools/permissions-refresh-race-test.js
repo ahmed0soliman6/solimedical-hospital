@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const index = fs.readFileSync('index.html', 'utf8');
 const admin = fs.readFileSync('api/_lib/firebase-admin.js', 'utf8');
 const pageStart = index.indexOf('function renderPermissionsPanel');
-const pageEnd = index.indexOf('// ======================================================================\n// توافق الروابط القديمة', pageStart);
+const pageEnd = index.indexOf('// توافق الروابط القديمة', pageStart);
 assert.ok(pageStart >= 0 && pageEnd > pageStart, 'permissions panel block should exist');
 const permissionsBlock = index.slice(pageStart, pageEnd);
 
