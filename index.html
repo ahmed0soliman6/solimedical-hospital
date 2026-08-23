@@ -1577,8 +1577,9 @@ async function loadAll(options = {}) {
     DB.staffAccounts = seedStaffAccounts();
     // لا تُكتب قائمة الحسابات كاملة من المتصفح؛ هذه حالة كاش محلي فقط.
   }
-  // ترقية الحسابات القديمة: أي حساب لم تُضَف له الحقول الجديدة يحصل تلقائيًا
-  // على كل الصلاحيات حتى لا ينقطع عمله الحالى، والمدير يبقى دائمًا صاحب كل الصلاحيات.
+  // تطبيع الحسابات القديمة يجب أن يكون آمنًا: أي صلاحية ناقصة لموظف
+  // تُعامل كغير ممنوحة (false)، ولا نمنح وصولًا جديدًا بسبب كاش قديم.
+  // المدير يملك كل الصلاحيات عبر can() ولا يحتاج إلى ملء صلاحياته محليًا.
   let upgraded = false;
   (DB.staffAccounts || []).forEach(a => {
     if (!a.status) { a.status = "نشط"; upgraded = true; }
@@ -1587,17 +1588,13 @@ async function loadAll(options = {}) {
     if (a.lastPasswordChangeAt === undefined) { a.lastPasswordChangeAt = null; upgraded = true; }
     if (!Number.isFinite(Number(a.securityVersion)) || Number(a.securityVersion) < 1) { a.securityVersion = 1; upgraded = true; }
     if (a.password !== undefined) { a.password = ""; upgraded = true; }
-    if (!a.permissions) { a.permissions = fullPermissions(); upgraded = true; }
-    // ترقية إضافية: أقسام صلاحيات جديدة أُضيفت لاحقًا (الرئيسية، ملفات المرضى،
-    // دفتر الخزينة، مرضى لهم مستحقات) لم تكن موجودة أصلًا فى صلاحيات الحسابات
-    // القديمة. لو تركناها بلا قيمة، ستُقرأ كـ false تلقائيًا فى can() فيختفى
-    // القسم فجأة من شاشة موظف كان يراه بشكل طبيعى قبل هذا التحديث. لذا: أي مفتاح
-    // صلاحية جديد غير موجود بعد فى حساب قائم يُمنح "عرض" تلقائيًا مرة واحدة فقط
-    // (بدون المساس بأي صلاحية أخرى ضبطها المدير يدويًا من قبل).
+    if (!a.permissions || typeof a.permissions !== "object" || Array.isArray(a.permissions)) { a.permissions = emptyPermissions(); upgraded = true; }
+    // الأقسام أو الأفعال التي لم تكن موجودة في نسخة قديمة تُضاف false.
+    // لا تُمنح صلاحية تلقائيًا؛ المدير يمنحها صراحة من صفحة الصلاحيات.
     PERMISSION_MODULES.forEach(m => {
-      if (!a.permissions[m.key]) { a.permissions[m.key] = {}; upgraded = true; }
+      if (!a.permissions[m.key] || typeof a.permissions[m.key] !== "object" || Array.isArray(a.permissions[m.key])) { a.permissions[m.key] = {}; upgraded = true; }
       m.actions.forEach(act => {
-        if (a.permissions[m.key][act.key] === undefined) { a.permissions[m.key][act.key] = true; upgraded = true; }
+        if (a.permissions[m.key][act.key] === undefined) { a.permissions[m.key][act.key] = false; upgraded = true; }
       });
     });
   });
@@ -2360,7 +2357,7 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.41";
+const APP_VERSION = "v1.3.42";
 const APP_RELEASE_NOTES = "تقليل قراءات Firestore • تحميل البيانات عند الحاجة • حماية الحصة المجانية مع كاش محلي";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
@@ -6672,7 +6669,7 @@ function renderPermissionsPanel(container, accounts) {
         </div>
         <div>
           <div class="section-title" style="font-size:14px;">صلاحيات: ${target ? `${esc(target.displayName || "بدون اسم")} <span class="hint">(${esc(target.username || "غير مسجل")})</span>` : "-"}</div>
-          ${target ? `
+          ${target ? (refreshing ? `<div class="sync-inline-note" style="margin-top:12px; padding:14px;">⟳ جارٍ تحميل الصلاحيات المؤكدة من Firestore؛ لن نعرض علامات الكاش القديمة.</div>` : `
           <form id="unifiedPermForm">
             ${PERMISSION_MODULES.map(m => `
               <div style="margin-bottom:12px; padding:10px 0; border-bottom:1px solid var(--line);">
@@ -6682,7 +6679,7 @@ function renderPermissionsPanel(container, accounts) {
                 </div>
               </div>`).join("")}
             ${isAdminTarget ? `<div class="hint">صلاحيات المدير كاملة ولا تحتاج إلى حفظ يدوي.</div>` : `<button type="submit" class="btn">حفظ الصلاحيات</button>`}
-          </form>` : `<div class="hint">أنشئ مستخدمًا أو انتظر تحميل الحسابات من Firebase.</div>`}
+          </form>`) : `<div class="hint">أنشئ مستخدمًا أو انتظر تحميل الحسابات من Firebase.</div>`}
         </div>
       </div>
     </div>`;

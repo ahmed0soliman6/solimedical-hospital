@@ -12,6 +12,8 @@ assert.match(index, /let ADMIN_ACCOUNTS_REFRESH_PROMISE = null;/);
 assert.match(index, /let ADMIN_ACCOUNTS_REFRESH_REQUESTED = false;/);
 assert.match(index, /return ADMIN_ACCOUNTS_REFRESH_PROMISE;/);
 assert.match(index, /while \(ADMIN_ACCOUNTS_REFRESH_REQUESTED\);/);
+assert.match(index, /a\.permissions\[m\.key\]\[act\.key\] === undefined\) \{ a\.permissions\[m\.key\]\[act\.key\] = false;/);
+assert.match(permissionsBlock, /target \? \(refreshing \?/);
 assert.match(permissionsBlock, /await refreshAccountsFromAdminApi\(false\);/);
 assert.match(permissionsBlock, /const updated = response && response\.account;/);
 assert.match(admin, /operations: \['view', 'add', 'edit', 'delete'\]/);
