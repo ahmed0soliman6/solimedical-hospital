@@ -2357,7 +2357,7 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.43";
+const APP_VERSION = "v1.3.44";
 const APP_RELEASE_NOTES = "تقليل قراءات Firestore • تحميل البيانات عند الحاجة • حماية الحصة المجانية مع كاش محلي";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
@@ -6363,9 +6363,12 @@ let ADMIN_ACCOUNTS_REFRESH_REQUESTED = false;
 let ADMIN_ACCOUNTS_REFRESH_ROUTE_REQUESTED = false;
 let ADMIN_ACCOUNTS_REFRESH_SKIP_NEXT_RENDER = false;
 let ADMIN_ACCOUNTS_REFRESH_LAST_ERROR = "";
+let ADMIN_ACCOUNTS_REFRESH_LAST_SUCCESS_AT = 0;
 const ADMIN_ACCOUNTS_REFRESH_TIMEOUT_MS = 12000;
-async function refreshAccountsFromAdminApi(shouldRoute = true) {
+const ADMIN_ACCOUNTS_REFRESH_TTL_MS = 30000;
+async function refreshAccountsFromAdminApi(shouldRoute = true, force = false) {
   if (!navigator.onLine || !isAdminUser() || !window.MitaliFirebase?.adminListAccounts) return ADMIN_ACCOUNTS_REFRESH_PROMISE || undefined;
+  if (!force && ADMIN_ACCOUNTS_REFRESH_LAST_SUCCESS_AT && Date.now() - ADMIN_ACCOUNTS_REFRESH_LAST_SUCCESS_AT < ADMIN_ACCOUNTS_REFRESH_TTL_MS) return Promise.resolve();
   if (ADMIN_ACCOUNTS_REFRESH_IN_PROGRESS) {
     // لا نهمل قراءة بدأت أثناء عملية أخرى؛ لكن لا نعيد route() من داخل
     // الدورة نفسها حتى لا يتحول التحديث إلى حلقة لا تنتهي.
@@ -6387,6 +6390,7 @@ async function refreshAccountsFromAdminApi(shouldRoute = true) {
         ]);
         if (!Array.isArray(accounts)) throw new Error("invalid-admin-accounts-response");
         DB.staffAccounts = accounts;
+        ADMIN_ACCOUNTS_REFRESH_LAST_SUCCESS_AT = Date.now();
         await cacheLocally("staffAccounts", accounts);
         await writeSyncBaseline("staffAccounts", accounts);
         ADMIN_ACCOUNTS_REFRESH_LAST_ERROR = "";
@@ -6414,7 +6418,7 @@ async function refreshAccountsFromAdminApi(shouldRoute = true) {
 function renderUsersPage() {
   const skipRefresh = ADMIN_ACCOUNTS_REFRESH_SKIP_NEXT_RENDER;
   ADMIN_ACCOUNTS_REFRESH_SKIP_NEXT_RENDER = false;
-  if (!skipRefresh) refreshAccountsFromAdminApi(true);
+  if (!skipRefresh) refreshAccountsFromAdminApi(true, false);
   const c = document.getElementById("content");
   const editing = state.editUserId ? DB.staffAccounts.find(a => a.id === state.editUserId) : null;
   const canAdd = can("users", "add");
@@ -6687,17 +6691,18 @@ function renderPermissionsPanel(container, accounts) {
         </div>
         <div>
           <div class="section-title" style="font-size:14px;">صلاحيات: ${target ? `${esc(target.displayName || "بدون اسم")} <span class="hint">(${esc(target.username || "غير مسجل")})</span>` : "-"}</div>
-          ${target ? (refreshing ? `<div class="sync-inline-note" style="margin-top:12px; padding:14px;">⟳ جارٍ تحميل الصلاحيات المؤكدة من Firestore؛ لن نعرض علامات الكاش القديمة.</div>` : `
-          <form id="unifiedPermForm">
+          ${target ? `
+          ${refreshing ? `<div class="sync-inline-note" style="margin-top:12px; padding:10px 14px;">⟳ يتم التحقق من أحدث نسخة؛ المربعات المعروضة مؤقتة وغير قابلة للحفظ الآن.</div>` : (ADMIN_ACCOUNTS_REFRESH_LAST_ERROR ? `<div class="sync-inline-note" style="margin-top:12px; padding:10px 14px;">⚠️ تعذر التحقق من الخادم؛ هذه آخر نسخة مؤكدة محليًا.</div>` : "")}
+          <form id="unifiedPermForm" ${refreshing ? "data-refreshing=\"true\"" : ""}>
             ${PERMISSION_MODULES.map(m => `
               <div style="margin-bottom:12px; padding:10px 0; border-bottom:1px solid var(--line);">
                 <div style="font-weight:800; font-size:13px; color:var(--navy); margin-bottom:8px;">${m.label}</div>
                 <div style="display:flex; flex-wrap:wrap; gap:12px;">
-                  ${m.actions.map(a => `<label style="display:flex; align-items:center; gap:6px; font-size:12.5px; cursor:pointer;"><input type="checkbox" name="${m.key}.${a.key}" ${isAdminTarget || (target.permissions && target.permissions[m.key] && target.permissions[m.key][a.key]) ? "checked" : ""} ${isAdminTarget ? "disabled" : ""}>${a.label}</label>`).join("")}
+                  ${m.actions.map(a => `<label style="display:flex; align-items:center; gap:6px; font-size:12.5px; cursor:pointer;"><input type="checkbox" name="${m.key}.${a.key}" ${isAdminTarget || (target.permissions && target.permissions[m.key] && target.permissions[m.key][a.key]) ? "checked" : ""} ${isAdminTarget || refreshing ? "disabled" : ""}>${a.label}</label>`).join("")}
                 </div>
               </div>`).join("")}
-            ${isAdminTarget ? `<div class="hint">صلاحيات المدير كاملة ولا تحتاج إلى حفظ يدوي.</div>` : `<button type="submit" class="btn">حفظ الصلاحيات</button>`}
-          </form>`) : `<div class="hint">أنشئ مستخدمًا أو انتظر تحميل الحسابات من Firebase.</div>`}
+            ${isAdminTarget ? `<div class="hint">صلاحيات المدير كاملة ولا تحتاج إلى حفظ يدوي.</div>` : `<button type="submit" class="btn" ${refreshing ? "disabled" : ""}>حفظ الصلاحيات</button>`}
+          </form>` : `<div class="hint">أنشئ مستخدمًا أو انتظر تحميل الحسابات من Firebase.</div>`}
         </div>
       </div>
     </div>`;
@@ -6705,7 +6710,7 @@ function renderPermissionsPanel(container, accounts) {
   const refreshButton = container.querySelector("#refreshUnifiedAccounts");
   if (refreshButton) refreshButton.addEventListener("click", async () => {
     refreshButton.disabled = true; refreshButton.textContent = "جارٍ التحديث...";
-    await refreshAccountsFromAdminApi(true);
+    await refreshAccountsFromAdminApi(true, true);
     if (!ADMIN_ACCOUNTS_REFRESH_IN_PROGRESS) renderUsersPage();
   });
   const form = container.querySelector("#unifiedPermForm");
@@ -6724,7 +6729,7 @@ function renderPermissionsPanel(container, accounts) {
       const updated = response && response.account; if (!updated) throw new Error("invalid-admin-api-response");
       const index = DB.staffAccounts.findIndex(x => x.id === selected.id); if (index >= 0) DB.staffAccounts[index] = Object.assign({}, DB.staffAccounts[index], updated);
       await cacheLocally("staffAccounts", DB.staffAccounts); await writeSyncBaseline("staffAccounts", DB.staffAccounts);
-      await refreshAccountsFromAdminApi(false);
+      await refreshAccountsFromAdminApi(false, true);
       logActivity("تعديل صلاحيات مستخدم وإلغاء اعتماد الأجهزة", "permissions", null, selected.displayName);
       showToast("تم حفظ الصلاحيات على Firestore وإلغاء الاعتمادات القديمة");
       renderUsersPage();

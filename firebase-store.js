@@ -167,11 +167,26 @@
   const API_BASE = String(window.MITALI_API_BASE || "").replace(/\/$/, "");
   function apiUrl(path) { return API_BASE + path; }
 
+  async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = setTimeout(() => { if (controller) controller.abort(); }, Math.max(3000, Number(timeoutMs) || 12000));
+    try {
+      return await fetch(url, controller ? Object.assign({}, options, { signal: controller.signal }) : options);
+    } catch (error) {
+      if (error && error.name === 'AbortError') throw Object.assign(new Error('admin-api-timeout'), { code: 'admin-api-timeout' });
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async function adminAccountRequest(payload) {
     init();
     if (!auth || !auth.currentUser) throw new Error('auth/not-authenticated');
-    const token = await auth.currentUser.getIdToken(true);
-    const response = await fetch(apiUrl('/api/admin/account'), {
+    // تجديد ID Token القسري في كل طلب كان يضيف انتظار شبكة غير ضروري.
+    // Firebase يعيد الرمز الصالح من الكاش، ونطلب التجديد الصريح فقط عند الحاجة.
+    const token = await auth.currentUser.getIdToken();
+    const response = await fetchWithTimeout(apiUrl('/api/admin/account'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify(payload || {})
@@ -217,8 +232,8 @@
   async function adminListAccounts() {
     init();
     if (!auth || !auth.currentUser) throw new Error('auth/not-authenticated');
-    const token = await auth.currentUser.getIdToken(true);
-    const response = await fetch(apiUrl('/api/admin/account'), { headers: { 'Authorization': `Bearer ${token}` } });
+    const token = await auth.currentUser.getIdToken();
+    const response = await fetchWithTimeout(apiUrl('/api/admin/account'), { headers: { 'Authorization': `Bearer ${token}` } });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw Object.assign(new Error(body.error || `admin-api-${response.status}`), { code: body.error });
     return body.accounts || [];
