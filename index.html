@@ -2357,7 +2357,7 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.42";
+const APP_VERSION = "v1.3.43";
 const APP_RELEASE_NOTES = "تقليل قراءات Firestore • تحميل البيانات عند الحاجة • حماية الحصة المجانية مع كاش محلي";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
@@ -6354,16 +6354,21 @@ function adminAccountFailureMessage(error, fallback) {
   if (code === "firestore-resource-exhausted") return "Firestore رفض الكتابة مؤقتًا بسبب الحصة أو كثافة الطلبات؛ لم تتغير البيانات، أعد المحاولة بعد قليل أو افحص Usage في Firebase Console";
   if (code === "firebase-deadline-exceeded") return "انتهت مهلة الاتصال بـ Firebase؛ لم تتغير البيانات، أعد المحاولة بعد قليل";
   if (code === "firebase-unavailable") return "خدمة Firebase غير متاحة مؤقتًا؛ لم تتغير البيانات وسيجب إعادة المحاولة عند عودة الخدمة";
+  if (code === "admin-accounts-refresh-timeout") return "لم ترد خدمة الحسابات خلال 12 ثانية؛ عُرضت آخر صلاحيات مؤكدة محليًا ويمكن إعادة المحاولة";
+  if (code === "invalid-admin-accounts-response") return "أعاد خادم الحسابات استجابة غير صالحة؛ عُرضت آخر صلاحيات مؤكدة محليًا";
   return fallback;
 }
 let ADMIN_ACCOUNTS_REFRESH_PROMISE = null;
 let ADMIN_ACCOUNTS_REFRESH_REQUESTED = false;
 let ADMIN_ACCOUNTS_REFRESH_ROUTE_REQUESTED = false;
+let ADMIN_ACCOUNTS_REFRESH_SKIP_NEXT_RENDER = false;
+let ADMIN_ACCOUNTS_REFRESH_LAST_ERROR = "";
+const ADMIN_ACCOUNTS_REFRESH_TIMEOUT_MS = 12000;
 async function refreshAccountsFromAdminApi(shouldRoute = true) {
   if (!navigator.onLine || !isAdminUser() || !window.MitaliFirebase?.adminListAccounts) return ADMIN_ACCOUNTS_REFRESH_PROMISE || undefined;
   if (ADMIN_ACCOUNTS_REFRESH_IN_PROGRESS) {
-    // لا نهمل قراءة بدأت أثناء عملية أخرى؛ قد تكون الأولى بدأت قبل حفظ
-    // صلاحية جديدة، فتصل snapshot قديمة وتطمس التعديل الصحيح.
+    // لا نهمل قراءة بدأت أثناء عملية أخرى؛ لكن لا نعيد route() من داخل
+    // الدورة نفسها حتى لا يتحول التحديث إلى حلقة لا تنتهي.
     ADMIN_ACCOUNTS_REFRESH_REQUESTED = true;
     ADMIN_ACCOUNTS_REFRESH_ROUTE_REQUESTED = ADMIN_ACCOUNTS_REFRESH_ROUTE_REQUESTED || !!shouldRoute;
     return ADMIN_ACCOUNTS_REFRESH_PROMISE;
@@ -6371,32 +6376,45 @@ async function refreshAccountsFromAdminApi(shouldRoute = true) {
   ADMIN_ACCOUNTS_REFRESH_IN_PROGRESS = true;
   ADMIN_ACCOUNTS_REFRESH_REQUESTED = false;
   ADMIN_ACCOUNTS_REFRESH_ROUTE_REQUESTED = !!shouldRoute;
+  ADMIN_ACCOUNTS_REFRESH_LAST_ERROR = "";
   const run = (async () => {
     do {
       ADMIN_ACCOUNTS_REFRESH_REQUESTED = false;
       try {
-        const accounts = await window.MitaliFirebase.adminListAccounts();
-        if (Array.isArray(accounts)) {
-          DB.staffAccounts = accounts;
-          await cacheLocally("staffAccounts", accounts);
-          await writeSyncBaseline("staffAccounts", accounts);
-        }
+        const accounts = await Promise.race([
+          window.MitaliFirebase.adminListAccounts(),
+          new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error("admin-accounts-refresh-timeout"), { code: "admin-accounts-refresh-timeout" })), ADMIN_ACCOUNTS_REFRESH_TIMEOUT_MS))
+        ]);
+        if (!Array.isArray(accounts)) throw new Error("invalid-admin-accounts-response");
+        DB.staffAccounts = accounts;
+        await cacheLocally("staffAccounts", accounts);
+        await writeSyncBaseline("staffAccounts", accounts);
+        ADMIN_ACCOUNTS_REFRESH_LAST_ERROR = "";
       } catch (error) {
-        console.warn("Fresh account list unavailable:", error && (error.code || error.message));
+        ADMIN_ACCOUNTS_REFRESH_LAST_ERROR = String(error && (error.code || error.message) || "account-refresh-failed").slice(0, 120);
+        console.warn("Fresh account list unavailable:", ADMIN_ACCOUNTS_REFRESH_LAST_ERROR);
       }
     } while (ADMIN_ACCOUNTS_REFRESH_REQUESTED);
-    if (ADMIN_ACCOUNTS_REFRESH_ROUTE_REQUESTED && (state.page === "users" || state.page === "permissions")) route();
   })();
   ADMIN_ACCOUNTS_REFRESH_PROMISE = run.finally(() => {
+    const rerender = ADMIN_ACCOUNTS_REFRESH_ROUTE_REQUESTED && (state.page === "users" || state.page === "permissions");
     ADMIN_ACCOUNTS_REFRESH_IN_PROGRESS = false;
     ADMIN_ACCOUNTS_REFRESH_PROMISE = null;
     ADMIN_ACCOUNTS_REFRESH_REQUESTED = false;
     ADMIN_ACCOUNTS_REFRESH_ROUTE_REQUESTED = false;
+    if (rerender) {
+      // renderUsersPage() يستدعي refresh تلقائيًا؛ تخطِّ هذا الاستدعاء الواحد
+      // لأننا انتهينا للتو من القراءة، وإلا تبدأ حلقة refresh → route → refresh.
+      ADMIN_ACCOUNTS_REFRESH_SKIP_NEXT_RENDER = true;
+      try { route(); } catch (error) { console.warn("Account refresh rerender failed:", error); }
+    }
   });
   return ADMIN_ACCOUNTS_REFRESH_PROMISE;
 }
 function renderUsersPage() {
-  refreshAccountsFromAdminApi(true);
+  const skipRefresh = ADMIN_ACCOUNTS_REFRESH_SKIP_NEXT_RENDER;
+  ADMIN_ACCOUNTS_REFRESH_SKIP_NEXT_RENDER = false;
+  if (!skipRefresh) refreshAccountsFromAdminApi(true);
   const c = document.getElementById("content");
   const editing = state.editUserId ? DB.staffAccounts.find(a => a.id === state.editUserId) : null;
   const canAdd = can("users", "add");
@@ -6655,7 +6673,7 @@ function renderPermissionsPanel(container, accounts) {
         </div>
         <button type="button" class="btn sm ghost" id="refreshUnifiedAccounts">↻ تحديث قائمة المستخدمين</button>
       </div>
-      ${refreshing ? `<div class="sync-inline-note" style="margin-top:10px;">⟳ جارٍ التحقق من أحدث الحسابات من Firebase...</div>` : ""}
+      ${refreshing ? `<div class="sync-inline-note" style="margin-top:10px;">⟳ جارٍ التحقق من أحدث الحسابات من Firebase...</div>` : (ADMIN_ACCOUNTS_REFRESH_LAST_ERROR ? `<div class="sync-inline-note" style="margin-top:10px;">⚠️ تعذر التحقق الآن؛ نعرض آخر نسخة مؤكدة محليًا. اضغط «تحديث قائمة المستخدمين» للمحاولة مرة أخرى.</div>` : "")}
       <div class="two-col" style="margin-top:14px; align-items:start;">
         <div>
           <div class="section-title" style="font-size:14px;">الحسابات <span class="hint">${list.length}</span></div>
