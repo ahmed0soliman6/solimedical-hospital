@@ -1,5 +1,13 @@
-const CACHE_NAME = 'hospital-v1.3.44-firestore-only';
+const CACHE_NAME = 'hospital-v1.3.45-firestore-only';
 const urlsToCache = ['./', './index.html', './manifest.json', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './favicon-32.png'];
+
+function isApiRequest(request) {
+  try {
+    return new URL(request.url).pathname.startsWith('/api/');
+  } catch (_) {
+    return false;
+  }
+}
 
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -25,7 +33,7 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET') return;
+  if (event.request.method !== 'GET' || isApiRequest(event.request)) return;
   event.respondWith(
     caches.match(event.request).then(response => {
       if (response) return response;

@@ -188,7 +188,8 @@
     const token = await auth.currentUser.getIdToken();
     const response = await fetchWithTimeout(apiUrl('/api/admin/account'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify(payload || {})
     });
     let body = null;
@@ -233,7 +234,7 @@
     init();
     if (!auth || !auth.currentUser) throw new Error('auth/not-authenticated');
     const token = await auth.currentUser.getIdToken();
-    const response = await fetchWithTimeout(apiUrl('/api/admin/account'), { headers: { 'Authorization': `Bearer ${token}` } });
+    const response = await fetchWithTimeout(apiUrl('/api/admin/account'), { cache: 'no-store', headers: { 'Cache-Control': 'no-store', 'Authorization': `Bearer ${token}` } });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw Object.assign(new Error(body.error || `admin-api-${response.status}`), { code: body.error });
     return body.accounts || [];

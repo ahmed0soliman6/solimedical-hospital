@@ -19,9 +19,10 @@ assert.match(index, /if \(!skipRefresh\) refreshAccountsFromAdminApi\(true, fals
 assert.match(index, /a\.permissions\[m\.key\]\[act\.key\] === undefined\) \{ a\.permissions\[m\.key\]\[act\.key\] = false;/);
 assert.match(permissionsBlock, /refreshing \? `<div class="sync-inline-note/);
 assert.match(permissionsBlock, /data-refreshing=\\"true\\"/);
-assert.match(permissionsBlock, /await refreshAccountsFromAdminApi\(false, true\);/);
+assert.doesNotMatch(permissionsBlock, /await refreshAccountsFromAdminApi\(false, true\);/);
+assert.match(permissionsBlock, /ADMIN_ACCOUNTS_REFRESH_SKIP_NEXT_RENDER = true;/);
 assert.match(permissionsBlock, /const updated = response && response\.account;/);
 assert.match(admin, /operations: \['view', 'add', 'edit', 'delete'\]/);
 assert.match(admin, /labs: \['view', 'add', 'edit', 'delete'\]/);
 
-console.log('PASS permissions-refresh-race-test: account refresh requests are serialized and operations/labs permission fields remain in the server allow-list.');
+console.log('PASS permissions-refresh-race-test: account refresh requests are serialized, confirmed permission results remain local-first, and operations/labs permission fields remain in the server allow-list.');

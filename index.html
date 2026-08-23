@@ -2357,7 +2357,7 @@ console.log("Computation layer ready.");
 // ======================================================================
 // تكامل Firestore (قاعدة البيانات الرئيسية الوحيدة)
 // ======================================================================
-const APP_VERSION = "v1.3.44";
+const APP_VERSION = "v1.3.45";
 const APP_RELEASE_NOTES = "تقليل قراءات Firestore • تحميل البيانات عند الحاجة • حماية الحصة المجانية مع كاش محلي";
 const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","auditLog","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
@@ -6729,7 +6729,10 @@ function renderPermissionsPanel(container, accounts) {
       const updated = response && response.account; if (!updated) throw new Error("invalid-admin-api-response");
       const index = DB.staffAccounts.findIndex(x => x.id === selected.id); if (index >= 0) DB.staffAccounts[index] = Object.assign({}, DB.staffAccounts[index], updated);
       await cacheLocally("staffAccounts", DB.staffAccounts); await writeSyncBaseline("staffAccounts", DB.staffAccounts);
-      await refreshAccountsFromAdminApi(false, true);
+      // استجابة POST المؤكدة هي النسخة الأحدث. لا نطلق GET فوريًا قد
+      // يعيد لقطة أقدم من طبقة وسيطة؛ اترك العرض المحلي أولًا، وسيجلب
+      // التحديث التالي النسخة السحابية دون استبدالها ببيانات قديمة.
+      ADMIN_ACCOUNTS_REFRESH_SKIP_NEXT_RENDER = true;
       logActivity("تعديل صلاحيات مستخدم وإلغاء اعتماد الأجهزة", "permissions", null, selected.displayName);
       showToast("تم حفظ الصلاحيات على Firestore وإلغاء الاعتمادات القديمة");
       renderUsersPage();
