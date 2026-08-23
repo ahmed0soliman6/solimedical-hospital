@@ -22,7 +22,11 @@ function setCors(req, res) {
   }
 }
 function json(res, status, body) {
-  res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.status(status)
+    .setHeader('Content-Type', 'application/json; charset=utf-8')
+    .setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+    .setHeader('Pragma', 'no-cache')
+    .setHeader('Expires', '0');
   res.end(JSON.stringify(body));
 }
 
