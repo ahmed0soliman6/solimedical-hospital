@@ -1,3 +1,4 @@
+const adminLib = require('../_lib/firebase-admin');
 const {
   getAdmin,
   authEmailForUsername,
@@ -10,7 +11,10 @@ const {
   sanitizeProfile,
   hashRecoveryCode,
   recoveryCodeMatches,
-} = require('../_lib/firebase-admin');
+} = adminLib;
+// The fallback keeps isolated legacy unit tests independent of the new audit helper.
+// Production always uses the implementation exported by firebase-admin.js.
+const recordAdminAudit = adminLib.recordAdminAudit || (async () => null);
 
 function setCors(req, res) {
   const origin = String((req.headers && req.headers.origin) || '');
@@ -279,12 +283,39 @@ module.exports = async function handler(req, res) {
     }
     const { api, uid: managerUid } = await requireManager(req);
     if (req.method === 'GET') return json(res, 200, { accounts: (await listProfiles(api)).map(publicProfile) });
-    if (input.action === 'configureManagerRecovery') return json(res, 200, { ok: true, recovery: await configureManagerRecovery(api, managerUid, input) });
+    if (input.action === 'configureManagerRecovery') {
+      const recovery = await configureManagerRecovery(api, managerUid, input);
+      await recordAdminAudit({
+        actorUid: managerUid,
+        action: 'configure-manager-recovery',
+        sourceCollection: '_security',
+        sourcePath: '_security/admin_manager',
+        metadata: { result: 'success' },
+      });
+      return json(res, 200, { ok: true, recovery });
+    }
     let profile;
     if (input.action === 'create') profile = await createAccount(api, input);
     else if (input.action === 'update' || input.action === 'resetPassword' || input.action === 'toggleStatus' || input.action === 'permissions') profile = await updateAccount(api, input);
-    else if (input.action === 'delete') return json(res, 200, { ok: true, deleted: await deleteAccount(api, input) });
-    else return json(res, 400, { error: 'unknown-action' });
+    else if (input.action === 'delete') {
+      const deleted = await deleteAccount(api, input);
+      await recordAdminAudit({
+        actorUid: managerUid,
+        action: 'delete-account',
+        sourceCollection: 'users',
+        sourcePath: `users/${String(input.uid || '')}`,
+        metadata: { targetUid: String(input.uid || ''), alreadyRemoved: Boolean(deleted.alreadyRemoved) },
+      });
+      return json(res, 200, { ok: true, deleted });
+    } else return json(res, 400, { error: 'unknown-action' });
+    await recordAdminAudit({
+      actorUid: managerUid,
+      action: input.action === 'create' ? 'create-account' : 'update-account',
+      sourceCollection: 'users',
+      sourcePath: profile && profile.id ? `users/${profile.id}` : null,
+      changed: input.action === 'create' ? ['account'] : ['displayName', 'username', 'role', 'status', 'permissions', 'securityVersion'],
+      metadata: { targetUid: profile && profile.id ? profile.id : null, mode: input.action || 'update' },
+    });
     return json(res, 200, { ok: true, account: publicProfile(profile) });
   } catch (error) {
     const info = normalizedFirebaseError(error);

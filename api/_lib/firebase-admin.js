@@ -92,6 +92,56 @@ function recoveryCodeMatches(code, salt, expectedHash) {
   return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
 }
 
+function auditDocumentId(eventId) {
+  return crypto.createHash('sha256').update(String(eventId), 'utf8').digest('hex').slice(0, 40);
+}
+
+async function recordAdminAudit({ actorUid = null, action, sourceCollection, sourcePath = null, changed = [], metadata = {}, eventId = crypto.randomUUID() }) {
+  const api = getAdmin();
+  const cleanMetadata = {};
+  for (const [key, value] of Object.entries(metadata || {})) {
+    if (['password', 'passwordHash', 'recoveryCode', 'codeHash', 'token', 'accessToken', 'refreshToken', 'privateKey', 'secret', 'apiKey'].includes(key)) continue;
+    if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) {
+      cleanMetadata[key] = typeof value === 'string' ? value.slice(0, 240) : value;
+    }
+  }
+  const now = new Date();
+  const isoNow = now.toISOString();
+  const operation = String(action || 'admin-action').slice(0, 80);
+  const collection = String(sourceCollection || '').slice(0, 100);
+  const actorId = actorUid == null ? null : String(actorUid).slice(0, 160);
+  const entry = {
+    schemaVersion: 1,
+    eventId: String(eventId).slice(0, 180),
+    operation,
+    sourceCollection: collection,
+    sourcePath: sourcePath == null ? null : String(sourcePath).slice(0, 240),
+    actorId,
+    actorType: 'trusted-server',
+    changedFields: Array.from(new Set((Array.isArray(changed) ? changed : []).map(value => String(value).slice(0, 120)))).slice(0, 100),
+    date: isoNow.slice(0, 10),
+    time: isoNow.slice(11, 19),
+    action: operation,
+    page: collection,
+    userId: actorId,
+    userName: actorId || 'trusted-server',
+    oldValue: '',
+    newValue: '',
+    device: 'server-admin',
+    metadata: cleanMetadata,
+    timestamp: isoNow,
+    createdAt: api.firestore.FieldValue.serverTimestamp(),
+  };
+  const ref = api.firestore().collection('audit_log').doc(auditDocumentId(`server:${eventId}`));
+  try {
+    await ref.create(entry);
+  } catch (error) {
+    if (error && (error.code === 6 || error.code === 'already-exists')) return ref.id;
+    throw error;
+  }
+  return ref.id;
+}
+
 function fullPermissions() {
   const source = {};
   for (const key of Object.keys(cleanPermissions({}))) source[key] = {};
@@ -176,4 +226,5 @@ module.exports = {
   listProfiles,
   hashRecoveryCode,
   recoveryCodeMatches,
+  recordAdminAudit,
 };

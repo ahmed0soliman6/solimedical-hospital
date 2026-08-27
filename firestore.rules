@@ -40,6 +40,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Audit entries are written only by trusted server code / Cloud Functions.
+    // Managers can view them, but no browser client can create, edit, or delete them.
+    match /audit_log/{document} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
     // Basic authenticated access for the first migration stage. Before enabling
     // production writes, tighten these rules per module and role.
     match /{collection}/{document} {
@@ -48,7 +55,8 @@ service cloud.firestore {
         && collection != 'username_index'
         && collection != 'settings'
         && collection != 'staff_accounts'
-        && collection != 'system_control';
+        && collection != 'system_control'
+        && collection != 'audit_log';
     }
 
     match /settings/{document=**} {

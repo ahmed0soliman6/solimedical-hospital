@@ -1825,25 +1825,10 @@ function safeStringify(v) {
   } catch (e) { return String(v).slice(0, 400); }
 }
 function logActivity(action, page, oldValue, newValue) {
-  try {
-    DB.auditLog = DB.auditLog || [];
-    const now = new Date();
-    DB.auditLog.push({
-      id: uid(),
-      userId: currentUser?.id || null,
-      userName: currentUser?.displayName || "غير معروف",
-      action,
-      page: page || state.page || "-",
-      date: localISO(now),
-      time: now.toTimeString().slice(0, 8),
-      device: (navigator.userAgent || "-").slice(0, 140),
-      oldValue: safeStringify(oldValue),
-      newValue: safeStringify(newValue),
-      timestamp: now.toISOString(),
-    });
-    if (DB.auditLog.length > MAX_AUDIT_ENTRIES) DB.auditLog.splice(0, DB.auditLog.length - MAX_AUDIT_ENTRIES);
-    persistAfterPaint("auditLog", "سجل النشاط");
-  } catch (e) { console.error("Audit log error:", e); }
+  // Audit records are created by the trusted server trigger/API only.
+  // Keep this compatibility shim so existing business actions do not attempt
+  // a client write to the immutable audit_log collection.
+  void action; void page; void oldValue; void newValue;
 }
 
 
@@ -2359,7 +2344,7 @@ console.log("Computation layer ready.");
 // ======================================================================
 const APP_VERSION = "v1.3.46";
 const APP_RELEASE_NOTES = "تقليل قراءات Firestore • تحميل البيانات عند الحاجة • حماية الحصة المجانية مع كاش محلي";
-const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","auditLog","labExpenses","categories","specialties","settings"];
+const FIRESTORE_MIGRATION_KEYS = ["doctors","employees","visitsClinic","visitsDental","visitsOperations","visitsLabs","visitsRadiology","income","expense","payroll","labExpenses","categories","specialties","settings"];
 async function migrateCurrentDataToFirestore() {
   if (!window.MitaliFirebase) throw new Error("Firebase adapter is not loaded");
   const payloads = {
@@ -6785,7 +6770,6 @@ function renderAuditLogPage() {
         <input type="text" id="auditTermFilter" value="${esc(termFilter)}" placeholder="مثال: حذف، الأطباء...">
       </div>
       <div class="field"><button class="btn ghost" id="auditClearFilters">مسح الفلاتر</button></div>
-      <div class="field"><button class="btn danger" id="auditClearLog">حذف كل السجل</button></div>
     </div>
 
     <div class="card">
@@ -6829,14 +6813,6 @@ function renderAuditLogPage() {
     if (newTf) { newTf.focus(); newTf.setSelectionRange(caret, caret); }
   });
   document.getElementById("auditClearFilters").addEventListener("click", () => { state.auditFilters = {}; route(); });
-  document.getElementById("auditClearLog").addEventListener("click", () => {
-    if (!isAdminUser()) { showToast("⚠️ حذف السجل متاح للمدير فقط"); return; }
-    if (!confirm("سيتم حذف كل سجل النشاط نهائيًا. متأكد؟")) return;
-    DB.auditLog = [];
-    persist("auditLog");
-    showToast("تم حذف سجل النشاط");
-    route();
-  });
 }
 
 // ======================================================================
@@ -7310,7 +7286,8 @@ const PAGE_REALTIME_KEYS = {
   outstandingBalances: ["doctors", ...REVENUE_VISIT_DB_KEYS],
   outstandingBalancesClinic: ["visitsClinic"], outstandingBalancesDental: ["visitsDental"],
   outstandingBalancesOperations: ["visitsOperations"], outstandingBalancesLabs: ["visitsLabs"],
-  outstandingBalancesRadiology: ["visitsRadiology"]
+  outstandingBalancesRadiology: ["visitsRadiology"],
+  auditlog: ["auditLog"]
 };
 function cleanupRealtimeChannels(reason) {
   firestoreRealtimeUnsubs.forEach((unsubscribe) => {

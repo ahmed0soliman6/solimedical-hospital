@@ -1,5 +1,8 @@
 const crypto = require('crypto');
-const { getAdmin, requireManager } = require('../_lib/firebase-admin');
+const adminLib = require('../_lib/firebase-admin');
+const { getAdmin, requireManager } = adminLib;
+// Production exports recordAdminAudit; the fallback only supports isolated unit-test stubs.
+const recordAdminAudit = adminLib.recordAdminAudit || (async () => null);
 
 const CONFIRMATION_PHRASE = 'حذف كل بيانات المستشفى';
 // الحذف السحابي التجاري يقتصر على ملفات المرضى/الزيارات والوارد والمنصرف.
@@ -90,12 +93,23 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { error: 'method-not-allowed' });
   const input = bodyOf(req);
   try {
-    const { api } = await requireManager(req);
+    const { api, uid: managerUid } = await requireManager(req);
     if (input.action !== 'wipeBusinessData') return json(res, 400, { error: 'unknown-action' });
     if (String(input.confirmationText || '') !== CONFIRMATION_PHRASE) {
       return json(res, 400, { error: 'confirmation-required', requiredPhrase: CONFIRMATION_PHRASE });
     }
     const result = await wipeBusinessData(api);
+    await recordAdminAudit({
+      actorUid: managerUid,
+      action: 'wipe-business-data',
+      sourceCollection: CONTROL_COLLECTION,
+      sourcePath: `${CONTROL_COLLECTION}/${CONTROL_DOCUMENT}`,
+      metadata: {
+        totalDeleted: result.totalDeleted,
+        wipeScope: result.wipeScope,
+        deletedCollections: WIPE_COLLECTIONS.join(','),
+      },
+    });
     return json(res, 200, { ok: true, ...result, preserveAccounts: true, preserveSettings: true, preserveDoctors: true, preserveEmployees: true });
   } catch (error) {
     const info = normalizedError(error);
