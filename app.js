@@ -5,7 +5,6 @@ const LOCAL_AUTH = Object.freeze({
   displayName: "مدير النظام",
   role: "مدير",
   salt: "solimedical-local-admin-v1",
-  // PBKDF2-SHA-256, 120000 iterations. The plain password is not stored here.
   verifier: "085521de8bd3847d6b9e17c51cd0381caa818b570cf5ff477d4fdd62e22e6c11",
 });
 
@@ -15,265 +14,113 @@ const MAX_FAILURES = 5;
 const LOCK_MS = 60 * 1000;
 const app = document.getElementById("app");
 
-const icons = {
-  dashboard: "⌂",
-  patients: "♙",
-  calendar: "▦",
-  doctors: "⚕",
-  reports: "▤",
-  settings: "⚙",
-};
+const icons = { dashboard: "⌂", patients: "♙", calendar: "▦", doctors: "⚕", reports: "▤", settings: "⚙" };
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+const DEPARTMENTS = Object.freeze({
+  outpatient: {
+    name: "العيادات الخارجية", short: "العيادات", icon: "♙", color: "teal", description: "باطنة، أطفال، جلدية وتخصصات عامة",
+    rooms: 5, appointments: 32, hours: "09:00 – 21:00", doctors: [
+      { name: "د. أحمد سامح", specialty: "استشاري باطنة", room: "عيادة 101", days: "الأحد · الثلاثاء · الخميس", hours: "09:00 – 15:00", status: "متاح", patients: 18 },
+      { name: "د. مريم عادل", specialty: "أخصائية أطفال", room: "عيادة 102", days: "السبت · الإثنين · الأربعاء", hours: "10:00 – 17:00", status: "متاح", patients: 14 },
+      { name: "د. خالد ياسر", specialty: "أخصائي جلدية", room: "عيادة 103", days: "الأحد · الإثنين · الخميس", hours: "15:00 – 21:00", status: "في إجازة", patients: 11 },
+      { name: "د. نورهان علي", specialty: "طب أسرة", room: "عيادة 104", days: "السبت · الثلاثاء", hours: "09:00 – 14:00", status: "متاح", patients: 9 },
+    ], schedule: [
+      ["السبت", "09:00 – 14:00", "د. مريم عادل", "أطفال", "عيادة 102"], ["الأحد", "09:00 – 15:00", "د. أحمد سامح", "باطنة", "عيادة 101"], ["الإثنين", "10:00 – 17:00", "د. مريم عادل", "أطفال", "عيادة 102"], ["الثلاثاء", "09:00 – 15:00", "د. أحمد سامح", "باطنة", "عيادة 101"], ["الأربعاء", "10:00 – 17:00", "د. مريم عادل", "أطفال", "عيادة 102"], ["الخميس", "15:00 – 21:00", "د. خالد ياسر", "جلدية", "عيادة 103"],
+    ], appointments: [["09:00", "أحمد محمد", "باطنة", "د. أحمد سامح", "مؤكد"], ["10:30", "سارة علي", "أطفال", "د. مريم عادل", "مؤكد"], ["12:00", "عمر حسن", "باطنة", "د. أحمد سامح", "جديد"], ["15:30", "ليلى إبراهيم", "جلدية", "د. خالد ياسر", "مؤكد"]],
+  },
+  dentistry: {
+    name: "قسم الأسنان", short: "الأسنان", icon: "✚", color: "blue", description: "كشف، علاج، حشو وتركيبات",
+    rooms: 3, appointments: 18, hours: "10:00 – 20:00", doctors: [
+      { name: "د. سارة محمود", specialty: "استشارية أسنان", room: "غرفة أسنان 1", days: "الأحد · الثلاثاء · الخميس", hours: "10:00 – 16:00", status: "متاح", patients: 12 },
+      { name: "د. ياسر فؤاد", specialty: "تركيبات وتجميل", room: "غرفة أسنان 2", days: "السبت · الإثنين · الأربعاء", hours: "14:00 – 20:00", status: "متاح", patients: 10 },
+      { name: "د. رنا هشام", specialty: "أسنان أطفال", room: "غرفة أسنان 3", days: "الإثنين · الأربعاء", hours: "10:00 – 15:00", status: "متاح", patients: 8 },
+    ], schedule: [
+      ["السبت", "14:00 – 20:00", "د. ياسر فؤاد", "تركيبات", "غرفة 2"], ["الأحد", "10:00 – 16:00", "د. سارة محمود", "علاج وحشو", "غرفة 1"], ["الإثنين", "10:00 – 15:00", "د. رنا هشام", "أسنان أطفال", "غرفة 3"], ["الثلاثاء", "10:00 – 16:00", "د. سارة محمود", "علاج وحشو", "غرفة 1"], ["الأربعاء", "14:00 – 20:00", "د. ياسر فؤاد", "تركيبات", "غرفة 2"], ["الخميس", "10:00 – 16:00", "د. سارة محمود", "كشف", "غرفة 1"],
+    ], appointments: [["10:00", "إياد حسن", "كشف", "د. سارة محمود", "مؤكد"], ["11:30", "ملك أحمد", "أسنان أطفال", "د. رنا هشام", "جديد"], ["15:00", "يوسف علي", "تركيبات", "د. ياسر فؤاد", "مؤكد"]],
+  },
+  operations: {
+    name: "قسم العمليات", short: "العمليات", icon: "◉", color: "purple", description: "جدولة العمليات والإجراءات الطبية",
+    rooms: 2, appointments: 6, hours: "08:00 – 18:00", doctors: [
+      { name: "د. شريف ناصر", specialty: "جراحة عامة", room: "غرفة عمليات 1", days: "الأحد · الإثنين · الأربعاء", hours: "08:00 – 14:00", status: "متاح", patients: 4 },
+      { name: "د. هالة كمال", specialty: "جراحة نساء وتوليد", room: "غرفة عمليات 2", days: "السبت · الثلاثاء · الخميس", hours: "09:00 – 15:00", status: "متاح", patients: 3 },
+      { name: "د. عمرو صبري", specialty: "تخدير ورعاية", room: "التخدير", days: "حسب جدول العمليات", hours: "08:00 – 18:00", status: "مناوب", patients: 6 },
+    ], schedule: [
+      ["السبت", "09:00 – 15:00", "د. هالة كمال", "إجراء نساء", "غرفة 2"], ["الأحد", "08:00 – 14:00", "د. شريف ناصر", "جراحة عامة", "غرفة 1"], ["الإثنين", "08:00 – 14:00", "د. شريف ناصر", "جراحة عامة", "غرفة 1"], ["الثلاثاء", "09:00 – 15:00", "د. هالة كمال", "إجراء نساء", "غرفة 2"], ["الأربعاء", "08:00 – 14:00", "د. شريف ناصر", "جراحة عامة", "غرفة 1"], ["الخميس", "09:00 – 15:00", "د. هالة كمال", "إجراء نساء", "غرفة 2"],
+    ], appointments: [["08:00", "محمود عبد الله", "فتق", "د. شريف ناصر", "مجدول"], ["10:00", "نور علي", "إجراء نساء", "د. هالة كمال", "مؤكد"], ["13:00", "حسن إبراهيم", "منظار", "د. شريف ناصر", "جديد"]],
+  },
+  labs: {
+    name: "قسم التحاليل", short: "التحاليل", icon: "⌁", color: "orange", description: "عينات، نتائج وتقارير المختبر",
+    rooms: 4, appointments: 24, hours: "08:00 – 22:00", doctors: [
+      { name: "د. منى إبراهيم", specialty: "استشارية تحاليل طبية", room: "مختبر 1", days: "السبت – الخميس", hours: "08:00 – 16:00", status: "متاح", patients: 26 },
+      { name: "د. حسام رأفت", specialty: "كيمياء إكلينيكية", room: "مختبر 2", days: "السبت – الخميس", hours: "14:00 – 22:00", status: "متاح", patients: 19 },
+      { name: "أ.د. ليلى عوض", specialty: "باثولوجي", room: "المعمل المركزي", days: "الأحد · الثلاثاء", hours: "09:00 – 15:00", status: "متاح", patients: 12 },
+    ], schedule: [
+      ["السبت", "08:00 – 16:00", "د. منى إبراهيم", "استقبال عينات", "مختبر 1"], ["الأحد", "09:00 – 15:00", "أ.د. ليلى عوض", "باثولوجي", "المركزي"], ["الإثنين", "14:00 – 22:00", "د. حسام رأفت", "كيمياء", "مختبر 2"], ["الثلاثاء", "09:00 – 15:00", "أ.د. ليلى عوض", "باثولوجي", "المركزي"], ["الأربعاء", "08:00 – 16:00", "د. منى إبراهيم", "استقبال عينات", "مختبر 1"], ["الخميس", "14:00 – 22:00", "د. حسام رأفت", "كيمياء", "مختبر 2"],
+    ], appointments: [["08:30", "عينة — أحمد محمد", "صورة دم كاملة", "د. منى إبراهيم", "قيد السحب"], ["11:00", "عينة — سارة علي", "وظائف كبد", "د. منى إبراهيم", "جاهز"], ["17:30", "عينة — عمر حسن", "كيمياء", "د. حسام رأفت", "مؤكد"]],
+  },
+  radiology: {
+    name: "قسم الأشعة", short: "الأشعة", icon: "◌", color: "cyan", description: "أشعة عادية وسونار وفحوصات",
+    rooms: 3, appointments: 12, hours: "09:00 – 21:00", doctors: [
+      { name: "د. كريم طارق", specialty: "استشاري أشعة تشخيصية", room: "جهاز الأشعة 1", days: "الأحد · الثلاثاء · الخميس", hours: "09:00 – 15:00", status: "متاح", patients: 8 },
+      { name: "د. دعاء فوزي", specialty: "سونار وأشعة نساء", room: "غرفة السونار", days: "السبت · الإثنين · الأربعاء", hours: "12:00 – 20:00", status: "متاح", patients: 7 },
+      { name: "د. مازن عادل", specialty: "أشعة مقطعية", room: "جهاز الأشعة 2", days: "الإثنين · الأربعاء", hours: "09:00 – 17:00", status: "مناوب", patients: 5 },
+    ], schedule: [
+      ["السبت", "12:00 – 20:00", "د. دعاء فوزي", "سونار", "غرفة السونار"], ["الأحد", "09:00 – 15:00", "د. كريم طارق", "أشعة عادية", "جهاز 1"], ["الإثنين", "09:00 – 17:00", "د. مازن عادل", "مقطعية", "جهاز 2"], ["الثلاثاء", "09:00 – 15:00", "د. كريم طارق", "أشعة عادية", "جهاز 1"], ["الأربعاء", "12:00 – 20:00", "د. دعاء فوزي", "سونار", "غرفة السونار"], ["الخميس", "09:00 – 15:00", "د. كريم طارق", "أشعة عادية", "جهاز 1"],
+    ], appointments: [["09:30", "محمد حسن", "أشعة صدر", "د. كريم طارق", "مؤكد"], ["13:00", "نور علي", "سونار", "د. دعاء فوزي", "جديد"], ["16:30", "محمود إبراهيم", "أشعة مقطعية", "د. مازن عادل", "مؤكد"]],
+  },
+});
 
-function getSession() {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    const session = raw ? JSON.parse(raw) : null;
-    if (!session || Number(session.expiresAt) <= Date.now()) {
-      localStorage.removeItem(SESSION_KEY);
-      return null;
-    }
-    return session;
-  } catch (_) {
-    return null;
-  }
-}
+const DEPARTMENT_IDS = Object.keys(DEPARTMENTS);
+let currentView = { type: "dashboard", id: null };
 
-function saveSession() {
-  const session = {
-    username: LOCAL_AUTH.username,
-    displayName: LOCAL_AUTH.displayName,
-    role: LOCAL_AUTH.role,
-    issuedAt: Date.now(),
-    expiresAt: Date.now() + 8 * 60 * 60 * 1000,
-  };
-  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  return session;
-}
-
-function clearSession() {
-  localStorage.removeItem(SESSION_KEY);
-}
-
-function loginGuard() {
-  try {
-    const guard = JSON.parse(localStorage.getItem(FAILURES_KEY) || "{}");
-    if (Number(guard.lockedUntil) > Date.now()) return guard;
-    return { failures: 0, lockedUntil: 0 };
-  } catch (_) {
-    return { failures: 0, lockedUntil: 0 };
-  }
-}
-
-function registerFailure() {
-  const guard = loginGuard();
-  guard.failures = Number(guard.failures || 0) + 1;
-  if (guard.failures >= MAX_FAILURES) {
-    guard.failures = 0;
-    guard.lockedUntil = Date.now() + LOCK_MS;
-  }
-  localStorage.setItem(FAILURES_KEY, JSON.stringify(guard));
-}
-
-function clearFailures() {
-  localStorage.removeItem(FAILURES_KEY);
-}
-
-function bytesToHex(bytes) {
-  return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-async function deriveVerifier(password, salt) {
-  if (!window.crypto?.subtle) throw new Error("secure-context-required");
-  const key = await window.crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(password),
-    "PBKDF2",
-    false,
-    ["deriveBits"],
-  );
-  const bits = await window.crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt: new TextEncoder().encode(salt), iterations: 120000, hash: "SHA-256" },
-    key,
-    256,
-  );
-  return bytesToHex(new Uint8Array(bits));
-}
-
-function showToast(message) {
-  document.querySelector(".toast")?.remove();
-  const toast = document.createElement("div");
-  toast.className = "toast";
-  toast.textContent = message;
-  document.body.appendChild(toast);
-  window.setTimeout(() => toast.remove(), 2800);
-}
-
-function brandMarkup(compact = false) {
-  return `<div class="${compact ? "side-brand" : "brand-lockup"}">
-    <div class="brand-mark">+</div>
-    <div><span class="brand-name">SoliMedical</span><span class="brand-sub">نظام إدارة المستشفى</span></div>
-  </div>`;
-}
+function escapeHtml(value) { return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
+function getSession() { try { const raw = localStorage.getItem(SESSION_KEY); const session = raw ? JSON.parse(raw) : null; if (!session || Number(session.expiresAt) <= Date.now()) { localStorage.removeItem(SESSION_KEY); return null; } return session; } catch (_) { return null; } }
+function saveSession() { const session = { username: LOCAL_AUTH.username, displayName: LOCAL_AUTH.displayName, role: LOCAL_AUTH.role, issuedAt: Date.now(), expiresAt: Date.now() + 8 * 60 * 60 * 1000 }; localStorage.setItem(SESSION_KEY, JSON.stringify(session)); return session; }
+function clearSession() { localStorage.removeItem(SESSION_KEY); }
+function loginGuard() { try { const guard = JSON.parse(localStorage.getItem(FAILURES_KEY) || "{}"); if (Number(guard.lockedUntil) > Date.now()) return guard; return { failures: 0, lockedUntil: 0 }; } catch (_) { return { failures: 0, lockedUntil: 0 }; } }
+function registerFailure() { const guard = loginGuard(); guard.failures = Number(guard.failures || 0) + 1; if (guard.failures >= MAX_FAILURES) { guard.failures = 0; guard.lockedUntil = Date.now() + LOCK_MS; } localStorage.setItem(FAILURES_KEY, JSON.stringify(guard)); }
+function clearFailures() { localStorage.removeItem(FAILURES_KEY); }
+function bytesToHex(bytes) { return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, "0")).join(""); }
+async function deriveVerifier(password, salt) { if (!window.crypto?.subtle) throw new Error("secure-context-required"); const key = await window.crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]); const bits = await window.crypto.subtle.deriveBits({ name: "PBKDF2", salt: new TextEncoder().encode(salt), iterations: 120000, hash: "SHA-256" }, key, 256); return bytesToHex(new Uint8Array(bits)); }
+function showToast(message) { document.querySelector(".toast")?.remove(); const toast = document.createElement("div"); toast.className = "toast"; toast.textContent = message; document.body.appendChild(toast); window.setTimeout(() => toast.remove(), 2800); }
+function brandMarkup(compact = false) { return `<div class="${compact ? "side-brand" : "brand-lockup"}"><div class="brand-mark">+</div><div><span class="brand-name">SoliMedical</span><span class="brand-sub">نظام إدارة المستشفى</span></div></div>`; }
 
 function renderLogin(error = "") {
-  app.innerHTML = `<main class="login-shell">
-    <section class="login-visual">
-      <div class="visual-content">
-        ${brandMarkup()}
-        <h1>رعاية أفضل،<br>بإدارة أبسط.</h1>
-        <p>نسخة تجريبية محلية لمنصة SoliMedical لإدارة بيانات المستشفى والعيادات بطريقة واضحة وآمنة وقابلة للتطوير.</p>
-        <div class="feature-list">
-          <div class="feature-chip"><b>✓</b><span>ملفات المرضى</span></div>
-          <div class="feature-chip"><b>✓</b><span>تنظيم المواعيد</span></div>
-          <div class="feature-chip"><b>✓</b><span>إدارة الأطباء</span></div>
-          <div class="feature-chip"><b>✓</b><span>تقارير تشغيلية</span></div>
-        </div>
-      </div>
-    </section>
-    <section class="login-panel">
-      <div class="login-card">
-        <div class="mobile-brand">${brandMarkup()}</div>
-        <h2>مرحبًا بعودتك</h2>
-        <p class="intro">سجّل الدخول إلى لوحة إدارة SoliMedical التجريبية.</p>
-        <form id="login-form" novalidate>
-          <div class="field">
-            <label for="username">اسم المستخدم</label>
-            <input id="username" name="username" type="text" autocomplete="username" placeholder="أدخل اسم المستخدم" required>
-          </div>
-          <div class="field">
-            <label for="password">كلمة المرور</label>
-            <div class="input-wrap">
-              <input id="password" name="password" type="password" autocomplete="current-password" placeholder="أدخل كلمة المرور" required>
-              <button class="password-toggle" type="button" id="toggle-password">إظهار</button>
-            </div>
-          </div>
-          <div class="error-box" id="login-error"${error ? ' style="display:block"' : ""}>${escapeHtml(error)}</div>
-          <button class="login-btn" type="submit">تسجيل الدخول</button>
-        </form>
-        <div class="local-note"><span>●</span><div><strong>وضع تجريبي محلي</strong>لا يوجد اتصال بـ Firebase أو أي قاعدة بيانات خارجية. البيانات تحفظ على هذا المتصفح فقط.</div></div>
-        <div class="login-footer">SoliMedical Hospital · Local Preview</div>
-      </div>
-    </section>
-  </main>`;
-
-  document.getElementById("toggle-password").addEventListener("click", () => {
-    const input = document.getElementById("password");
-    const visible = input.type === "text";
-    input.type = visible ? "password" : "text";
-    document.getElementById("toggle-password").textContent = visible ? "إظهار" : "إخفاء";
-  });
-
-  document.getElementById("login-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const username = document.getElementById("username").value.trim().toLowerCase();
-    const password = document.getElementById("password").value;
-    const errorBox = document.getElementById("login-error");
-    const button = event.currentTarget.querySelector("button[type=submit]");
-    const guard = loginGuard();
-    if (guard.lockedUntil > Date.now()) {
-      const seconds = Math.ceil((guard.lockedUntil - Date.now()) / 1000);
-      renderLogin(`تم إيقاف المحاولات مؤقتًا. حاول بعد ${seconds} ثانية.`);
-      return;
-    }
-    if (!username || !password) {
-      errorBox.textContent = "يرجى إدخال اسم المستخدم وكلمة المرور.";
-      errorBox.style.display = "block";
-      return;
-    }
-    button.disabled = true;
-    button.textContent = "جارٍ التحقق...";
-    try {
-      const verifier = await deriveVerifier(password, LOCAL_AUTH.salt);
-      if (username !== LOCAL_AUTH.username || verifier !== LOCAL_AUTH.verifier) {
-        registerFailure();
-        renderLogin("اسم المستخدم أو كلمة المرور غير صحيحة.");
-        return;
-      }
-      clearFailures();
-      saveSession();
-      renderDashboard();
-    } catch (_) {
-      button.disabled = false;
-      button.textContent = "تسجيل الدخول";
-      errorBox.textContent = "افتح الصفحة عبر HTTPS أو localhost لتفعيل التحقق المحلي الآمن.";
-      errorBox.style.display = "block";
-    }
-  });
+  app.innerHTML = `<main class="login-shell"><section class="login-visual"><div class="visual-content">${brandMarkup()}<h1>رعاية أفضل،<br>بإدارة أبسط.</h1><p>منصة موحدة لإدارة مجمع العيادات، تجمع الأقسام الطبية والأطباء والجداول والمواعيد في لوحة واحدة.</p><div class="feature-list"><div class="feature-chip"><b>✓</b><span>5 أقسام طبية</span></div><div class="feature-chip"><b>✓</b><span>جداول الأطباء</span></div><div class="feature-chip"><b>✓</b><span>مواعيد موحدة</span></div><div class="feature-chip"><b>✓</b><span>تقارير تشغيلية</span></div></div></div></section><section class="login-panel"><div class="login-card"><div class="mobile-brand">${brandMarkup()}</div><h2>مرحبًا بعودتك</h2><p class="intro">سجّل الدخول إلى لوحة إدارة SoliMedical التجريبية.</p><form id="login-form" novalidate><div class="field"><label for="username">اسم المستخدم</label><input id="username" name="username" type="text" autocomplete="username" placeholder="أدخل اسم المستخدم" required></div><div class="field"><label for="password">كلمة المرور</label><div class="input-wrap"><input id="password" name="password" type="password" autocomplete="current-password" placeholder="أدخل كلمة المرور" required><button class="password-toggle" type="button" id="toggle-password">إظهار</button></div></div><div class="error-box" id="login-error"${error ? ' style="display:block"' : ""}>${escapeHtml(error)}</div><button class="login-btn" type="submit">تسجيل الدخول</button></form><div class="local-note"><span>●</span><div><strong>وضع تجريبي محلي</strong>لا يوجد اتصال بـ Firebase أو أي قاعدة بيانات خارجية. البيانات تحفظ على هذا المتصفح فقط.</div></div><div class="login-footer">SoliMedical Hospital · Local Preview</div></div></section></main>`;
+  document.getElementById("toggle-password").addEventListener("click", () => { const input = document.getElementById("password"); const visible = input.type === "text"; input.type = visible ? "password" : "text"; document.getElementById("toggle-password").textContent = visible ? "إظهار" : "إخفاء"; });
+  document.getElementById("login-form").addEventListener("submit", async (event) => { event.preventDefault(); const username = document.getElementById("username").value.trim().toLowerCase(); const password = document.getElementById("password").value; const errorBox = document.getElementById("login-error"); const button = event.currentTarget.querySelector("button[type=submit]"); const guard = loginGuard(); if (guard.lockedUntil > Date.now()) { renderLogin(`تم إيقاف المحاولات مؤقتًا. حاول بعد ${Math.ceil((guard.lockedUntil - Date.now()) / 1000)} ثانية.`); return; } if (!username || !password) { errorBox.textContent = "يرجى إدخال اسم المستخدم وكلمة المرور."; errorBox.style.display = "block"; return; } button.disabled = true; button.textContent = "جارٍ التحقق..."; try { const verifier = await deriveVerifier(password, LOCAL_AUTH.salt); if (username !== LOCAL_AUTH.username || verifier !== LOCAL_AUTH.verifier) { registerFailure(); renderLogin("اسم المستخدم أو كلمة المرور غير صحيحة."); return; } clearFailures(); saveSession(); renderDashboard(); } catch (_) { button.disabled = false; button.textContent = "تسجيل الدخول"; errorBox.textContent = "افتح الصفحة عبر HTTPS أو localhost لتفعيل التحقق المحلي الآمن."; errorBox.style.display = "block"; } });
 }
 
-function renderDashboard() {
-  const session = getSession();
-  if (!session) return renderLogin();
-  app.innerHTML = `<main class="app-shell">
-    <aside class="sidebar">
-      ${brandMarkup(true)}
-      <div class="side-label">القائمة الرئيسية</div>
-      <nav class="nav-list">
-        ${[
-          ["dashboard", "الرئيسية"], ["patients", "المرضى"], ["calendar", "المواعيد"], ["doctors", "الأطباء"], ["reports", "التقارير"], ["settings", "الإعدادات"],
-        ].map(([key, label], index) => `<button class="nav-item${index === 0 ? " active" : ""}" data-demo-action="${key}"><span class="nav-icon">${icons[key]}</span><span>${label}</span></button>`).join("")}
-      </nav>
-      <div class="sidebar-bottom">
-        <div class="user-mini"><div class="avatar">أ</div><div><strong>${escapeHtml(session.displayName)}</strong><span>مدير النظام</span></div></div>
-        <button class="logout-btn" id="logout">تسجيل الخروج</button>
-      </div>
-    </aside>
-    <section class="main">
-      <header class="topbar">
-        <div><div class="eyebrow">لوحة التحكم</div><h2>صباح الخير، ${escapeHtml(session.displayName)}</h2><p>إليك ملخص التشغيل في النسخة التجريبية المحلية.</p></div>
-        <div class="status-pill"><span class="status-dot"></span> محلي فقط · متصل</div>
-      </header>
-      <section class="stats">
-        <article class="stat-card"><div class="stat-top"><span>الأقسام الطبية</span><span class="stat-icon">✚</span></div><strong>5</strong><small>وحدات متخصصة</small></article>
-        <article class="stat-card"><div class="stat-top"><span>العيادات والغرف</span><span class="stat-icon">⌂</span></div><strong>12</strong><small>في مجمع واحد</small></article>
-        <article class="stat-card"><div class="stat-top"><span>الأطباء النشطون</span><span class="stat-icon">⚕</span></div><strong>24</strong><small>حسب التخصص والقسم</small></article>
-        <article class="stat-card"><div class="stat-top"><span>مواعيد اليوم</span><span class="stat-icon">▦</span></div><strong>86</strong><small>بين الأقسام المختلفة</small></article>
-      </section>
-      <div class="content-grid">
-        <section class="section-card">
-          <div class="section-heading"><h3>أقسام المجمع الطبي</h3><span>5 وحدات طبية + إدارة مركزية</span></div>
-          <div class="module-grid">
-            ${[
-              ["♙", "العيادات الخارجية", "باطنة، أطفال، جلدية وتخصصات عامة"], ["✚", "قسم الأسنان", "كشف، علاج، حشو وتركيبات"], ["◉", "قسم العمليات", "جدولة العمليات والإجراءات"], ["⌁", "قسم التحاليل", "عينات، نتائج وتقارير المختبر"], ["◌", "قسم الأشعة", "أشعة عادية وسونار وفحوصات"], ["▦", "المواعيد والاستقبال", "تقويم موحد لكل الأطباء والفروع"], ["♙", "ملفات المرضى", "الزيارات والتشخيص والمرفقات"], ["◈", "الإدارة المالية", "الوارد والمنصرف والمستحقات"], ["⚙", "الإدارة والصلاحيات", "المستخدمون والأدوار وسجل النشاط"],
-            ].map(([icon, title, description], index) => `<button class="module" data-demo-action="module-${index}"><span class="module-icon">${icon}</span><strong>${title}</strong><span>${description}</span></button>`).join("")}
-          </div>
-          <div class="notice"><span>✓</span><div><b>مجمع عيادات متكامل</b><br>هذه لوحة موحدة للأقسام الطبية والإدارية، والبيانات الحالية للعرض فقط ومحفوظة محليًا على جهازك.</div></div>
-        </section>
-        <section class="section-card">
-          <div class="section-heading"><h3>جدول المواعيد الموحد</h3><span>اليوم · كل الأقسام</span></div>
-          <div class="appointment-list">
-            ${[
-              ["09:00", "أحمد محمد", "العيادات الخارجية · باطنة", "مؤكد"], ["10:30", "سارة علي", "قسم الأسنان", "مؤكد"], ["11:15", "محمود حسن", "قسم العمليات", "جديد"], ["12:00", "محمد حسن", "قسم الأشعة", "مؤكد"], ["13:30", "مريم خالد", "قسم التحاليل", "مؤكد"], ["14:00", "ليلى إبراهيم", "العيادات الخارجية · أطفال", "جديد"],
-            ].map(([time, name, department, tag]) => `<div class="appointment"><span class="time">${time}</span><div class="person"><strong>${name}</strong><span>${department}</span></div><span class="tag">${tag}</span></div>`).join("")}
-          </div>
-        </section>
-      </div>
-    </section>
-  </main>`;
+function departmentStats() { return DEPARTMENT_IDS.reduce((summary, id) => { const department = DEPARTMENTS[id]; summary.doctors += department.doctors.length; summary.rooms += department.rooms; summary.appointments += department.appointments.length; return summary; }, { doctors: 0, rooms: 0, appointments: 0 }); }
+function allDoctors() { return DEPARTMENT_IDS.flatMap((id) => DEPARTMENTS[id].doctors.map((doctor) => ({ ...doctor, departmentId: id, department: DEPARTMENTS[id].name, icon: DEPARTMENTS[id].icon }))); }
+function allAppointments() { return DEPARTMENT_IDS.flatMap((id) => DEPARTMENTS[id].appointments.map((appointment) => ({ time: appointment[0], patient: appointment[1], service: appointment[2], doctor: appointment[3], status: appointment[4], department: DEPARTMENTS[id].name, departmentId: id }))).sort((a, b) => a.time.localeCompare(b.time)); }
+function statusBadge(status) { return `<span class="status-badge ${status === "متاح" || status === "مؤكد" || status === "جاهز" ? "success" : status === "في إجازة" ? "muted" : "warning"}">${escapeHtml(status)}</span>`; }
+function departmentCard(id) { const department = DEPARTMENTS[id]; return `<button class="department-card ${department.color}" data-open-dept="${id}"><div class="department-icon">${department.icon}</div><div class="department-main"><strong>${department.name}</strong><span>${department.description}</span></div><div class="department-meta"><b>${department.doctors.length}</b><small>أطباء</small><b>${department.appointments.length}</b><small>موعد اليوم</small></div><span class="card-arrow">←</span></button>`; }
 
-  document.getElementById("logout").addEventListener("click", () => {
-    clearSession();
-    renderLogin();
-  });
-  document.querySelectorAll("[data-demo-action]").forEach((element) => {
-    element.addEventListener("click", () => {
-      document.querySelectorAll(".nav-item").forEach((item) => item.classList.remove("active"));
-      if (element.classList.contains("nav-item")) element.classList.add("active");
-      showToast("هذه وحدة تجريبية وستُفعّل في المرحلة التالية.");
-    });
-  });
+function sidebar(active) { return `<aside class="sidebar">${brandMarkup(true)}<div class="side-label">لوحة المجمع الطبي</div><nav class="nav-list"><button class="nav-item${active === "dashboard" ? " active" : ""}" data-nav="dashboard"><span class="nav-icon">${icons.dashboard}</span><span>الرئيسية</span></button><button class="nav-item${active === "appointments" ? " active" : ""}" data-nav="appointments"><span class="nav-icon">${icons.calendar}</span><span>المواعيد الموحدة</span></button><button class="nav-item${active === "doctors" ? " active" : ""}" data-nav="doctors"><span class="nav-icon">${icons.doctors}</span><span>الأطباء والجداول</span></button><button class="nav-item${active === "reports" ? " active" : ""}" data-nav="reports"><span class="nav-icon">${icons.reports}</span><span>التقارير</span></button></nav><div class="side-label department-label">الأقسام الطبية</div><nav class="department-nav">${DEPARTMENT_IDS.map((id) => `<button class="department-nav-item${active === id ? " active" : ""}" data-open-dept="${id}"><span class="nav-icon">${DEPARTMENTS[id].icon}</span><span>${DEPARTMENTS[id].short}</span><em>${DEPARTMENTS[id].doctors.length}</em></button>`).join("")}</nav><div class="sidebar-bottom"><div class="user-mini"><div class="avatar">أ</div><div><strong>مدير النظام</strong><span>صلاحية كاملة · محلي</span></div></div><button class="logout-btn" id="logout">تسجيل الخروج</button></div></aside>`; }
+function pageHeader(kicker, title, subtitle, active) { return `<header class="topbar"><div><div class="eyebrow">${escapeHtml(kicker)}</div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(subtitle)}</p></div><div class="topbar-actions"><div class="status-pill"><span class="status-dot"></span> محلي فقط · متصل</div></div></header>`; }
+function statCard(label, value, note, icon) { return `<article class="stat-card"><div class="stat-top"><span>${label}</span><span class="stat-icon">${icon}</span></div><strong>${value}</strong><small>${note}</small></article>`; }
+
+function renderHome() {
+  const summary = departmentStats();
+  return `${pageHeader("لوحة التحكم", "صباح الخير، مدير النظام", "نظرة موحدة على تشغيل مجمع العيادات وجميع أقسامه.", "dashboard")}<section class="stats">${statCard("الأقسام الطبية", DEPARTMENT_IDS.length, "وحدات متخصصة", "✚")}${statCard("العيادات والغرف", summary.rooms, "في مجمع واحد", "⌂")}${statCard("الأطباء النشطون", summary.doctors, "حسب التخصص والقسم", "⚕")}${statCard("مواعيد اليوم", summary.appointments, "بين الأقسام المختلفة", "▦")}</section><section class="section-card department-overview"><div class="section-heading"><div><h3>أقسام المجمع الطبي</h3><p>اختر قسمًا لعرض الأطباء والجداول والمواعيد الخاصة به.</p></div><span class="section-count">${DEPARTMENT_IDS.length} أقسام</span></div><div class="department-grid">${DEPARTMENT_IDS.map(departmentCard).join("")}</div></section><div class="content-grid home-lower"><section class="section-card"><div class="section-heading"><div><h3>جدول المواعيد الموحد</h3><p>مواعيد اليوم مرتبة من جميع الأقسام.</p></div><button class="text-button" data-nav="appointments">عرض الكل ←</button></div>${appointmentTable(allAppointments().slice(0, 6), true)}</section><section class="section-card"><div class="section-heading"><div><h3>توزيع الأطباء</h3><p>عدد الأطباء حسب القسم.</p></div></div><div class="distribution-list">${DEPARTMENT_IDS.map((id) => { const d = DEPARTMENTS[id]; return `<button class="distribution-row" data-open-dept="${id}"><span class="distribution-icon ${d.color}">${d.icon}</span><span>${d.name}</span><b>${d.doctors.length}</b><div class="distribution-bar"><i style="width:${Math.round((d.doctors.length / summary.doctors) * 100)}%"></i></div></button>`; }).join("")}</div></section></div><div class="notice"><span>✓</span><div><b>نسخة تجريبية لمجمع عيادات</b><br>البيانات والأطباء والجداول الحالية للعرض فقط، وجميع التعديلات محفوظة محليًا على هذا المتصفح.</div></div>`;
 }
 
-window.addEventListener("DOMContentLoaded", () => {
-  if (getSession()) renderDashboard();
-  else renderLogin();
-});
+function doctorCards(doctors) { return `<div class="doctor-grid">${doctors.map((doctor) => `<article class="doctor-card"><div class="doctor-card-top"><div class="doctor-avatar">${escapeHtml(doctor.name.replace("د. ", "").slice(0, 1))}</div><div><strong>${escapeHtml(doctor.name)}</strong><span>${escapeHtml(doctor.specialty)}</span></div>${statusBadge(doctor.status)}</div><div class="doctor-details"><div><small>المكان</small><b>${escapeHtml(doctor.room)}</b></div><div><small>ساعات العمل</small><b>${escapeHtml(doctor.hours)}</b></div><div class="doctor-days"><small>أيام الحضور</small><b>${escapeHtml(doctor.days)}</b></div></div><div class="doctor-footer"><span>مواعيد اليوم</span><b>${doctor.patients} مرضى</b></div></article>`).join("")}</div>`; }
+function scheduleTable(schedule) { return `<div class="table-scroll"><table class="schedule-table"><thead><tr><th>اليوم</th><th>ساعات العمل</th><th>الطبيب المسؤول</th><th>الخدمة / التخصص</th><th>العيادة أو الغرفة</th></tr></thead><tbody>${schedule.map((row) => `<tr>${row.map((cell, index) => `<td${index === 0 ? " class=day-cell" : ""}>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`; }
+function appointmentTable(items, compact = false) { if (!items.length) return `<div class="empty-state">لا توجد مواعيد في هذا القسم.</div>`; return `<div class="table-scroll"><table class="appointment-table"><thead><tr><th>الوقت</th><th>المريض</th><th>القسم</th><th>الخدمة</th><th>الطبيب</th><th>الحالة</th></tr></thead><tbody>${items.map((item) => `<tr><td class="time-cell">${escapeHtml(item.time)}</td><td><strong>${escapeHtml(item.patient)}</strong></td><td><span class="inline-dept">${escapeHtml(item.department)}</span></td><td>${escapeHtml(item.service)}</td><td>${escapeHtml(item.doctor)}</td><td>${statusBadge(item.status)}</td></tr>`).join("")}</tbody></table></div>`; }
+
+function renderDepartment(id) {
+  const department = DEPARTMENTS[id];
+  return `${pageHeader("القسم الطبي", department.name, department.description, id)}<div class="department-hero ${department.color}"><div class="department-hero-icon">${department.icon}</div><div><span>وحدة ${department.short}</span><h3>${department.name}</h3><p>الأطباء، أوقات العمل، الغرف وجدول المواعيد الخاص بالقسم.</p></div><div class="hero-facts"><div><b>${department.doctors.length}</b><span>أطباء</span></div><div><b>${department.rooms}</b><span>غرف</span></div><div><b>${department.appointments.length}</b><span>موعد اليوم</span></div></div></div><section class="section-card"><div class="section-heading"><div><h3>أطباء ${department.name}</h3><p>بيانات الفريق الطبي وساعات الحضور الأسبوعية.</p></div><span class="section-count">${department.doctors.length} أطباء</span></div>${doctorCards(department.doctors)}</section><section class="section-card schedule-section"><div class="section-heading"><div><h3>جدول عمل القسم</h3><p>الجدول الأسبوعي للعيادات والغرف.</p></div><span class="week-label">هذا الأسبوع</span></div>${scheduleTable(department.schedule)}</section><section class="section-card"><div class="section-heading"><div><h3>مواعيد ${department.name}</h3><p>المواعيد المسجلة للقسم اليوم.</p></div><button class="text-button" data-nav="appointments">الجدول الموحد ←</button></div>${appointmentTable(department.appointments.map((row) => ({ time: row[0], patient: row[1], service: row[2], doctor: row[3], status: row[4], department: department.name })))}</section>`;
+}
+
+function renderDoctors() { const doctors = allDoctors(); return `${pageHeader("الإدارة الطبية", "الأطباء والجداول", "دليل الأطباء موزعًا على أقسام مجمع العيادات.", "doctors")}<section class="filter-strip"><div><span>إجمالي الفريق الطبي</span><b>${doctors.length} طبيبًا</b></div><div><span>الأقسام المغطاة</span><b>${DEPARTMENT_IDS.length} أقسام</b></div><button class="outline-button" data-nav="appointments">عرض المواعيد الموحدة</button></section><section class="section-card"><div class="section-heading"><div><h3>دليل الأطباء</h3><p>يمكن فتح أي قسم من القائمة الجانبية لمراجعة جدوله التفصيلي.</p></div></div>${doctorCards(doctors)}</section>`; }
+function renderAppointments() { const appointments = allAppointments(); return `${pageHeader("الاستقبال والمواعيد", "المواعيد الموحدة", "جدول مركزي لمواعيد جميع الأقسام الطبية.", "appointments")}<section class="stats">${statCard("كل المواعيد", appointments.length, "مواعيد معروضة", "▦")}${statCard("مؤكدة", appointments.filter((item) => item.status === "مؤكد").length, "جاهزة للحضور", "✓")}${statCard("مواعيد جديدة", appointments.filter((item) => item.status === "جديد").length, "تحتاج مراجعة", "＋")}${statCard("الأقسام", DEPARTMENT_IDS.length, "في الجدول الموحد", "✚")}</section><section class="section-card"><div class="section-heading"><div><h3>جدول اليوم · كل الأقسام</h3><p>البيانات مرتبة حسب وقت الموعد.</p></div><span class="week-label">اليوم</span></div>${appointmentTable(appointments)}</section>`; }
+function renderReports() { const summary = departmentStats(); return `${pageHeader("الإدارة", "التقارير التشغيلية", "ملخص سريع لأداء مجمع العيادات حسب القسم.", "reports")}<section class="section-card"><div class="section-heading"><div><h3>مؤشرات الأقسام</h3><p>بيانات عرض تجريبية قابلة للربط بالتقارير الفعلية لاحقًا.</p></div></div><div class="report-grid">${DEPARTMENT_IDS.map((id) => { const d = DEPARTMENTS[id]; return `<article class="report-card"><div class="report-card-top"><span class="distribution-icon ${d.color}">${d.icon}</span><span>${d.name}</span></div><strong>${d.appointments.length}</strong><small>موعد اليوم</small><div class="report-line"><i style="width:${Math.min(100, d.appointments.length * 3)}%"></i></div><footer><span>${d.doctors.length} أطباء</span><span>${d.rooms} غرف</span></footer></article>`; }).join("")}</div></section><div class="content-grid"><section class="section-card"><div class="section-heading"><div><h3>ملاحظات التشغيل</h3><p>تظهر هنا التنبيهات والتحديثات الإدارية.</p></div></div><div class="operation-note"><span>01</span><div><b>توزيع المواعيد</b><p>تم تجميع مواعيد العيادات والأسنان والعمليات والتحاليل والأشعة في جدول موحد.</p></div></div><div class="operation-note"><span>02</span><div><b>تغطية الأطباء</b><p>كل قسم يحتوي على جدول أسبوعي يوضح الطبيب، التخصص، الغرفة وساعات العمل.</p></div></div></section><section class="section-card"><div class="section-heading"><div><h3>ملخص اليوم</h3><p>المجمع بالكامل</p></div></div><div class="big-summary"><strong>${summary.appointments}</strong><span>موعدًا مجدولًا اليوم</span><small>${summary.doctors} طبيبًا · ${summary.rooms} غرفة</small></div></section></div>`; }
+
+function renderPage() { const session = getSession(); if (!session) return renderLogin(); const active = currentView.type === "department" ? currentView.id : currentView.type; let content = currentView.type === "dashboard" ? renderHome() : currentView.type === "department" ? renderDepartment(currentView.id) : currentView.type === "doctors" ? renderDoctors() : currentView.type === "appointments" ? renderAppointments() : renderReports(); app.innerHTML = `<main class="app-shell">${sidebar(active)}<section class="main">${content}</section></main>`; bindDashboardEvents(); }
+function renderDashboard() { currentView = { type: "dashboard", id: null }; renderPage(); }
+function bindDashboardEvents() { document.getElementById("logout")?.addEventListener("click", () => { clearSession(); renderLogin(); }); document.querySelectorAll("[data-nav]").forEach((button) => button.addEventListener("click", () => { currentView = { type: button.dataset.nav, id: null }; renderPage(); })); document.querySelectorAll("[data-open-dept]").forEach((button) => button.addEventListener("click", () => { currentView = { type: "department", id: button.dataset.openDept }; renderPage(); })); }
+
+window.addEventListener("DOMContentLoaded", () => { if (getSession()) renderPage(); else renderLogin(); });
