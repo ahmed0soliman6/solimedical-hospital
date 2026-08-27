@@ -233,26 +233,26 @@ function renderDashboard() {
         <div class="status-pill"><span class="status-dot"></span> محلي فقط · متصل</div>
       </header>
       <section class="stats">
-        <article class="stat-card"><div class="stat-top"><span>إجمالي المرضى</span><span class="stat-icon">♙</span></div><strong>1,284</strong><small>بيانات تجريبية للعرض</small></article>
-        <article class="stat-card"><div class="stat-top"><span>مواعيد اليوم</span><span class="stat-icon">▦</span></div><strong>36</strong><small>8 مواعيد قادمة</small></article>
-        <article class="stat-card"><div class="stat-top"><span>الأطباء النشطون</span><span class="stat-icon">⚕</span></div><strong>24</strong><small>في 5 أقسام</small></article>
-        <article class="stat-card"><div class="stat-top"><span>نسبة الحضور</span><span class="stat-icon">↗</span></div><strong>89%</strong><small>خلال هذا الأسبوع</small></article>
+        <article class="stat-card"><div class="stat-top"><span>الأقسام الطبية</span><span class="stat-icon">✚</span></div><strong>5</strong><small>وحدات متخصصة</small></article>
+        <article class="stat-card"><div class="stat-top"><span>العيادات والغرف</span><span class="stat-icon">⌂</span></div><strong>12</strong><small>في مجمع واحد</small></article>
+        <article class="stat-card"><div class="stat-top"><span>الأطباء النشطون</span><span class="stat-icon">⚕</span></div><strong>24</strong><small>حسب التخصص والقسم</small></article>
+        <article class="stat-card"><div class="stat-top"><span>مواعيد اليوم</span><span class="stat-icon">▦</span></div><strong>86</strong><small>بين الأقسام المختلفة</small></article>
       </section>
       <div class="content-grid">
         <section class="section-card">
-          <div class="section-heading"><h3>الوحدات الأساسية</h3><span>نسخة العرض</span></div>
+          <div class="section-heading"><h3>أقسام المجمع الطبي</h3><span>5 وحدات طبية + إدارة مركزية</span></div>
           <div class="module-grid">
             ${[
-              ["♙", "ملفات المرضى", "سجل الزيارات والمعلومات الأساسية"], ["▦", "المواعيد", "تقويم وتنظيم مواعيد العيادات"], ["⚕", "الأطباء والفروع", "إدارة الفرق والتخصصات"], ["▤", "التقارير", "ملخصات تشغيلية ومالية"], ["▣", "التحاليل والأشعة", "متابعة الخدمات الطبية"], ["◈", "الخزينة", "الوارد والمنصرف والمستحقات"],
+              ["♙", "العيادات الخارجية", "باطنة، أطفال، جلدية وتخصصات عامة"], ["✚", "قسم الأسنان", "كشف، علاج، حشو وتركيبات"], ["◉", "قسم العمليات", "جدولة العمليات والإجراءات"], ["⌁", "قسم التحاليل", "عينات، نتائج وتقارير المختبر"], ["◌", "قسم الأشعة", "أشعة عادية وسونار وفحوصات"], ["▦", "المواعيد والاستقبال", "تقويم موحد لكل الأطباء والفروع"], ["♙", "ملفات المرضى", "الزيارات والتشخيص والمرفقات"], ["◈", "الإدارة المالية", "الوارد والمنصرف والمستحقات"], ["⚙", "الإدارة والصلاحيات", "المستخدمون والأدوار وسجل النشاط"],
             ].map(([icon, title, description], index) => `<button class="module" data-demo-action="module-${index}"><span class="module-icon">${icon}</span><strong>${title}</strong><span>${description}</span></button>`).join("")}
           </div>
-          <div class="notice"><span>✓</span><div><b>بيئة آمنة للتجربة</b><br>كل ما تراه الآن تجريبي ومحفوظ محليًا على جهازك فقط، وسيتم ربطه بقاعدة البيانات عند اعتماد Firebase لاحقًا.</div></div>
+          <div class="notice"><span>✓</span><div><b>مجمع عيادات متكامل</b><br>هذه لوحة موحدة للأقسام الطبية والإدارية، والبيانات الحالية للعرض فقط ومحفوظة محليًا على جهازك.</div></div>
         </section>
         <section class="section-card">
-          <div class="section-heading"><h3>مواعيد قادمة</h3><span>اليوم</span></div>
+          <div class="section-heading"><h3>جدول المواعيد الموحد</h3><span>اليوم · كل الأقسام</span></div>
           <div class="appointment-list">
             ${[
-              ["09:00", "أحمد محمد", "عيادة الباطنة", "مؤكد"], ["10:30", "سارة علي", "عيادة الأسنان", "مؤكد"], ["12:00", "محمد حسن", "الأشعة", "جديد"], ["13:30", "مريم خالد", "التحاليل", "مؤكد"],
+              ["09:00", "أحمد محمد", "العيادات الخارجية · باطنة", "مؤكد"], ["10:30", "سارة علي", "قسم الأسنان", "مؤكد"], ["11:15", "محمود حسن", "قسم العمليات", "جديد"], ["12:00", "محمد حسن", "قسم الأشعة", "مؤكد"], ["13:30", "مريم خالد", "قسم التحاليل", "مؤكد"], ["14:00", "ليلى إبراهيم", "العيادات الخارجية · أطفال", "جديد"],
             ].map(([time, name, department, tag]) => `<div class="appointment"><span class="time">${time}</span><div class="person"><strong>${name}</strong><span>${department}</span></div><span class="tag">${tag}</span></div>`).join("")}
           </div>
         </section>
