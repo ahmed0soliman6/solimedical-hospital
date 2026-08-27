@@ -6,12 +6,624 @@
   <meta name="theme-color" content="#0f766e">
   <meta name="description" content="SoliMedical Hospital — نسخة تجريبية محلية لإدارة المستشفى">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="stylesheet" href="./styles.css?v=patients-20260827-1">
   <title>SoliMedical Hospital | تجربة محلية</title>
+
+  <style id="solimedical-styles">
+:root {
+  --teal-950: #073c3b;
+  --teal-900: #0b5550;
+  --teal-700: #0f766e;
+  --teal-500: #20a39e;
+  --teal-100: #d9f2ef;
+  --mint: #edf9f6;
+  --ink: #163232;
+  --muted: #6c8180;
+  --line: #dcebea;
+  --surface: #ffffff;
+  --page: #f4f8f7;
+  --gold: #e5aa43;
+  --danger: #c5534d;
+  font-family: "Cairo", "Tahoma", sans-serif;
+  color: var(--ink);
+  background: var(--page);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; background: var(--page); }
+button, input { font: inherit; }
+button { cursor: pointer; }
+
+#app { min-height: 100vh; }
+
+.login-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(360px, .9fr);
+  background: linear-gradient(135deg, #ecf8f5 0%, #f8fbfa 55%, #e2f2ef 100%);
+}
+.login-visual {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  padding: clamp(32px, 7vw, 96px);
+  color: #fff;
+  background:
+    radial-gradient(circle at 18% 15%, rgba(76, 213, 193, .35), transparent 28%),
+    radial-gradient(circle at 88% 86%, rgba(10, 61, 59, .75), transparent 37%),
+    linear-gradient(155deg, var(--teal-700), var(--teal-950));
+}
+.login-visual::before, .login-visual::after {
+  content: ""; position: absolute; border: 1px solid rgba(255,255,255,.15); border-radius: 50%;
+}
+.login-visual::before { width: 520px; height: 520px; left: -260px; bottom: -180px; }
+.login-visual::after { width: 390px; height: 390px; right: -180px; top: -150px; }
+.visual-content { position: relative; max-width: 610px; z-index: 1; }
+.brand-lockup { display: flex; align-items: center; gap: 14px; margin-bottom: 58px; }
+.brand-mark { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 17px; background: #fff; color: var(--teal-700); font-size: 31px; font-weight: 900; box-shadow: 0 12px 32px rgba(0,0,0,.16); }
+.brand-name { font-size: 27px; font-weight: 900; letter-spacing: -.8px; }
+.brand-sub { display: block; margin-top: 1px; color: rgba(255,255,255,.68); font-size: 12px; font-weight: 600; }
+.visual-content h1 { margin: 0 0 20px; font-size: clamp(36px, 5vw, 68px); line-height: 1.12; letter-spacing: -2px; }
+.visual-content > p { max-width: 490px; margin: 0; color: rgba(255,255,255,.78); font-size: 17px; line-height: 2; }
+.feature-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; margin-top: 42px; max-width: 570px; }
+.feature-chip { display: flex; align-items: center; gap: 10px; padding: 13px 14px; border: 1px solid rgba(255,255,255,.16); border-radius: 14px; background: rgba(255,255,255,.08); color: rgba(255,255,255,.9); font-size: 12px; }
+.feature-chip b { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 9px; background: rgba(94, 225, 199, .22); color: #77e5cc; }
+.login-panel { display: grid; place-items: center; padding: 32px; background: rgba(255,255,255,.76); }
+.login-card { width: min(100%, 430px); padding: 42px; border: 1px solid rgba(220,234,235,.9); border-radius: 26px; background: rgba(255,255,255,.93); box-shadow: 0 26px 70px rgba(18, 71, 68, .12); }
+.mobile-brand { display: none; }
+.login-card h2 { margin: 0 0 8px; color: var(--teal-950); font-size: 27px; }
+.login-card .intro { margin: 0 0 28px; color: var(--muted); font-size: 13px; line-height: 1.8; }
+.field { margin-bottom: 17px; }
+.field label { display: block; margin-bottom: 8px; color: #355452; font-size: 12px; font-weight: 800; }
+.input-wrap { position: relative; }
+.field input { width: 100%; height: 52px; padding: 0 16px; border: 1px solid var(--line); border-radius: 13px; outline: none; background: #fbfdfc; color: var(--ink); transition: .2s border, .2s box-shadow; }
+.field input:focus { border-color: var(--teal-500); box-shadow: 0 0 0 4px rgba(32,163,158,.12); }
+.password-toggle { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); border: 0; background: transparent; color: var(--teal-700); font-size: 11px; font-weight: 800; }
+.login-btn { width: 100%; height: 53px; margin-top: 8px; border: 0; border-radius: 14px; background: linear-gradient(135deg, var(--teal-700), var(--teal-500)); color: #fff; font-weight: 900; box-shadow: 0 10px 22px rgba(15,118,110,.22); transition: .2s transform, .2s box-shadow; }
+.login-btn:hover { transform: translateY(-1px); box-shadow: 0 14px 28px rgba(15,118,110,.3); }
+.login-btn:disabled { cursor: wait; opacity: .65; transform: none; }
+.error-box { display: none; margin: 0 0 14px; padding: 11px 13px; border: 1px solid #f2d1cf; border-radius: 11px; background: #fff4f3; color: var(--danger); font-size: 12px; font-weight: 700; line-height: 1.7; }
+.local-note { display: flex; gap: 9px; margin-top: 25px; padding: 12px 13px; border-radius: 12px; background: var(--mint); color: #31706b; font-size: 11px; line-height: 1.7; }
+.local-note strong { display: block; margin-bottom: 2px; color: var(--teal-900); }
+.login-footer { margin-top: 24px; text-align: center; color: #99aaa9; font-size: 10px; }
+
+.app-shell { min-height: 100vh; display: grid; grid-template-columns: 258px minmax(0, 1fr); }
+.sidebar { display: flex; flex-direction: column; min-height: 100vh; padding: 22px 15px; background: linear-gradient(180deg, var(--teal-950), #0b4b49); color: #eaf8f6; }
+.side-brand { display: flex; align-items: center; gap: 10px; padding: 5px 11px 28px; border-bottom: 1px solid rgba(255,255,255,.1); }
+.side-brand .brand-mark { width: 39px; height: 39px; border-radius: 12px; font-size: 23px; }
+.side-brand .brand-name { font-size: 18px; }
+.side-brand .brand-sub { font-size: 9px; }
+.side-label { margin: 25px 12px 10px; color: rgba(255,255,255,.45); font-size: 10px; font-weight: 800; }
+.nav-list { display: grid; gap: 5px; }
+.nav-item { display: flex; align-items: center; gap: 11px; width: 100%; padding: 12px 13px; border: 0; border-radius: 11px; background: transparent; color: rgba(255,255,255,.68); text-align: right; font-size: 12px; transition: .2s background, .2s color; }
+.nav-item:hover, .nav-item.active { background: rgba(108,228,204,.14); color: #fff; }
+.nav-icon { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 8px; background: rgba(255,255,255,.09); font-size: 13px; }
+.sidebar-bottom { margin-top: auto; padding: 16px 10px 0; border-top: 1px solid rgba(255,255,255,.1); }
+.user-mini { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.avatar { display: grid; place-items: center; width: 35px; height: 35px; border-radius: 11px; background: #bce9df; color: var(--teal-950); font-size: 13px; font-weight: 900; }
+.user-mini strong { display: block; font-size: 12px; }
+.user-mini span { color: rgba(255,255,255,.5); font-size: 10px; }
+.logout-btn { width: 100%; padding: 10px; border: 1px solid rgba(255,255,255,.16); border-radius: 10px; background: transparent; color: rgba(255,255,255,.72); font-size: 11px; }
+.logout-btn:hover { background: rgba(255,255,255,.08); color: #fff; }
+.main { min-width: 0; padding: 25px clamp(20px, 4vw, 47px) 44px; }
+.topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; margin-bottom: 27px; }
+.eyebrow { margin-bottom: 5px; color: var(--teal-700); font-size: 11px; font-weight: 900; }
+.topbar h2 { margin: 0; color: var(--teal-950); font-size: clamp(23px, 3vw, 31px); }
+.topbar p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+.status-pill { display: flex; align-items: center; gap: 8px; padding: 9px 13px; border: 1px solid #cde7e2; border-radius: 999px; background: #f0fbf8; color: #2e776e; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: #38b985; box-shadow: 0 0 0 4px rgba(56,185,133,.13); }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 25px; }
+.stat-card { padding: 18px; border: 1px solid var(--line); border-radius: 17px; background: var(--surface); box-shadow: 0 7px 20px rgba(21, 68, 67, .04); }
+.stat-top { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
+.stat-icon { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 10px; background: var(--mint); color: var(--teal-700); }
+.stat-card strong { display: block; margin: 14px 0 3px; color: var(--teal-950); font-size: 24px; }
+.stat-card small { color: #7ca19e; font-size: 10px; }
+.content-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, .8fr); gap: 18px; }
+.section-card { padding: 22px; border: 1px solid var(--line); border-radius: 19px; background: var(--surface); }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 19px; }
+.section-heading h3 { margin: 0; color: var(--teal-950); font-size: 16px; }
+.section-heading span { color: var(--muted); font-size: 10px; }
+.module-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.module { min-height: 115px; padding: 15px; border: 1px solid #e3efed; border-radius: 14px; background: linear-gradient(145deg, #fff, #f8fcfb); transition: .2s transform, .2s border; }
+.module:hover { transform: translateY(-2px); border-color: #a9d8d1; }
+.module-icon { display: grid; place-items: center; width: 32px; height: 32px; margin-bottom: 12px; border-radius: 10px; background: var(--teal-100); color: var(--teal-700); font-size: 15px; }
+.module strong { display: block; color: var(--ink); font-size: 12px; }
+.module span { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.appointment-list { display: grid; gap: 11px; }
+.appointment { display: flex; align-items: center; gap: 11px; padding: 11px 0; border-bottom: 1px solid #eef4f3; }
+.appointment:last-child { border-bottom: 0; }
+.time { min-width: 49px; color: var(--teal-700); font-size: 11px; font-weight: 900; }
+.person { flex: 1; min-width: 0; }
+.person strong { display: block; overflow: hidden; color: var(--ink); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.person span { display: block; margin-top: 2px; color: var(--muted); font-size: 9px; }
+.tag { padding: 4px 7px; border-radius: 7px; background: #fff5df; color: #a56e19; font-size: 9px; font-weight: 800; }
+.notice { display: flex; align-items: center; gap: 12px; margin-top: 18px; padding: 14px 16px; border-radius: 14px; background: linear-gradient(90deg, #e1f6f1, #f1fbf8); color: #3b706b; font-size: 11px; line-height: 1.8; }
+.notice b { color: var(--teal-900); }
+
+.toast { position: fixed; right: 22px; bottom: 22px; z-index: 10; padding: 12px 16px; border-radius: 12px; background: var(--teal-950); color: #fff; font-size: 11px; box-shadow: 0 12px 30px rgba(0,0,0,.2); animation: appear .2s ease; }
+@keyframes appear { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+@media (max-width: 1000px) {
+  .login-shell { grid-template-columns: 1fr; }
+  .login-visual { display: none; }
+  .login-panel { min-height: 100vh; padding: 22px; }
+  .mobile-brand { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 28px; }
+  .mobile-brand .brand-mark { width: 43px; height: 43px; border-radius: 13px; font-size: 25px; }
+  .mobile-brand .brand-name { font-size: 22px; }
+}
+@media (max-width: 860px) {
+  .app-shell { grid-template-columns: 1fr; }
+  .sidebar { position: relative; min-height: auto; padding: 12px 15px; }
+  .side-brand { padding: 5px 6px 12px; border-bottom: 0; }
+  .side-label, .sidebar-bottom { display: none; }
+  .nav-list { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .nav-item { justify-content: center; padding: 9px 5px; font-size: 10px; }
+  .nav-icon { width: 22px; height: 22px; }
+  .main { padding: 20px 15px 30px; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .content-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .login-card { padding: 28px 21px; border-radius: 21px; }
+  .nav-list { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .nav-item { flex-direction: column; gap: 4px; }
+  .module-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .topbar { display: block; }
+  .status-pill { display: inline-flex; margin-top: 15px; }
+}
+
+/* Multi-department clinic views */
+.department-label { margin-top: 23px; }
+.department-nav { display: grid; gap: 3px; }
+.department-nav-item { display: grid; grid-template-columns: 25px 1fr auto; align-items: center; gap: 9px; width: 100%; padding: 9px 11px; border: 0; border-radius: 10px; background: transparent; color: rgba(255,255,255,.62); text-align: right; font-size: 11px; }
+.department-nav-item:hover, .department-nav-item.active { background: rgba(108,228,204,.13); color: #fff; }
+.department-nav-item em { min-width: 19px; padding: 2px 4px; border-radius: 5px; background: rgba(255,255,255,.08); color: rgba(255,255,255,.55); font-size: 9px; font-style: normal; text-align: center; }
+.department-nav-item.active em { background: rgba(119,229,204,.25); color: #a4f0df; }
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
+.section-heading > div p { margin: 5px 0 0; color: var(--muted); font-size: 10px; }
+.section-count, .week-label { padding: 6px 9px; border-radius: 8px; background: var(--mint); color: var(--teal-700); font-size: 10px; font-weight: 800; white-space: nowrap; }
+.department-overview { margin-bottom: 18px; }
+.department-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
+.department-card { position: relative; display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 12px; min-width: 0; padding: 15px 16px; border: 1px solid #e2efed; border-radius: 15px; background: linear-gradient(135deg, #fff, #f7fcfb); color: var(--ink); text-align: right; transition: .2s transform, .2s box-shadow, .2s border; }
+.department-card:hover { transform: translateY(-2px); border-color: #9cd3ca; box-shadow: 0 10px 22px rgba(24,91,86,.08); }
+.department-icon, .department-hero-icon { display: grid; place-items: center; flex: 0 0 auto; border-radius: 13px; background: var(--teal-100); color: var(--teal-700); font-size: 20px; }
+.department-icon { width: 44px; height: 44px; }
+.department-main { min-width: 0; }
+.department-main strong { display: block; color: var(--teal-950); font-size: 13px; }
+.department-main span { display: block; overflow: hidden; margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+.department-meta { display: grid; grid-template-columns: repeat(2, auto); gap: 2px 8px; margin-left: 14px; color: var(--teal-700); text-align: center; }
+.department-meta b { font-size: 13px; }
+.department-meta small { color: var(--muted); font-size: 8px; }
+.card-arrow { color: #9bb7b4; font-size: 15px; }
+.home-lower { margin-top: 18px; }
+.text-button, .outline-button { border: 0; background: transparent; color: var(--teal-700); font-size: 10px; font-weight: 800; }
+.text-button:hover { color: var(--teal-950); }
+.outline-button { padding: 9px 12px; border: 1px solid #abd8d1; border-radius: 9px; }
+.department-hero { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; padding: 22px; border: 1px solid #cde9e4; border-radius: 19px; background: linear-gradient(105deg, #e5f8f3, #f8fcfb); }
+.department-hero-icon { width: 62px; height: 62px; font-size: 28px; }
+.department-hero > div:nth-child(2) { flex: 1; }
+.department-hero > div:nth-child(2) > span { color: var(--teal-700); font-size: 10px; font-weight: 800; }
+.department-hero h3 { margin: 4px 0; color: var(--teal-950); font-size: 22px; }
+.department-hero p { margin: 0; color: var(--muted); font-size: 11px; }
+.hero-facts { display: flex; gap: 20px; padding-right: 18px; border-right: 1px solid #cde4df; }
+.hero-facts div { min-width: 50px; text-align: center; }
+.hero-facts b, .hero-facts span { display: block; }
+.hero-facts b { color: var(--teal-950); font-size: 21px; }
+.hero-facts span { margin-top: 3px; color: var(--muted); font-size: 9px; }
+.doctor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.doctor-card { min-width: 0; padding: 16px; border: 1px solid #e0eeec; border-radius: 15px; background: #fff; }
+.doctor-card-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.doctor-avatar { display: grid; place-items: center; flex: 0 0 auto; width: 38px; height: 38px; border-radius: 12px; background: var(--teal-100); color: var(--teal-700); font-size: 14px; font-weight: 900; }
+.doctor-card-top > div:nth-child(2) { min-width: 0; flex: 1; }
+.doctor-card-top strong, .doctor-card-top span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doctor-card-top strong { color: var(--teal-950); font-size: 12px; }
+.doctor-card-top span { margin-top: 3px; color: var(--muted); font-size: 9px; }
+.status-badge { display: inline-block; padding: 4px 7px; border-radius: 6px; font-size: 8px; font-weight: 800; white-space: nowrap; }
+.status-badge.success { background: #e3f7ec; color: #25805b; }
+.status-badge.warning { background: #fff3db; color: #a87522; }
+.status-badge.muted { background: #eef2f2; color: #738281; }
+.doctor-details { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; margin: 17px 0 13px; padding-top: 13px; border-top: 1px solid #edf4f3; }
+.doctor-details > div { min-width: 0; }
+.doctor-details .doctor-days { grid-column: 1 / -1; }
+.doctor-details small, .doctor-details b { display: block; }
+.doctor-details small { margin-bottom: 4px; color: var(--muted); font-size: 8px; }
+.doctor-details b { overflow: hidden; color: var(--ink); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.doctor-footer { display: flex; justify-content: space-between; padding-top: 10px; border-top: 1px solid #edf4f3; color: var(--muted); font-size: 9px; }
+.doctor-footer b { color: var(--teal-700); }
+.schedule-section { margin: 18px 0; }
+.table-scroll { width: 100%; overflow-x: auto; }
+.schedule-table, .appointment-table { width: 100%; min-width: 610px; border-collapse: collapse; font-size: 10px; }
+.schedule-table th, .schedule-table td, .appointment-table th, .appointment-table td { padding: 12px 10px; border-bottom: 1px solid #edf3f2; text-align: right; white-space: nowrap; }
+.schedule-table th, .appointment-table th { color: var(--muted); background: #f8fbfa; font-size: 9px; font-weight: 800; }
+.schedule-table tr:hover td, .appointment-table tr:hover td { background: #fbfefd; }
+.schedule-table .day-cell { color: var(--teal-700); font-weight: 900; }
+.appointment-table strong { color: var(--ink); font-size: 10px; }
+.appointment-table .time-cell { color: var(--teal-700); font-size: 11px; font-weight: 900; }
+.inline-dept { padding: 4px 6px; border-radius: 6px; background: var(--mint); color: var(--teal-700); font-size: 8px; }
+.empty-state { padding: 35px; color: var(--muted); text-align: center; font-size: 11px; }
+.filter-strip { display: flex; align-items: center; gap: 25px; margin-bottom: 18px; padding: 15px 18px; border: 1px solid var(--line); border-radius: 15px; background: #fff; }
+.filter-strip > div { display: flex; flex-direction: column; gap: 4px; }
+.filter-strip span { color: var(--muted); font-size: 9px; }
+.filter-strip b { color: var(--teal-950); font-size: 16px; }
+.filter-strip .outline-button { margin-right: auto; }
+.report-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.report-card { padding: 16px; border: 1px solid #e4efed; border-radius: 14px; }
+.report-card-top { display: flex; align-items: center; gap: 9px; color: var(--ink); font-size: 10px; font-weight: 800; }
+.distribution-icon { display: grid; place-items: center; flex: 0 0 auto; width: 30px; height: 30px; border-radius: 9px; background: var(--teal-100); color: var(--teal-700); }
+.distribution-icon.blue { background: #e5f0fb; color: #377db5; }
+.distribution-icon.purple { background: #f0eafb; color: #7757aa; }
+.distribution-icon.orange { background: #fff0dd; color: #b87929; }
+.distribution-icon.cyan { background: #e4f4f7; color: #378a98; }
+.report-card > strong { display: block; margin-top: 15px; color: var(--teal-950); font-size: 24px; }
+.report-card > small { color: var(--muted); font-size: 9px; }
+.report-line { height: 5px; margin: 14px 0 10px; overflow: hidden; border-radius: 99px; background: #edf3f2; }
+.report-line i { display: block; height: 100%; border-radius: inherit; background: var(--teal-500); }
+.report-card footer { display: flex; justify-content: space-between; color: var(--muted); font-size: 8px; }
+.operation-note { display: flex; gap: 12px; padding: 13px 0; border-bottom: 1px solid #edf3f2; }
+.operation-note > span { color: var(--teal-500); font-size: 11px; font-weight: 900; }
+.operation-note b { color: var(--ink); font-size: 11px; }
+.operation-note p { margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.7; }
+.big-summary { padding: 30px 10px; border-radius: 14px; background: var(--mint); text-align: center; }
+.big-summary strong, .big-summary span, .big-summary small { display: block; }
+.big-summary strong { color: var(--teal-950); font-size: 42px; }
+.big-summary span { margin-top: 4px; color: var(--teal-700); font-size: 12px; font-weight: 800; }
+.big-summary small { margin-top: 13px; color: var(--muted); font-size: 9px; }
+
+@media (max-width: 1100px) { .department-grid, .doctor-grid { grid-template-columns: 1fr; } .report-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 860px) { .department-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); } .department-label { display: block; margin: 9px 7px 5px; } .department-nav-item { display: flex; flex-direction: column; gap: 3px; padding: 6px 3px; font-size: 9px; text-align: center; } .department-nav-item em { display: none; } .department-hero { align-items: flex-start; flex-wrap: wrap; } .hero-facts { width: 100%; padding: 15px 0 0; border-right: 0; border-top: 1px solid #cde4df; justify-content: space-around; } }
+@media (max-width: 560px) { .department-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); } .department-card { grid-template-columns: 38px 1fr; padding: 12px; } .department-icon { width: 38px; height: 38px; } .department-meta, .card-arrow { display: none; } .report-grid { grid-template-columns: 1fr; } .filter-strip { gap: 12px; flex-wrap: wrap; } .filter-strip .outline-button { width: 100%; margin-right: 0; } .department-hero h3 { font-size: 18px; } .schedule-table, .appointment-table { min-width: 560px; } }
+
+/* Local accounting and doctor settings */
+.quick-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: -7px 0 20px; }
+.primary-action, .secondary-action { display: flex; align-items: center; gap: 11px; min-width: 0; padding: 14px 16px; border-radius: 14px; text-align: right; }
+.primary-action { border: 1px solid #15958c; background: linear-gradient(135deg, var(--teal-700), var(--teal-500)); color: #fff; box-shadow: 0 10px 20px rgba(15,118,110,.14); }
+.secondary-action { border: 1px solid var(--line); background: #fff; color: var(--ink); }
+.primary-action:hover, .secondary-action:hover { transform: translateY(-1px); box-shadow: 0 10px 22px rgba(21,90,84,.1); }
+.primary-action > span, .secondary-action > span { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 10px; font-size: 17px; }
+.primary-action > span { background: rgba(255,255,255,.18); }
+.secondary-action > span { background: var(--mint); color: var(--teal-700); }
+.primary-action b, .secondary-action b, .primary-action small, .secondary-action small { display: block; }
+.primary-action b, .secondary-action b { font-size: 11px; }
+.primary-action small, .secondary-action small { margin-top: 4px; color: var(--muted); font-size: 9px; }
+.primary-action small { color: rgba(255,255,255,.72); }
+.primary-mini { padding: 8px 11px; border: 0; border-radius: 9px; background: var(--teal-700); color: #fff; font-size: 10px; font-weight: 800; }
+.primary-mini:hover { background: var(--teal-900); }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; }
+.form-grid .field { min-width: 0; }
+.form-grid select, .form-grid input { width: 100%; height: 45px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; outline: none; background: #fbfdfc; color: var(--ink); font-size: 11px; }
+.form-grid select:focus, .form-grid input:focus { border-color: var(--teal-500); box-shadow: 0 0 0 4px rgba(32,163,158,.1); }
+.field-wide { grid-column: 1 / -1; }
+.earning-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; padding: 14px; border: 1px dashed #abd8d1; border-radius: 12px; background: #fbfefd; }
+.earning-fields .field { margin-bottom: 0; }
+.earning-help { align-self: center; color: var(--muted); font-size: 10px; line-height: 1.8; }
+.form-actions { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.form-actions .form-submit { width: auto; min-width: 190px; padding: 0 22px; }
+.settings-doctor-list { display: grid; gap: 9px; }
+.settings-doctor-row { display: grid; grid-template-columns: 38px 1fr auto auto; align-items: center; gap: 11px; padding: 12px 13px; border: 1px solid #e4efed; border-radius: 13px; background: #fff; }
+.settings-doctor-main { min-width: 0; }
+.settings-doctor-main strong, .settings-doctor-main span, .settings-doctor-main small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-doctor-main strong { color: var(--teal-950); font-size: 11px; }
+.settings-doctor-main span { margin-top: 3px; color: var(--ink); font-size: 9px; }
+.settings-doctor-main small { margin-top: 4px; color: var(--muted); font-size: 8px; }
+.settings-doctor-fee { min-width: 170px; text-align: right; }
+.settings-doctor-fee b, .settings-doctor-fee span { display: block; }
+.settings-doctor-fee b { color: var(--teal-700); font-size: 10px; }
+.settings-doctor-fee span { margin-top: 3px; color: var(--muted); font-size: 8px; }
+.settings-doctor-row .outline-button { padding: 7px 10px; background: #fff; }
+.doctor-footer .small-link { padding: 0; border: 0; background: transparent; color: var(--teal-700); font-size: 9px; font-weight: 800; }
+.visit-calculation { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 1px 0 15px; padding: 14px 16px; border-radius: 12px; background: linear-gradient(90deg, #e2f7f2, #f5fbfa); color: var(--teal-700); font-size: 10px; }
+.visit-calculation b { color: var(--teal-950); font-size: 12px; }
+.rule-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.rule-grid > div { padding: 14px; border-radius: 12px; background: var(--mint); }
+.rule-grid b, .rule-grid span { display: block; }
+.rule-grid b { color: var(--teal-900); font-size: 11px; }
+.rule-grid span { margin-top: 5px; color: var(--muted); font-size: 9px; line-height: 1.6; }
+.income-table { width: 100%; min-width: 730px; border-collapse: collapse; font-size: 10px; }
+.income-table th, .income-table td { padding: 12px 9px; border-bottom: 1px solid #edf3f2; text-align: right; white-space: nowrap; }
+.income-table th { color: var(--muted); background: #f8fbfa; font-size: 9px; }
+.income-table td strong { color: var(--teal-950); }
+.amount-cell { color: var(--teal-700); font-weight: 900; }
+
+@media (max-width: 1000px) { .quick-actions { grid-template-columns: 1fr; } .settings-doctor-row { grid-template-columns: 38px 1fr auto; } .settings-doctor-fee { grid-column: 2 / 3; min-width: 0; } .settings-doctor-row .outline-button { grid-column: 3 / 4; grid-row: 1 / 3; } }
+@media (max-width: 700px) { .form-grid, .earning-fields, .rule-grid { grid-template-columns: 1fr; } .field-wide { grid-column: auto; } .form-actions { flex-wrap: wrap; } .form-actions .form-submit { width: 100%; } .visit-calculation { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 560px) { .settings-doctor-row { grid-template-columns: 34px 1fr; } .settings-doctor-row .outline-button { grid-column: 2; grid-row: auto; width: fit-content; } .settings-doctor-fee { grid-column: 2; } }
+
+/* Patient records */
+.section-heading-actions { display: flex; align-items: center; gap: 12px; }
+.patient-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 210px auto; align-items: center; gap: 10px; margin-bottom: 18px; }
+.patient-search { display: flex; align-items: center; gap: 9px; height: 45px; padding: 0 13px; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
+.patient-search > span { color: var(--teal-700); font-size: 17px; }
+.patient-search input, .patient-toolbar select { width: 100%; height: 45px; border: 1px solid var(--line); border-radius: 11px; outline: none; background: #fff; color: var(--ink); font: inherit; font-size: 10px; }
+.patient-search input { height: 42px; padding: 0 4px; border: 0; }
+.patient-search input:focus { box-shadow: none; }
+.patient-toolbar select { padding: 0 12px; }
+.patient-toolbar select:focus { border-color: var(--teal-500); box-shadow: 0 0 0 4px rgba(32,163,158,.1); }
+.patient-workspace { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(300px, .75fr); gap: 18px; align-items: start; }
+.patient-list-card { min-width: 0; }
+.patient-detail-card { position: sticky; top: 18px; min-height: 360px; }
+.patient-table { width: 100%; min-width: 840px; border-collapse: collapse; font-size: 10px; }
+.patient-table th, .patient-table td { padding: 11px 9px; border-bottom: 1px solid #edf3f2; text-align: right; white-space: nowrap; }
+.patient-table th { color: var(--muted); background: #f8fbfa; font-size: 9px; }
+.patient-row { cursor: pointer; transition: background .15s; }
+.patient-row:hover td, .patient-row.selected td { background: #eef9f6; }
+.patient-cell { display: flex; align-items: center; gap: 8px; }
+.patient-cell strong { color: var(--teal-950); }
+.patient-mini-avatar { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 8px; background: var(--teal-100); color: var(--teal-700); font-size: 11px; font-weight: 900; }
+.patient-detail-head { display: flex; align-items: center; gap: 11px; padding-bottom: 16px; border-bottom: 1px solid #eaf2f1; }
+.patient-large-avatar { display: grid; place-items: center; flex: 0 0 auto; width: 55px; height: 55px; border-radius: 16px; background: linear-gradient(135deg, var(--teal-700), var(--teal-500)); color: #fff; font-size: 22px; font-weight: 900; }
+.patient-detail-head h3 { margin: 3px 0; color: var(--teal-950); font-size: 17px; }
+.patient-detail-head p { margin: 0; color: var(--muted); font-size: 9px; }
+.patient-detail-status { margin: 13px 0; }
+.patient-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 13px 0; border-top: 1px solid #edf3f2; border-bottom: 1px solid #edf3f2; }
+.patient-info-grid small, .patient-info-grid b { display: block; }
+.patient-info-grid small { margin-bottom: 4px; color: var(--muted); font-size: 8px; }
+.patient-info-grid b { color: var(--ink); font-size: 10px; }
+.patient-note { margin-top: 14px; padding: 12px; border-radius: 11px; background: var(--mint); }
+.patient-note span, .patient-note b { display: block; }
+.patient-note span { color: var(--muted); font-size: 8px; }
+.patient-note b { margin-top: 4px; color: var(--teal-900); font-size: 10px; line-height: 1.7; }
+.patient-detail-actions { display: flex; gap: 8px; margin-top: 15px; }
+.patient-detail-actions .primary-mini, .patient-detail-actions .outline-button { flex: 1; }
+.patient-detail-empty { display: grid; place-items: center; min-height: 300px; padding: 20px; text-align: center; }
+.patient-detail-empty span { display: grid; place-items: center; width: 58px; height: 58px; margin-bottom: 14px; border-radius: 18px; background: var(--mint); color: var(--teal-700); font-size: 27px; }
+.patient-detail-empty b { color: var(--teal-950); font-size: 13px; }
+.patient-detail-empty small { max-width: 180px; margin-top: 6px; color: var(--muted); font-size: 9px; line-height: 1.7; }
+
+@media (max-width: 1100px) { .patient-workspace { grid-template-columns: 1fr; } .patient-detail-card { position: static; } }
+@media (max-width: 700px) { .patient-toolbar { grid-template-columns: 1fr; } .patient-toolbar .primary-mini { width: 100%; } .section-heading-actions { flex-wrap: wrap; gap: 6px; } }
+
+  </style>
 </head>
 <body>
   <div id="app" aria-live="polite"></div>
-  <script src="./app.js?v=accounting-20260827-1"></script>
-  <script src="./features.js?v=patients-20260827-1"></script>
+
+  <script id="solimedical-app">
+"use strict";
+
+const LOCAL_AUTH = Object.freeze({
+  username: "admin",
+  displayName: "مدير النظام",
+  role: "مدير",
+  salt: "solimedical-local-admin-v1",
+  verifier: "085521de8bd3847d6b9e17c51cd0381caa818b570cf5ff477d4fdd62e22e6c11",
+});
+
+const SESSION_KEY = "solimedical-demo-session-v1";
+const FAILURES_KEY = "solimedical-demo-login-guard-v1";
+const MAX_FAILURES = 5;
+const LOCK_MS = 60 * 1000;
+const app = document.getElementById("app");
+
+const icons = { dashboard: "⌂", patients: "♙", calendar: "▦", doctors: "⚕", reports: "▤", settings: "⚙" };
+
+const DEPARTMENTS = Object.freeze({
+  outpatient: {
+    name: "العيادات الخارجية", short: "العيادات", icon: "♙", color: "teal", description: "باطنة، أطفال، جلدية وتخصصات عامة",
+    rooms: 5, appointments: 32, hours: "09:00 – 21:00", doctors: [
+      { name: "د. أحمد سامح", specialty: "استشاري باطنة", room: "عيادة 101", days: "الأحد · الثلاثاء · الخميس", hours: "09:00 – 15:00", status: "متاح", patients: 18 },
+      { name: "د. مريم عادل", specialty: "أخصائية أطفال", room: "عيادة 102", days: "السبت · الإثنين · الأربعاء", hours: "10:00 – 17:00", status: "متاح", patients: 14 },
+      { name: "د. خالد ياسر", specialty: "أخصائي جلدية", room: "عيادة 103", days: "الأحد · الإثنين · الخميس", hours: "15:00 – 21:00", status: "في إجازة", patients: 11 },
+      { name: "د. نورهان علي", specialty: "طب أسرة", room: "عيادة 104", days: "السبت · الثلاثاء", hours: "09:00 – 14:00", status: "متاح", patients: 9 },
+    ], schedule: [
+      ["السبت", "09:00 – 14:00", "د. مريم عادل", "أطفال", "عيادة 102"], ["الأحد", "09:00 – 15:00", "د. أحمد سامح", "باطنة", "عيادة 101"], ["الإثنين", "10:00 – 17:00", "د. مريم عادل", "أطفال", "عيادة 102"], ["الثلاثاء", "09:00 – 15:00", "د. أحمد سامح", "باطنة", "عيادة 101"], ["الأربعاء", "10:00 – 17:00", "د. مريم عادل", "أطفال", "عيادة 102"], ["الخميس", "15:00 – 21:00", "د. خالد ياسر", "جلدية", "عيادة 103"],
+    ], appointments: [["09:00", "أحمد محمد", "باطنة", "د. أحمد سامح", "مؤكد"], ["10:30", "سارة علي", "أطفال", "د. مريم عادل", "مؤكد"], ["12:00", "عمر حسن", "باطنة", "د. أحمد سامح", "جديد"], ["15:30", "ليلى إبراهيم", "جلدية", "د. خالد ياسر", "مؤكد"]],
+  },
+  dentistry: {
+    name: "قسم الأسنان", short: "الأسنان", icon: "✚", color: "blue", description: "كشف، علاج، حشو وتركيبات",
+    rooms: 3, appointments: 18, hours: "10:00 – 20:00", doctors: [
+      { name: "د. سارة محمود", specialty: "استشارية أسنان", room: "غرفة أسنان 1", days: "الأحد · الثلاثاء · الخميس", hours: "10:00 – 16:00", status: "متاح", patients: 12 },
+      { name: "د. ياسر فؤاد", specialty: "تركيبات وتجميل", room: "غرفة أسنان 2", days: "السبت · الإثنين · الأربعاء", hours: "14:00 – 20:00", status: "متاح", patients: 10 },
+      { name: "د. رنا هشام", specialty: "أسنان أطفال", room: "غرفة أسنان 3", days: "الإثنين · الأربعاء", hours: "10:00 – 15:00", status: "متاح", patients: 8 },
+    ], schedule: [
+      ["السبت", "14:00 – 20:00", "د. ياسر فؤاد", "تركيبات", "غرفة 2"], ["الأحد", "10:00 – 16:00", "د. سارة محمود", "علاج وحشو", "غرفة 1"], ["الإثنين", "10:00 – 15:00", "د. رنا هشام", "أسنان أطفال", "غرفة 3"], ["الثلاثاء", "10:00 – 16:00", "د. سارة محمود", "علاج وحشو", "غرفة 1"], ["الأربعاء", "14:00 – 20:00", "د. ياسر فؤاد", "تركيبات", "غرفة 2"], ["الخميس", "10:00 – 16:00", "د. سارة محمود", "كشف", "غرفة 1"],
+    ], appointments: [["10:00", "إياد حسن", "كشف", "د. سارة محمود", "مؤكد"], ["11:30", "ملك أحمد", "أسنان أطفال", "د. رنا هشام", "جديد"], ["15:00", "يوسف علي", "تركيبات", "د. ياسر فؤاد", "مؤكد"]],
+  },
+  operations: {
+    name: "قسم العمليات", short: "العمليات", icon: "◉", color: "purple", description: "جدولة العمليات والإجراءات الطبية",
+    rooms: 2, appointments: 6, hours: "08:00 – 18:00", doctors: [
+      { name: "د. شريف ناصر", specialty: "جراحة عامة", room: "غرفة عمليات 1", days: "الأحد · الإثنين · الأربعاء", hours: "08:00 – 14:00", status: "متاح", patients: 4 },
+      { name: "د. هالة كمال", specialty: "جراحة نساء وتوليد", room: "غرفة عمليات 2", days: "السبت · الثلاثاء · الخميس", hours: "09:00 – 15:00", status: "متاح", patients: 3 },
+      { name: "د. عمرو صبري", specialty: "تخدير ورعاية", room: "التخدير", days: "حسب جدول العمليات", hours: "08:00 – 18:00", status: "مناوب", patients: 6 },
+    ], schedule: [
+      ["السبت", "09:00 – 15:00", "د. هالة كمال", "إجراء نساء", "غرفة 2"], ["الأحد", "08:00 – 14:00", "د. شريف ناصر", "جراحة عامة", "غرفة 1"], ["الإثنين", "08:00 – 14:00", "د. شريف ناصر", "جراحة عامة", "غرفة 1"], ["الثلاثاء", "09:00 – 15:00", "د. هالة كمال", "إجراء نساء", "غرفة 2"], ["الأربعاء", "08:00 – 14:00", "د. شريف ناصر", "جراحة عامة", "غرفة 1"], ["الخميس", "09:00 – 15:00", "د. هالة كمال", "إجراء نساء", "غرفة 2"],
+    ], appointments: [["08:00", "محمود عبد الله", "فتق", "د. شريف ناصر", "مجدول"], ["10:00", "نور علي", "إجراء نساء", "د. هالة كمال", "مؤكد"], ["13:00", "حسن إبراهيم", "منظار", "د. شريف ناصر", "جديد"]],
+  },
+  labs: {
+    name: "قسم التحاليل", short: "التحاليل", icon: "⌁", color: "orange", description: "عينات، نتائج وتقارير المختبر",
+    rooms: 4, appointments: 24, hours: "08:00 – 22:00", doctors: [
+      { name: "د. منى إبراهيم", specialty: "استشارية تحاليل طبية", room: "مختبر 1", days: "السبت – الخميس", hours: "08:00 – 16:00", status: "متاح", patients: 26 },
+      { name: "د. حسام رأفت", specialty: "كيمياء إكلينيكية", room: "مختبر 2", days: "السبت – الخميس", hours: "14:00 – 22:00", status: "متاح", patients: 19 },
+      { name: "أ.د. ليلى عوض", specialty: "باثولوجي", room: "المعمل المركزي", days: "الأحد · الثلاثاء", hours: "09:00 – 15:00", status: "متاح", patients: 12 },
+    ], schedule: [
+      ["السبت", "08:00 – 16:00", "د. منى إبراهيم", "استقبال عينات", "مختبر 1"], ["الأحد", "09:00 – 15:00", "أ.د. ليلى عوض", "باثولوجي", "المركزي"], ["الإثنين", "14:00 – 22:00", "د. حسام رأفت", "كيمياء", "مختبر 2"], ["الثلاثاء", "09:00 – 15:00", "أ.د. ليلى عوض", "باثولوجي", "المركزي"], ["الأربعاء", "08:00 – 16:00", "د. منى إبراهيم", "استقبال عينات", "مختبر 1"], ["الخميس", "14:00 – 22:00", "د. حسام رأفت", "كيمياء", "مختبر 2"],
+    ], appointments: [["08:30", "عينة — أحمد محمد", "صورة دم كاملة", "د. منى إبراهيم", "قيد السحب"], ["11:00", "عينة — سارة علي", "وظائف كبد", "د. منى إبراهيم", "جاهز"], ["17:30", "عينة — عمر حسن", "كيمياء", "د. حسام رأفت", "مؤكد"]],
+  },
+  radiology: {
+    name: "قسم الأشعة", short: "الأشعة", icon: "◌", color: "cyan", description: "أشعة عادية وسونار وفحوصات",
+    rooms: 3, appointments: 12, hours: "09:00 – 21:00", doctors: [
+      { name: "د. كريم طارق", specialty: "استشاري أشعة تشخيصية", room: "جهاز الأشعة 1", days: "الأحد · الثلاثاء · الخميس", hours: "09:00 – 15:00", status: "متاح", patients: 8 },
+      { name: "د. دعاء فوزي", specialty: "سونار وأشعة نساء", room: "غرفة السونار", days: "السبت · الإثنين · الأربعاء", hours: "12:00 – 20:00", status: "متاح", patients: 7 },
+      { name: "د. مازن عادل", specialty: "أشعة مقطعية", room: "جهاز الأشعة 2", days: "الإثنين · الأربعاء", hours: "09:00 – 17:00", status: "مناوب", patients: 5 },
+    ], schedule: [
+      ["السبت", "12:00 – 20:00", "د. دعاء فوزي", "سونار", "غرفة السونار"], ["الأحد", "09:00 – 15:00", "د. كريم طارق", "أشعة عادية", "جهاز 1"], ["الإثنين", "09:00 – 17:00", "د. مازن عادل", "مقطعية", "جهاز 2"], ["الثلاثاء", "09:00 – 15:00", "د. كريم طارق", "أشعة عادية", "جهاز 1"], ["الأربعاء", "12:00 – 20:00", "د. دعاء فوزي", "سونار", "غرفة السونار"], ["الخميس", "09:00 – 15:00", "د. كريم طارق", "أشعة عادية", "جهاز 1"],
+    ], appointments: [["09:30", "محمد حسن", "أشعة صدر", "د. كريم طارق", "مؤكد"], ["13:00", "نور علي", "سونار", "د. دعاء فوزي", "جديد"], ["16:30", "محمود إبراهيم", "أشعة مقطعية", "د. مازن عادل", "مؤكد"]],
+  },
+});
+
+const DEPARTMENT_IDS = Object.keys(DEPARTMENTS);
+let currentView = { type: "dashboard", id: null };
+
+function escapeHtml(value) { return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
+function getSession() { try { const raw = localStorage.getItem(SESSION_KEY); const session = raw ? JSON.parse(raw) : null; if (!session || Number(session.expiresAt) <= Date.now()) { localStorage.removeItem(SESSION_KEY); return null; } return session; } catch (_) { return null; } }
+function saveSession() { const session = { username: LOCAL_AUTH.username, displayName: LOCAL_AUTH.displayName, role: LOCAL_AUTH.role, issuedAt: Date.now(), expiresAt: Date.now() + 8 * 60 * 60 * 1000 }; localStorage.setItem(SESSION_KEY, JSON.stringify(session)); return session; }
+function clearSession() { localStorage.removeItem(SESSION_KEY); }
+function loginGuard() { try { const guard = JSON.parse(localStorage.getItem(FAILURES_KEY) || "{}"); if (Number(guard.lockedUntil) > Date.now()) return guard; return { failures: 0, lockedUntil: 0 }; } catch (_) { return { failures: 0, lockedUntil: 0 }; } }
+function registerFailure() { const guard = loginGuard(); guard.failures = Number(guard.failures || 0) + 1; if (guard.failures >= MAX_FAILURES) { guard.failures = 0; guard.lockedUntil = Date.now() + LOCK_MS; } localStorage.setItem(FAILURES_KEY, JSON.stringify(guard)); }
+function clearFailures() { localStorage.removeItem(FAILURES_KEY); }
+function bytesToHex(bytes) { return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, "0")).join(""); }
+async function deriveVerifier(password, salt) { if (!window.crypto?.subtle) throw new Error("secure-context-required"); const key = await window.crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]); const bits = await window.crypto.subtle.deriveBits({ name: "PBKDF2", salt: new TextEncoder().encode(salt), iterations: 120000, hash: "SHA-256" }, key, 256); return bytesToHex(new Uint8Array(bits)); }
+function showToast(message) { document.querySelector(".toast")?.remove(); const toast = document.createElement("div"); toast.className = "toast"; toast.textContent = message; document.body.appendChild(toast); window.setTimeout(() => toast.remove(), 2800); }
+function brandMarkup(compact = false) { return `<div class="${compact ? "side-brand" : "brand-lockup"}"><div class="brand-mark">+</div><div><span class="brand-name">SoliMedical</span><span class="brand-sub">نظام إدارة المستشفى</span></div></div>`; }
+
+function renderLogin(error = "") {
+  app.innerHTML = `<main class="login-shell"><section class="login-visual"><div class="visual-content">${brandMarkup()}<h1>رعاية أفضل،<br>بإدارة أبسط.</h1><p>منصة موحدة لإدارة مجمع العيادات، تجمع الأقسام الطبية والأطباء والجداول والمواعيد في لوحة واحدة.</p><div class="feature-list"><div class="feature-chip"><b>✓</b><span>5 أقسام طبية</span></div><div class="feature-chip"><b>✓</b><span>جداول الأطباء</span></div><div class="feature-chip"><b>✓</b><span>مواعيد موحدة</span></div><div class="feature-chip"><b>✓</b><span>تقارير تشغيلية</span></div></div></div></section><section class="login-panel"><div class="login-card"><div class="mobile-brand">${brandMarkup()}</div><h2>مرحبًا بعودتك</h2><p class="intro">سجّل الدخول إلى لوحة إدارة SoliMedical التجريبية.</p><form id="login-form" novalidate><div class="field"><label for="username">اسم المستخدم</label><input id="username" name="username" type="text" autocomplete="username" placeholder="أدخل اسم المستخدم" required></div><div class="field"><label for="password">كلمة المرور</label><div class="input-wrap"><input id="password" name="password" type="password" autocomplete="current-password" placeholder="أدخل كلمة المرور" required><button class="password-toggle" type="button" id="toggle-password">إظهار</button></div></div><div class="error-box" id="login-error"${error ? ' style="display:block"' : ""}>${escapeHtml(error)}</div><button class="login-btn" type="submit">تسجيل الدخول</button></form><div class="local-note"><span>●</span><div><strong>وضع تجريبي محلي</strong>لا يوجد اتصال بـ Firebase أو أي قاعدة بيانات خارجية. البيانات تحفظ على هذا المتصفح فقط.</div></div><div class="login-footer">SoliMedical Hospital · Local Preview</div></div></section></main>`;
+  document.getElementById("toggle-password").addEventListener("click", () => { const input = document.getElementById("password"); const visible = input.type === "text"; input.type = visible ? "password" : "text"; document.getElementById("toggle-password").textContent = visible ? "إظهار" : "إخفاء"; });
+  document.getElementById("login-form").addEventListener("submit", async (event) => { event.preventDefault(); const username = document.getElementById("username").value.trim().toLowerCase(); const password = document.getElementById("password").value; const errorBox = document.getElementById("login-error"); const button = event.currentTarget.querySelector("button[type=submit]"); const guard = loginGuard(); if (guard.lockedUntil > Date.now()) { renderLogin(`تم إيقاف المحاولات مؤقتًا. حاول بعد ${Math.ceil((guard.lockedUntil - Date.now()) / 1000)} ثانية.`); return; } if (!username || !password) { errorBox.textContent = "يرجى إدخال اسم المستخدم وكلمة المرور."; errorBox.style.display = "block"; return; } button.disabled = true; button.textContent = "جارٍ التحقق..."; try { const verifier = await deriveVerifier(password, LOCAL_AUTH.salt); if (username !== LOCAL_AUTH.username || verifier !== LOCAL_AUTH.verifier) { registerFailure(); renderLogin("اسم المستخدم أو كلمة المرور غير صحيحة."); return; } clearFailures(); saveSession(); renderDashboard(); } catch (_) { button.disabled = false; button.textContent = "تسجيل الدخول"; errorBox.textContent = "افتح الصفحة عبر HTTPS أو localhost لتفعيل التحقق المحلي الآمن."; errorBox.style.display = "block"; } });
+}
+
+function departmentStats() { return DEPARTMENT_IDS.reduce((summary, id) => { const department = DEPARTMENTS[id]; summary.doctors += department.doctors.length; summary.rooms += department.rooms; summary.appointments += department.appointments.length; return summary; }, { doctors: 0, rooms: 0, appointments: 0 }); }
+function allDoctors() { return DEPARTMENT_IDS.flatMap((id) => DEPARTMENTS[id].doctors.map((doctor) => ({ ...doctor, departmentId: id, department: DEPARTMENTS[id].name, icon: DEPARTMENTS[id].icon }))); }
+function allAppointments() { return DEPARTMENT_IDS.flatMap((id) => DEPARTMENTS[id].appointments.map((appointment) => ({ time: appointment[0], patient: appointment[1], service: appointment[2], doctor: appointment[3], status: appointment[4], department: DEPARTMENTS[id].name, departmentId: id }))).sort((a, b) => a.time.localeCompare(b.time)); }
+function statusBadge(status) { return `<span class="status-badge ${status === "متاح" || status === "مؤكد" || status === "جاهز" ? "success" : status === "في إجازة" ? "muted" : "warning"}">${escapeHtml(status)}</span>`; }
+function departmentCard(id) { const department = DEPARTMENTS[id]; return `<button class="department-card ${department.color}" data-open-dept="${id}"><div class="department-icon">${department.icon}</div><div class="department-main"><strong>${department.name}</strong><span>${department.description}</span></div><div class="department-meta"><b>${department.doctors.length}</b><small>أطباء</small><b>${department.appointments.length}</b><small>موعد اليوم</small></div><span class="card-arrow">←</span></button>`; }
+
+function sidebar(active) { return `<aside class="sidebar">${brandMarkup(true)}<div class="side-label">لوحة المجمع الطبي</div><nav class="nav-list"><button class="nav-item${active === "dashboard" ? " active" : ""}" data-nav="dashboard"><span class="nav-icon">${icons.dashboard}</span><span>الرئيسية</span></button><button class="nav-item${active === "appointments" ? " active" : ""}" data-nav="appointments"><span class="nav-icon">${icons.calendar}</span><span>المواعيد الموحدة</span></button><button class="nav-item${active === "doctors" ? " active" : ""}" data-nav="doctors"><span class="nav-icon">${icons.doctors}</span><span>الأطباء والجداول</span></button><button class="nav-item${active === "reports" ? " active" : ""}" data-nav="reports"><span class="nav-icon">${icons.reports}</span><span>التقارير</span></button></nav><div class="side-label department-label">الأقسام الطبية</div><nav class="department-nav">${DEPARTMENT_IDS.map((id) => `<button class="department-nav-item${active === id ? " active" : ""}" data-open-dept="${id}"><span class="nav-icon">${DEPARTMENTS[id].icon}</span><span>${DEPARTMENTS[id].short}</span><em>${DEPARTMENTS[id].doctors.length}</em></button>`).join("")}</nav><div class="sidebar-bottom"><div class="user-mini"><div class="avatar">أ</div><div><strong>مدير النظام</strong><span>صلاحية كاملة · محلي</span></div></div><button class="logout-btn" id="logout">تسجيل الخروج</button></div></aside>`; }
+function pageHeader(kicker, title, subtitle, active) { return `<header class="topbar"><div><div class="eyebrow">${escapeHtml(kicker)}</div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(subtitle)}</p></div><div class="topbar-actions"><div class="status-pill"><span class="status-dot"></span> محلي فقط · متصل</div></div></header>`; }
+function statCard(label, value, note, icon) { return `<article class="stat-card"><div class="stat-top"><span>${label}</span><span class="stat-icon">${icon}</span></div><strong>${value}</strong><small>${note}</small></article>`; }
+
+function renderHome() {
+  const summary = departmentStats();
+  return `${pageHeader("لوحة التحكم", "صباح الخير، مدير النظام", "نظرة موحدة على تشغيل مجمع العيادات وجميع أقسامه.", "dashboard")}<section class="stats">${statCard("الأقسام الطبية", DEPARTMENT_IDS.length, "وحدات متخصصة", "✚")}${statCard("العيادات والغرف", summary.rooms, "في مجمع واحد", "⌂")}${statCard("الأطباء النشطون", summary.doctors, "حسب التخصص والقسم", "⚕")}${statCard("مواعيد اليوم", summary.appointments, "بين الأقسام المختلفة", "▦")}</section><section class="section-card department-overview"><div class="section-heading"><div><h3>أقسام المجمع الطبي</h3><p>اختر قسمًا لعرض الأطباء والجداول والمواعيد الخاصة به.</p></div><span class="section-count">${DEPARTMENT_IDS.length} أقسام</span></div><div class="department-grid">${DEPARTMENT_IDS.map(departmentCard).join("")}</div></section><div class="content-grid home-lower"><section class="section-card"><div class="section-heading"><div><h3>جدول المواعيد الموحد</h3><p>مواعيد اليوم مرتبة من جميع الأقسام.</p></div><button class="text-button" data-nav="appointments">عرض الكل ←</button></div>${appointmentTable(allAppointments().slice(0, 6), true)}</section><section class="section-card"><div class="section-heading"><div><h3>توزيع الأطباء</h3><p>عدد الأطباء حسب القسم.</p></div></div><div class="distribution-list">${DEPARTMENT_IDS.map((id) => { const d = DEPARTMENTS[id]; return `<button class="distribution-row" data-open-dept="${id}"><span class="distribution-icon ${d.color}">${d.icon}</span><span>${d.name}</span><b>${d.doctors.length}</b><div class="distribution-bar"><i style="width:${Math.round((d.doctors.length / summary.doctors) * 100)}%"></i></div></button>`; }).join("")}</div></section></div><div class="notice"><span>✓</span><div><b>نسخة تجريبية لمجمع عيادات</b><br>البيانات والأطباء والجداول الحالية للعرض فقط، وجميع التعديلات محفوظة محليًا على هذا المتصفح.</div></div>`;
+}
+
+function doctorCards(doctors) { return `<div class="doctor-grid">${doctors.map((doctor) => `<article class="doctor-card"><div class="doctor-card-top"><div class="doctor-avatar">${escapeHtml(doctor.name.replace("د. ", "").slice(0, 1))}</div><div><strong>${escapeHtml(doctor.name)}</strong><span>${escapeHtml(doctor.specialty)}</span></div>${statusBadge(doctor.status)}</div><div class="doctor-details"><div><small>المكان</small><b>${escapeHtml(doctor.room)}</b></div><div><small>ساعات العمل</small><b>${escapeHtml(doctor.hours)}</b></div><div class="doctor-days"><small>أيام الحضور</small><b>${escapeHtml(doctor.days)}</b></div></div><div class="doctor-footer"><span>مواعيد اليوم</span><b>${doctor.patients} مرضى</b></div></article>`).join("")}</div>`; }
+function scheduleTable(schedule) { return `<div class="table-scroll"><table class="schedule-table"><thead><tr><th>اليوم</th><th>ساعات العمل</th><th>الطبيب المسؤول</th><th>الخدمة / التخصص</th><th>العيادة أو الغرفة</th></tr></thead><tbody>${schedule.map((row) => `<tr>${row.map((cell, index) => `<td${index === 0 ? " class=day-cell" : ""}>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`; }
+function appointmentTable(items, compact = false) { if (!items.length) return `<div class="empty-state">لا توجد مواعيد في هذا القسم.</div>`; return `<div class="table-scroll"><table class="appointment-table"><thead><tr><th>الوقت</th><th>المريض</th><th>القسم</th><th>الخدمة</th><th>الطبيب</th><th>الحالة</th></tr></thead><tbody>${items.map((item) => `<tr><td class="time-cell">${escapeHtml(item.time)}</td><td><strong>${escapeHtml(item.patient)}</strong></td><td><span class="inline-dept">${escapeHtml(item.department)}</span></td><td>${escapeHtml(item.service)}</td><td>${escapeHtml(item.doctor)}</td><td>${statusBadge(item.status)}</td></tr>`).join("")}</tbody></table></div>`; }
+
+function renderDepartment(id) {
+  const department = DEPARTMENTS[id];
+  return `${pageHeader("القسم الطبي", department.name, department.description, id)}<div class="department-hero ${department.color}"><div class="department-hero-icon">${department.icon}</div><div><span>وحدة ${department.short}</span><h3>${department.name}</h3><p>الأطباء، أوقات العمل، الغرف وجدول المواعيد الخاص بالقسم.</p></div><div class="hero-facts"><div><b>${department.doctors.length}</b><span>أطباء</span></div><div><b>${department.rooms}</b><span>غرف</span></div><div><b>${department.appointments.length}</b><span>موعد اليوم</span></div></div></div><section class="section-card"><div class="section-heading"><div><h3>أطباء ${department.name}</h3><p>بيانات الفريق الطبي وساعات الحضور الأسبوعية.</p></div><span class="section-count">${department.doctors.length} أطباء</span></div>${doctorCards(department.doctors)}</section><section class="section-card schedule-section"><div class="section-heading"><div><h3>جدول عمل القسم</h3><p>الجدول الأسبوعي للعيادات والغرف.</p></div><span class="week-label">هذا الأسبوع</span></div>${scheduleTable(department.schedule)}</section><section class="section-card"><div class="section-heading"><div><h3>مواعيد ${department.name}</h3><p>المواعيد المسجلة للقسم اليوم.</p></div><button class="text-button" data-nav="appointments">الجدول الموحد ←</button></div>${appointmentTable(department.appointments.map((row) => ({ time: row[0], patient: row[1], service: row[2], doctor: row[3], status: row[4], department: department.name })))}</section>`;
+}
+
+function renderDoctors() { const doctors = allDoctors(); return `${pageHeader("الإدارة الطبية", "الأطباء والجداول", "دليل الأطباء موزعًا على أقسام مجمع العيادات.", "doctors")}<section class="filter-strip"><div><span>إجمالي الفريق الطبي</span><b>${doctors.length} طبيبًا</b></div><div><span>الأقسام المغطاة</span><b>${DEPARTMENT_IDS.length} أقسام</b></div><button class="outline-button" data-nav="appointments">عرض المواعيد الموحدة</button></section><section class="section-card"><div class="section-heading"><div><h3>دليل الأطباء</h3><p>يمكن فتح أي قسم من القائمة الجانبية لمراجعة جدوله التفصيلي.</p></div></div>${doctorCards(doctors)}</section>`; }
+function renderAppointments() { const appointments = allAppointments(); return `${pageHeader("الاستقبال والمواعيد", "المواعيد الموحدة", "جدول مركزي لمواعيد جميع الأقسام الطبية.", "appointments")}<section class="stats">${statCard("كل المواعيد", appointments.length, "مواعيد معروضة", "▦")}${statCard("مؤكدة", appointments.filter((item) => item.status === "مؤكد").length, "جاهزة للحضور", "✓")}${statCard("مواعيد جديدة", appointments.filter((item) => item.status === "جديد").length, "تحتاج مراجعة", "＋")}${statCard("الأقسام", DEPARTMENT_IDS.length, "في الجدول الموحد", "✚")}</section><section class="section-card"><div class="section-heading"><div><h3>جدول اليوم · كل الأقسام</h3><p>البيانات مرتبة حسب وقت الموعد.</p></div><span class="week-label">اليوم</span></div>${appointmentTable(appointments)}</section>`; }
+function renderReports() { const summary = departmentStats(); return `${pageHeader("الإدارة", "التقارير التشغيلية", "ملخص سريع لأداء مجمع العيادات حسب القسم.", "reports")}<section class="section-card"><div class="section-heading"><div><h3>مؤشرات الأقسام</h3><p>بيانات عرض تجريبية قابلة للربط بالتقارير الفعلية لاحقًا.</p></div></div><div class="report-grid">${DEPARTMENT_IDS.map((id) => { const d = DEPARTMENTS[id]; return `<article class="report-card"><div class="report-card-top"><span class="distribution-icon ${d.color}">${d.icon}</span><span>${d.name}</span></div><strong>${d.appointments.length}</strong><small>موعد اليوم</small><div class="report-line"><i style="width:${Math.min(100, d.appointments.length * 3)}%"></i></div><footer><span>${d.doctors.length} أطباء</span><span>${d.rooms} غرف</span></footer></article>`; }).join("")}</div></section><div class="content-grid"><section class="section-card"><div class="section-heading"><div><h3>ملاحظات التشغيل</h3><p>تظهر هنا التنبيهات والتحديثات الإدارية.</p></div></div><div class="operation-note"><span>01</span><div><b>توزيع المواعيد</b><p>تم تجميع مواعيد العيادات والأسنان والعمليات والتحاليل والأشعة في جدول موحد.</p></div></div><div class="operation-note"><span>02</span><div><b>تغطية الأطباء</b><p>كل قسم يحتوي على جدول أسبوعي يوضح الطبيب، التخصص، الغرفة وساعات العمل.</p></div></div></section><section class="section-card"><div class="section-heading"><div><h3>ملخص اليوم</h3><p>المجمع بالكامل</p></div></div><div class="big-summary"><strong>${summary.appointments}</strong><span>موعدًا مجدولًا اليوم</span><small>${summary.doctors} طبيبًا · ${summary.rooms} غرفة</small></div></section></div>`; }
+
+function renderPage() { const session = getSession(); if (!session) return renderLogin(); const active = currentView.type === "department" ? currentView.id : currentView.type; let content = currentView.type === "dashboard" ? renderHome() : currentView.type === "department" ? renderDepartment(currentView.id) : currentView.type === "doctors" ? renderDoctors() : currentView.type === "appointments" ? renderAppointments() : renderReports(); app.innerHTML = `<main class="app-shell">${sidebar(active)}<section class="main">${content}</section></main>`; bindDashboardEvents(); }
+function renderDashboard() { currentView = { type: "dashboard", id: null }; renderPage(); }
+function bindDashboardEvents() { document.getElementById("logout")?.addEventListener("click", () => { clearSession(); renderLogin(); }); document.querySelectorAll("[data-nav]").forEach((button) => button.addEventListener("click", () => { currentView = { type: button.dataset.nav, id: null }; renderPage(); })); document.querySelectorAll("[data-open-dept]").forEach((button) => button.addEventListener("click", () => { currentView = { type: "department", id: button.dataset.openDept }; renderPage(); })); }
+
+window.addEventListener("DOMContentLoaded", () => { if (getSession()) renderPage(); else renderLogin(); });
+
+
+"use strict";
+
+const SOLI_DATA_KEY = "solimedical-accounting-demo-v1";
+const SOLI_CURRENCY = "جنيه";
+const SOLI_WEEKDAYS = ["السبت", "الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس"];
+let soliEditDoctorId = null;
+let soliPatientQuery = "";
+let soliPatientDepartment = "";
+let soliSelectedPatientId = null;
+
+function soliToday() {
+  const date = new Date();
+  return date.toISOString().slice(0, 10);
+}
+function soliMoney(value) { return `${Number(value || 0).toLocaleString("ar-EG", { maximumFractionDigits: 2 })} ${SOLI_CURRENCY}`; }
+function soliId(prefix = "id") { return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`; }
+function soliSlug(value) { return String(value || "").toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]+/g, "-").replace(/^-|-$/g, "") || soliId("doctor"); }
+function soliClone(value) { return JSON.parse(JSON.stringify(value)); }
+
+function soliDefaultDoctors() {
+  const fees = { outpatient: ["fixed", 70, 40, 0, 0], dentistry: ["percentage", 120, 60, 40, 0], operations: ["daily", 0, 0, 0, 550], labs: ["fixed", 50, 30, 0, 0], radiology: ["percentage", 100, 50, 35, 0] };
+  return Object.entries(DEPARTMENTS).flatMap(([departmentId, department]) => department.doctors.map((doctor, index) => {
+    const [paymentMode, consultationFee, followupFee, percentage, dailyWage] = fees[departmentId] || ["fixed", 70, 40, 0, 0];
+    return { id: `${departmentId}-${index + 1}`, name: doctor.name, phone: `0100${String(index + 1).padStart(2, "0")}00000`, departmentId, specialty: doctor.specialty, room: doctor.room, days: doctor.days, hours: doctor.hours, status: doctor.status, paymentMode, consultationFee, followupFee, percentage, dailyWage };
+  }));
+}
+function soliDefaultPatients() {
+  return [
+    { id: "patient-1001", recordNo: "P-1001", name: "أحمد محمد علي", phone: "01011112222", gender: "ذكر", age: 42, blood: "O+", departmentId: "outpatient", doctorId: "outpatient-1", doctorName: "د. أحمد سامح", lastVisit: "2026-08-27", status: "متابعة", diagnosis: "ارتفاع ضغط الدم", lastAction: "مراجعة ضغط الدم", notes: "متابعة شهرية منتظمة" },
+    { id: "patient-1002", recordNo: "P-1002", name: "سارة محمد حسن", phone: "01022223333", gender: "أنثى", age: 29, blood: "A+", departmentId: "outpatient", doctorId: "outpatient-2", doctorName: "د. مريم عادل", lastVisit: "2026-08-26", status: "جديد", diagnosis: "حساسية موسمية", lastAction: "كشف أولي", notes: "لا توجد حساسية دوائية مسجلة" },
+    { id: "patient-2001", recordNo: "P-2001", name: "ملك أحمد إبراهيم", phone: "01033334444", gender: "أنثى", age: 8, blood: "B+", departmentId: "dentistry", doctorId: "dentistry-3", doctorName: "د. رنا هشام", lastVisit: "2026-08-27", status: "مؤكد", diagnosis: "تسوس أسنان لبنية", lastAction: "تنظيف وحشو", notes: "موعد مراجعة بعد أسبوعين" },
+    { id: "patient-2002", recordNo: "P-2002", name: "يوسف علي محمود", phone: "01044445555", gender: "ذكر", age: 35, blood: "AB+", departmentId: "dentistry", doctorId: "dentistry-2", doctorName: "د. ياسر فؤاد", lastVisit: "2026-08-25", status: "متابعة", diagnosis: "تركيبات ثابتة", lastAction: "قياس تركيبة", notes: "التركيبة قيد التجهيز" },
+    { id: "patient-3001", recordNo: "P-3001", name: "محمود عبد الله", phone: "01055556666", gender: "ذكر", age: 51, blood: "O-", departmentId: "operations", doctorId: "operations-1", doctorName: "د. شريف ناصر", lastVisit: "2026-08-27", status: "مجدول", diagnosis: "فتق إربي", lastAction: "تجهيز قبل العملية", notes: "تم استكمال تحاليل ما قبل الجراحة" },
+    { id: "patient-3002", recordNo: "P-3002", name: "نور علي عبد الرحمن", phone: "01066667777", gender: "أنثى", age: 38, blood: "A-", departmentId: "operations", doctorId: "operations-2", doctorName: "د. هالة كمال", lastVisit: "2026-08-26", status: "مؤكد", diagnosis: "إجراء نساء", lastAction: "مراجعة تخدير", notes: "تم تأكيد موعد غرفة العمليات" },
+    { id: "patient-4001", recordNo: "P-4001", name: "عمر حسن عبد القادر", phone: "01077778888", gender: "ذكر", age: 46, blood: "B+", departmentId: "labs", doctorId: "labs-1", doctorName: "د. منى إبراهيم", lastVisit: "2026-08-27", status: "جاهز", diagnosis: "متابعة وظائف الكبد", lastAction: "استلام نتائج التحاليل", notes: "النتائج جاهزة للمراجعة" },
+    { id: "patient-4002", recordNo: "P-4002", name: "ليلى إبراهيم سعد", phone: "01088889999", gender: "أنثى", age: 31, blood: "O+", departmentId: "labs", doctorId: "labs-2", doctorName: "د. حسام رأفت", lastVisit: "2026-08-26", status: "قيد السحب", diagnosis: "فحوصات دورية", lastAction: "سحب عينة", notes: "صيام 8 ساعات قبل الفحص" },
+    { id: "patient-5001", recordNo: "P-5001", name: "محمد حسن جابر", phone: "01099990000", gender: "ذكر", age: 57, blood: "A+", departmentId: "radiology", doctorId: "radiology-1", doctorName: "د. كريم طارق", lastVisit: "2026-08-27", status: "مؤكد", diagnosis: "أشعة صدر", lastAction: "قراءة الأشعة", notes: "التقرير قيد الاعتماد" },
+    { id: "patient-5002", recordNo: "P-5002", name: "هدى فوزي مراد", phone: "01100001111", gender: "أنثى", age: 44, blood: "B-", departmentId: "radiology", doctorId: "radiology-2", doctorName: "د. دعاء فوزي", lastVisit: "2026-08-24", status: "متابعة", diagnosis: "سونار متابعة", lastAction: "مراجعة التقرير", notes: "متابعة مع الطبيب المحول" }
+  ];
+}
+function soliLoadData() {
+  try {
+    const raw = localStorage.getItem(SOLI_DATA_KEY);
+    const data = raw ? JSON.parse(raw) : null;
+    if (data && Array.isArray(data.doctors) && Array.isArray(data.visits) && Array.isArray(data.income)) { if (!Array.isArray(data.patients)) data.patients = soliDefaultPatients(); return data; }
+  } catch (_) { /* use seed */ }
+  const data = { doctors: soliDefaultDoctors(), visits: [], income: [], patients: soliDefaultPatients() };
+  try { localStorage.setItem(SOLI_DATA_KEY, JSON.stringify(data)); } catch (_) { /* private mode */ }
+  return data;
+}
+function soliSaveData(data) { try { localStorage.setItem(SOLI_DATA_KEY, JSON.stringify(data)); } catch (_) { /* private mode */ } }
+function soliData() { return soliLoadData(); }
+function soliAllPatients() { return soliData().patients || []; }
+function soliPatientDepartmentName(patient) { return DEPARTMENTS[patient.departmentId]?.name || "غير محدد"; }
+function soliPatientStatus(status) { return `<span class="status-badge ${status === "مؤكد" || status === "جاهز" ? "success" : status === "متابعة" ? "warning" : "muted"}">${escapeHtml(status)}</span>`; }
+function soliCatalog() {
+  const data = soliData();
+  const catalog = soliClone(DEPARTMENTS);
+  Object.keys(catalog).forEach((id) => {
+    catalog[id].doctors = data.doctors.filter((doctor) => doctor.departmentId === id).map((doctor) => ({ ...doctor, patients: data.visits.filter((visit) => visit.doctorId === doctor.id && visit.date === soliToday()).length }));
+    const localAppointments = data.visits.filter((visit) => visit.departmentId === id && visit.date === soliToday()).map((visit) => [visit.time || "--:--", visit.patientName, visit.visitType, visit.doctorName, "مضاف محليًا"]);
+    catalog[id].appointments = [...localAppointments, ...(catalog[id].appointments || [])];
+  });
+  return catalog;
+}
+function soliAllDoctors() { return soliData().doctors; }
+function soliDepartment(id) { return soliCatalog()[id]; }
+function soliAllAppointments() { return soliData().visits.map((visit) => ({ ...visit, department: DEPARTMENTS[visit.departmentId]?.name || visit.departmentId })).sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)); }
+function soliFeeDescription(doctor) {
+  if (doctor.paymentMode === "percentage") return `${doctor.percentage || 0}% من قيمة الزيارة`;
+  if (doctor.paymentMode === "daily") return `أجر يومي ${soliMoney(doctor.dailyWage)}`;
+  return `كشف ${soliMoney(doctor.consultationFee)} · متابعة ${soliMoney(doctor.followupFee)}`;
+}
+function soliCalculateEarning(doctor, visitType, visitAmount) {
+  if (!doctor) return 0;
+  if (doctor.paymentMode === "percentage") return Number(visitAmount || 0) * Number(doctor.percentage || 0) / 100;
+  if (doctor.paymentMode === "daily") return Number(doctor.dailyWage || 0);
+  return Number(visitType === "متابعة" ? doctor.followupFee : doctor.consultationFee) || 0;
+}
+function soliDepartmentOptions(selected = "") { return Object.entries(DEPARTMENTS).map(([id, d]) => `<option value="${id}" ${selected === id ? "selected" : ""}>${d.name}</option>`).join(""); }
+function soliDoctorOptions(selected = "") { return soliAllDoctors().map((d) => `<option value="${d.id}" ${selected === d.id ? "selected" : ""}>${escapeHtml(d.name)} — ${escapeHtml(DEPARTMENTS[d.departmentId]?.name || "")}</option>`).join(""); }
+function soliStatus(status) { return `<span class="status-badge ${status === "متاح" || status === "مؤكد" || status === "مضاف محليًا" ? "success" : status === "في إجازة" ? "muted" : "warning"}">${escapeHtml(status)}</span>`; }
+function soliPageHeader(kicker, title, subtitle) { return `<header class="topbar"><div><div class="eyebrow">${escapeHtml(kicker)}</div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(subtitle)}</p></div><div class="topbar-actions"><div class="status-pill"><span class="status-dot"></span> تشغيل محلي · بيانات تجريبية</div></div></header>`; }
+function soliStat(label, value, note, icon) { return `<article class="stat-card"><div class="stat-top"><span>${label}</span><span class="stat-icon">${icon}</span></div><strong>${value}</strong><small>${note}</small></article>`; }
+function soliSidebar(active) { return `<aside class="sidebar">${brandMarkup(true)}<div class="side-label">إدارة المجمع الطبي</div><nav class="nav-list"><button class="nav-item${active === "dashboard" ? " active" : ""}" data-soli-nav="dashboard"><span class="nav-icon">⌂</span><span>الرئيسية</span></button><button class="nav-item${active === "visits" ? " active" : ""}" data-soli-nav="visits"><span class="nav-icon">＋</span><span>تسجيل زيارة</span></button><button class="nav-item${active === "patients" ? " active" : ""}" data-soli-nav="patients"><span class="nav-icon">♙</span><span>ملفات المرضى</span></button><button class="nav-item${active === "income" ? " active" : ""}" data-soli-nav="income"><span class="nav-icon">▣</span><span>الوارد</span></button><button class="nav-item${active === "doctors" ? " active" : ""}" data-soli-nav="doctors"><span class="nav-icon">⚕</span><span>الأطباء والجداول</span></button><button class="nav-item${active === "reports" ? " active" : ""}" data-soli-nav="reports"><span class="nav-icon">▤</span><span>التقارير</span></button><button class="nav-item${active === "settings" ? " active" : ""}" data-soli-nav="settings"><span class="nav-icon">⚙</span><span>إعدادات الأطباء</span></button></nav><div class="side-label department-label">الأقسام الطبية</div><nav class="department-nav">${Object.entries(soliCatalog()).map(([id, d]) => `<button class="department-nav-item${active === id ? " active" : ""}" data-soli-dept="${id}"><span class="nav-icon">${d.icon}</span><span>${d.short}</span><em>${d.doctors.length}</em></button>`).join("")}</nav><div class="sidebar-bottom"><div class="user-mini"><div class="avatar">أ</div><div><strong>مدير النظام</strong><span>صلاحية كاملة · محلي</span></div></div><button class="logout-btn" id="soli-logout">تسجيل الخروج</button></div></aside>`; }
+
+function soliDepartmentCard(id, d) { const todayVisits = soliData().visits.filter((v) => v.departmentId === id && v.date === soliToday()).length; return `<button class="department-card ${d.color}" data-soli-dept="${id}"><div class="department-icon">${d.icon}</div><div class="department-main"><strong>${d.name}</strong><span>${d.description}</span></div><div class="department-meta"><b>${d.doctors.length}</b><small>أطباء</small><b>${d.rooms}</b><small>غرف</small><b>${d.appointments.length + todayVisits}</b><small>مواعيد</small></div><span class="card-arrow">←</span></button>`; }
+function soliHome() { const catalog = soliCatalog(); const data = soliData(); const doctors = data.doctors; const todayVisits = data.visits.filter((v) => v.date === soliToday()); const totalRooms = Object.values(catalog).reduce((n, d) => n + d.rooms, 0); const totalAppointments = Object.values(catalog).reduce((n, d) => n + d.appointments.length, 0); return `${soliPageHeader("لوحة المجمع", "صباح الخير، مدير النظام", "إدارة تشغيلية ومحاسبية موحدة لجميع أقسام المجمع الطبي.")}<section class="stats">${soliStat("الأقسام الطبية", Object.keys(catalog).length, "وحدات متخصصة", "✚")}${soliStat("العيادات والغرف", totalRooms, "في مجمع واحد", "⌂")}${soliStat("الأطباء", doctors.length, "بملفات مالية محددة", "⚕")}${soliStat("مواعيد اليوم", totalAppointments + todayVisits.length, "من جميع الأقسام", "▦")}</section><div class="quick-actions"><button class="primary-action" data-soli-nav="visits"><span>＋</span><div><b>تسجيل زيارة جديدة</b><small>يُرحّل أجر الطبيب تلقائيًا إلى الوارد</small></div></button><button class="secondary-action" data-soli-nav="settings"><span>⚙</span><div><b>إعدادات الأطباء</b><small>حدد الكشف والمتابعة والنسبة والأجر اليومي</small></div></button><button class="secondary-action" data-soli-nav="income"><span>▣</span><div><b>مراجعة الوارد</b><small>${data.income.length} عملية مسجلة محليًا</small></div></button></div><section class="section-card department-overview"><div class="section-heading"><div><h3>أقسام المجمع الطبي</h3><p>افتح القسم لمشاهدة الأطباء وجدول العمل والمواعيد والمحاسبة المرتبطة به.</p></div><span class="section-count">${Object.keys(catalog).length} أقسام</span></div><div class="department-grid">${Object.entries(catalog).map(([id, d]) => soliDepartmentCard(id, d)).join("")}</div></section><div class="content-grid home-lower"><section class="section-card"><div class="section-heading"><div><h3>آخر العمليات في الوارد</h3><p>تُنشأ تلقائيًا بعد تسجيل الزيارة.</p></div><button class="text-button" data-soli-nav="income">عرض الكل ←</button></div>${soliIncomeTable(data.income.slice(0, 5))}</section><section class="section-card"><div class="section-heading"><div><h3>توزيع الأطباء</h3><p>حسب القسم والتخصص.</p></div></div><div class="distribution-list">${Object.entries(catalog).map(([id, d]) => `<button class="distribution-row" data-soli-dept="${id}"><span class="distribution-icon ${d.color}">${d.icon}</span><span>${d.name}</span><b>${d.doctors.length}</b><div class="distribution-bar"><i style="width:${Math.max(8, d.doctors.length * 6)}%"></i></div></button>`).join("")}</div></section></div><div class="notice"><span>✓</span><div><b>منطق محاسبي محلي جاهز للتجربة</b><br>عند إضافة زيارة، يقرأ النظام إعداد الطبيب ويحسب المبلغ وفق كشف ثابت أو نسبة مئوية أو أجر يومي، ثم ينشئ حركة وارد باسم الطبيب.</div></div>`; }
+
+function soliDoctorCards(doctors) { return `<div class="doctor-grid">${doctors.map((doctor) => `<article class="doctor-card"><div class="doctor-card-top"><div class="doctor-avatar">${escapeHtml(doctor.name.replace("د. ", "").slice(0, 1))}</div><div><strong>${escapeHtml(doctor.name)}</strong><span>${escapeHtml(doctor.specialty)}</span></div>${soliStatus(doctor.status || "متاح")}</div><div class="doctor-details"><div><small>الهاتف</small><b>${escapeHtml(doctor.phone || "غير محدد")}</b></div><div><small>العيادة / الغرفة</small><b>${escapeHtml(doctor.room || "غير محدد")}</b></div><div><small>ساعات العمل</small><b>${escapeHtml(doctor.hours || "غير محددة")}</b></div><div><small>نظام الأجر</small><b>${escapeHtml(soliFeeDescription(doctor))}</b></div><div class="doctor-days"><small>أيام الحضور</small><b>${escapeHtml(doctor.days || "غير محددة")}</b></div></div><div class="doctor-footer"><span>تعديل من الإعدادات</span><button class="small-link" data-soli-edit-doctor="${doctor.id}">تعديل الطبيب ←</button></div></article>`).join("")}</div>`; }
+function soliScheduleTable(schedule) { return `<div class="table-scroll"><table class="schedule-table"><thead><tr><th>اليوم</th><th>ساعات العمل</th><th>الطبيب المسؤول</th><th>الخدمة / التخصص</th><th>العيادة أو الغرفة</th></tr></thead><tbody>${schedule.map((row) => `<tr>${row.map((cell, index) => `<td${index === 0 ? " class=day-cell" : ""}>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`; }
+function soliDeptPage(id) { const d = soliDepartment(id); if (!d) return soliHome(); const data = soliData(); const deptDoctors = data.doctors.filter((doctor) => doctor.departmentId === id); const localVisits = data.visits.filter((visit) => visit.departmentId === id); return `${soliPageHeader("القسم الطبي", d.name, `${d.description} · جدول الأطباء والمواعيد والحسابات`)}<div class="department-hero ${d.color}"><div class="department-hero-icon">${d.icon}</div><div><span>وحدة ${d.short}</span><h3>${d.name}</h3><p>تفاصيل الفريق الطبي، الغرف، ساعات العمل، ونظام أجر كل طبيب.</p></div><div class="hero-facts"><div><b>${deptDoctors.length}</b><span>أطباء</span></div><div><b>${d.rooms}</b><span>غرف</span></div><div><b>${d.appointments.length + localVisits.length}</b><span>مواعيد</span></div></div></div><section class="section-card"><div class="section-heading"><div><h3>أطباء ${d.name}</h3><p>كل طبيب مرتبط بملف مالي يحدد طريقة احتساب مستحقاته.</p></div><div class="section-heading-actions"><button class="text-button" data-soli-nav="patients" data-soli-patient-dept="${id}">ملفات المرضى ←</button><button class="text-button" data-soli-nav="settings">إدارة الأطباء ←</button></div></div>${soliDoctorCards(deptDoctors)}</section><section class="section-card schedule-section"><div class="section-heading"><div><h3>جدول عمل القسم</h3><p>الجدول الأسبوعي للعيادات والغرف.</p></div><span class="week-label">هذا الأسبوع</span></div>${soliScheduleTable(d.schedule)}</section><section class="section-card"><div class="section-heading"><div><h3>المواعيد والحركات المحلية</h3><p>المواعيد الثابتة للتجربة، بالإضافة إلى الزيارات المضافة.</p></div><button class="primary-mini" data-soli-nav="visits">＋ تسجيل زيارة</button></div>${soliVisitTable([...localVisits].reverse())}</section>`; }
+
+function soliIncomeTable(items) { if (!items.length) return `<div class="empty-state">لا توجد حركات وارد بعد. سجّل زيارة لإنشاء حركة تلقائية باسم الطبيب.</div>`; return `<div class="table-scroll"><table class="income-table"><thead><tr><th>التاريخ</th><th>الطبيب</th><th>المريض</th><th>القسم</th><th>نوع الزيارة</th><th>المبلغ المسجل في الوارد</th></tr></thead><tbody>${items.map((item) => `<tr><td>${escapeHtml(item.date)}</td><td><strong>${escapeHtml(item.doctorName)}</strong></td><td>${escapeHtml(item.patientName)}</td><td>${escapeHtml(DEPARTMENTS[item.departmentId]?.name || "")}</td><td>${escapeHtml(item.visitType)}</td><td class="amount-cell">${soliMoney(item.amount)}</td></tr>`).join("")}</tbody></table></div>`; }
+function soliVisitTable(items) { if (!items.length) return `<div class="empty-state">لا توجد زيارات مضافة محليًا لهذا القسم.</div>`; return `<div class="table-scroll"><table class="appointment-table"><thead><tr><th>التاريخ</th><th>الوقت</th><th>المريض</th><th>الطبيب</th><th>نوع الزيارة</th><th>قيمة الزيارة</th><th>حصة الطبيب</th><th>الحالة</th></tr></thead><tbody>${items.map((item) => `<tr><td>${escapeHtml(item.date)}</td><td class="time-cell">${escapeHtml(item.time || "--:--")}</td><td><strong>${escapeHtml(item.patientName)}</strong></td><td>${escapeHtml(item.doctorName)}</td><td>${escapeHtml(item.visitType)}</td><td>${soliMoney(item.visitAmount)}</td><td class="amount-cell">${soliMoney(item.doctorEarning)}</td><td>${soliStatus("مضاف محليًا")}</td></tr>`).join("")}</tbody></table></div>`; }
+
+function soliPatientDetail(patient) { if (!patient) return `<div class="patient-detail-empty"><span>♙</span><b>اختر ملفًا من القائمة</b><small>ستظهر هنا البيانات الأساسية وآخر زيارة والطبيب المسؤول.</small></div>`; return `<div class="patient-detail-head"><div class="patient-large-avatar">${escapeHtml(patient.name.slice(0, 1))}</div><div><span class="eyebrow">ملف المريض · ${escapeHtml(patient.recordNo)}</span><h3>${escapeHtml(patient.name)}</h3><p>${escapeHtml(soliPatientDepartmentName(patient))} · ${escapeHtml(patient.lastAction)}</p></div></div><div class="patient-detail-status">${soliPatientStatus(patient.status)}</div><div class="patient-info-grid"><div><small>رقم الهاتف</small><b>${escapeHtml(patient.phone)}</b></div><div><small>النوع والعمر</small><b>${escapeHtml(patient.gender)} · ${escapeHtml(patient.age)} سنة</b></div><div><small>فصيلة الدم</small><b>${escapeHtml(patient.blood)}</b></div><div><small>الطبيب المسؤول</small><b>${escapeHtml(patient.doctorName)}</b></div><div><small>آخر زيارة</small><b>${escapeHtml(patient.lastVisit)}</b></div><div><small>التشخيص</small><b>${escapeHtml(patient.diagnosis)}</b></div></div><div class="patient-note"><span>ملاحظات الملف</span><b>${escapeHtml(patient.notes)}</b></div><div class="patient-detail-actions"><button class="primary-mini" type="button" data-soli-nav="visits">＋ تسجيل زيارة</button><button class="outline-button" type="button" data-soli-dept="${escapeHtml(patient.departmentId)}">فتح القسم</button></div>`; }
+function soliPatientRows(patients) { if (!patients.length) return `<tr><td colspan="7"><div class="empty-state">لا توجد ملفات مطابقة للبحث الحالي.</div></td></tr>`; return patients.map((patient) => `<tr class="patient-row ${soliSelectedPatientId === patient.id ? "selected" : ""}" data-soli-patient-id="${patient.id}"><td><div class="patient-cell"><span class="patient-mini-avatar">${escapeHtml(patient.name.slice(0, 1))}</span><strong>${escapeHtml(patient.name)}</strong></div></td><td>${escapeHtml(patient.recordNo)}</td><td>${escapeHtml(soliPatientDepartmentName(patient))}</td><td>${escapeHtml(patient.doctorName)}</td><td>${escapeHtml(patient.lastVisit)}</td><td>${escapeHtml(patient.diagnosis)}</td><td>${soliPatientStatus(patient.status)}</td></tr>`).join(""); }
+function soliPatientsPage() { const all = soliAllPatients(); const query = soliPatientQuery.trim().toLowerCase(); const filtered = all.filter((patient) => (!soliPatientDepartment || patient.departmentId === soliPatientDepartment) && (!query || [patient.name, patient.recordNo, patient.phone, patient.doctorName, patient.diagnosis].join(" ").toLowerCase().includes(query))); const selected = filtered.find((patient) => patient.id === soliSelectedPatientId) || filtered[0] || null; if (selected && selected.id !== soliSelectedPatientId) soliSelectedPatientId = selected.id; const deptCount = new Set(all.map((patient) => patient.departmentId)).size; return `${soliPageHeader("السجلات الطبية", "ملفات المرضى", "ملفات منظمة لكل قسم مع الطبيب المسؤول وآخر زيارة وتشخيص مختصر.")}<section class="stats">${soliStat("إجمالي الملفات", all.length, "ملفات تجريبية محلية", "♙")}${soliStat("نتائج البحث", filtered.length, "حسب الفلاتر الحالية", "⌕")}${soliStat("الأقسام المغطاة", deptCount, "في المجمع الطبي", "✚")}${soliStat("زيارات اليوم", soliData().visits.filter((v) => v.date === soliToday()).length, "مسجلة محليًا", "▦")}</section><section class="patient-toolbar"><div class="patient-search"><span>⌕</span><input id="soli-patient-search" type="search" placeholder="ابحث بالاسم أو رقم الملف أو الهاتف..." value="${escapeHtml(soliPatientQuery)}"></div><select id="soli-patient-department"><option value="">كل الأقسام</option>${soliDepartmentOptions(soliPatientDepartment)}</select><button class="primary-mini" type="button" data-soli-nav="visits">＋ تسجيل زيارة</button></section><section class="patient-workspace"><div class="section-card patient-list-card"><div class="section-heading"><div><h3>قائمة ملفات المرضى</h3><p>اختر أي ملف لمشاهدة تفاصيله.</p></div><span class="section-count">${filtered.length} ملف</span></div><div class="table-scroll"><table class="patient-table"><thead><tr><th>المريض</th><th>رقم الملف</th><th>القسم</th><th>الطبيب</th><th>آخر زيارة</th><th>التشخيص</th><th>الحالة</th></tr></thead><tbody>${soliPatientRows(filtered)}</tbody></table></div></div><aside class="section-card patient-detail-card">${soliPatientDetail(selected)}</aside></section>`; }
+function soliDoctorsPage() { const doctors = soliAllDoctors(); return `${soliPageHeader("الإدارة الطبية", "الأطباء والجداول", "دليل موحد للأطباء مع طريقة احتساب الكشف والمتابعة والأجر اليومي.")}<section class="filter-strip"><div><span>إجمالي الأطباء</span><b>${doctors.length}</b></div><div><span>أجر ثابت</span><b>${doctors.filter((d) => d.paymentMode === "fixed").length}</b></div><div><span>نسبة مئوية</span><b>${doctors.filter((d) => d.paymentMode === "percentage").length}</b></div><div><span>أجر يومي</span><b>${doctors.filter((d) => d.paymentMode === "daily").length}</b></div><button class="outline-button" data-soli-nav="settings">＋ إضافة طبيب</button></section><section class="section-card"><div class="section-heading"><div><h3>دليل الأطباء</h3><p>اضغط تعديل الطبيب للانتقال إلى بطاقة الإعدادات الخاصة به.</p></div></div>${soliDoctorCards(doctors)}</section>`; }
+
+function soliDoctorForm(doctor = {}) { const isEdit = Boolean(doctor.id); return `<section class="section-card doctor-form-card"><div class="section-heading"><div><h3>${isEdit ? "تعديل بطاقة الطبيب" : "إضافة طبيب جديد"}</h3><p>حدد بيانات الطبيب ونظام الأجر الذي سيُستخدم عند تسجيل الزيارة.</p></div><span class="section-count">ملف مالي</span></div><form id="soli-doctor-form" class="form-grid" data-doctor-id="${escapeHtml(doctor.id || "")}"><div class="field"><label>اسم الطبيب</label><input name="name" required value="${escapeHtml(doctor.name || "")}" placeholder="مثال: د. أحمد سامح"></div><div class="field"><label>رقم الهاتف</label><input name="phone" value="${escapeHtml(doctor.phone || "")}" placeholder="01xxxxxxxxx"></div><div class="field"><label>القسم</label><select name="departmentId" required>${soliDepartmentOptions(doctor.departmentId || "")}</select></div><div class="field"><label>التخصص</label><input name="specialty" required value="${escapeHtml(doctor.specialty || "")}" placeholder="مثال: استشاري باطنة"></div><div class="field"><label>العيادة / الغرفة</label><input name="room" value="${escapeHtml(doctor.room || "")}" placeholder="عيادة 101"></div><div class="field"><label>الحالة</label><select name="status"><option ${doctor.status === "متاح" || !doctor.status ? "selected" : ""}>متاح</option><option ${doctor.status === "في إجازة" ? "selected" : ""}>في إجازة</option><option ${doctor.status === "مناوب" ? "selected" : ""}>مناوب</option></select></div><div class="field field-wide"><label>أيام العمل</label><input name="days" value="${escapeHtml(doctor.days || "السبت · الإثنين · الأربعاء")}" placeholder="السبت · الإثنين · الأربعاء"></div><div class="field"><label>ساعات العمل</label><input name="hours" value="${escapeHtml(doctor.hours || "09:00 – 15:00")}" placeholder="09:00 – 15:00"></div><div class="field"><label>نظام الأجر</label><select name="paymentMode" id="soli-payment-mode"><option value="fixed" ${doctor.paymentMode !== "percentage" && doctor.paymentMode !== "daily" ? "selected" : ""}>مبلغ ثابت لكل كشف / متابعة</option><option value="percentage" ${doctor.paymentMode === "percentage" ? "selected" : ""}>نسبة مئوية من قيمة الزيارة</option><option value="daily" ${doctor.paymentMode === "daily" ? "selected" : ""}>أجر يومي ثابت</option></select></div><div class="earning-fields field-wide" data-mode-fields="fixed"><div class="field"><label>مبلغ الكشف (${SOLI_CURRENCY})</label><input type="number" min="0" step="0.01" name="consultationFee" value="${Number(doctor.consultationFee || 0)}"></div><div class="field"><label>مبلغ المتابعة (${SOLI_CURRENCY})</label><input type="number" min="0" step="0.01" name="followupFee" value="${Number(doctor.followupFee || 0)}"></div></div><div class="earning-fields field-wide" data-mode-fields="percentage"><div class="field"><label>نسبة الطبيب (%)</label><input type="number" min="0" max="100" step="0.01" name="percentage" value="${Number(doctor.percentage || 0)}"></div><div class="earning-help">عند تسجيل الزيارة، يحسب النظام النسبة تلقائيًا من قيمة الكشف أو المتابعة.</div></div><div class="earning-fields field-wide" data-mode-fields="daily"><div class="field"><label>الأجر اليومي (${SOLI_CURRENCY})</label><input type="number" min="0" step="0.01" name="dailyWage" value="${Number(doctor.dailyWage || 0)}"></div><div class="earning-help">تُسجل قيمة الأجر اليومي في حركة الوارد عند كل زيارة مرتبطة بالطبيب.</div></div><div class="form-actions field-wide"><button class="login-btn form-submit" type="submit">${isEdit ? "حفظ تعديلات الطبيب" : "إضافة الطبيب"}</button>${isEdit ? `<button class="outline-button" type="button" data-soli-cancel-edit>إلغاء التعديل</button>` : ""}</div></form></section>`; }
+function soliSettingsPage() { const data = soliData(); const editDoctor = data.doctors.find((d) => d.id === soliEditDoctorId) || null; return `${soliPageHeader("الإعدادات", "إعدادات الأطباء والأجور", "أنشئ بطاقة لكل طبيب وحدد الكشف والمتابعة والنسبة أو الأجر اليومي.")}${soliDoctorForm(editDoctor || {})}<section class="section-card"><div class="section-heading"><div><h3>بطاقات الأطباء</h3><p>هذه الإعدادات هي المصدر الذي يُستخدم عند تسجيل الزيارات.</p></div><span class="section-count">${data.doctors.length} طبيبًا</span></div><div class="settings-doctor-list">${data.doctors.map((doctor) => `<article class="settings-doctor-row"><div class="doctor-avatar">${escapeHtml(doctor.name.replace("د. ", "").slice(0, 1))}</div><div class="settings-doctor-main"><strong>${escapeHtml(doctor.name)}</strong><span>${escapeHtml(doctor.specialty)} · ${escapeHtml(DEPARTMENTS[doctor.departmentId]?.name || "")}</span><small>${escapeHtml(doctor.phone || "غير محدد")} · ${escapeHtml(doctor.days || "")} · ${escapeHtml(doctor.hours || "")}</small></div><div class="settings-doctor-fee"><b>${soliFeeDescription(doctor)}</b><span>${escapeHtml(doctor.room || "بدون غرفة")}</span></div><button class="outline-button" data-soli-edit-doctor="${doctor.id}">تعديل</button></article>`).join("")}</div></section>`; }
+
+function soliVisitPage() { return `${soliPageHeader("الاستقبال", "تسجيل زيارة جديدة", "اختر الطبيب ونوع الزيارة، وسيتم حساب حصة الطبيب وإضافتها تلقائيًا إلى الوارد.")}<section class="section-card visit-form-card"><div class="section-heading"><div><h3>بيانات الزيارة</h3><p>القيمة الافتراضية تتغير حسب بطاقة الطبيب، ويمكن مراجعتها قبل الحفظ.</p></div><span class="section-count">ترحيل تلقائي</span></div><form id="soli-visit-form" class="form-grid"><div class="field"><label>القسم</label><select name="departmentId" id="soli-visit-department" required>${soliDepartmentOptions("")}</select></div><div class="field"><label>الطبيب</label><select name="doctorId" id="soli-visit-doctor" required><option value="">اختر الطبيب</option>${soliDoctorOptions("")}</select></div><div class="field"><label>اسم المريض</label><input name="patientName" required placeholder="اكتب اسم المريض"></div><div class="field"><label>نوع الزيارة</label><select name="visitType" id="soli-visit-type"><option value="كشف">كشف</option><option value="متابعة">متابعة</option></select></div><div class="field"><label>قيمة الزيارة (${SOLI_CURRENCY})</label><input type="number" name="visitAmount" id="soli-visit-amount" min="0" step="0.01" required value="0"></div><div class="field"><label>التاريخ</label><input type="date" name="date" required value="${soliToday()}"></div><div class="field"><label>الوقت</label><input type="time" name="time" value="09:00"></div><div class="field"><label>ملاحظات</label><input name="notes" placeholder="اختياري"></div><div class="visit-calculation field-wide" id="soli-visit-calculation"><span>الحصة المتوقعة للطبيب</span><b>اختر الطبيب لمعرفة المبلغ</b></div><div class="form-actions field-wide"><button class="login-btn form-submit" type="submit">حفظ الزيارة وترحيلها للوارد</button></div></form></section><section class="section-card"><div class="section-heading"><div><h3>كيف يعمل الترحيل؟</h3><p>يستخدم النظام إعداد الأجر الموجود في بطاقة الطبيب.</p></div></div><div class="rule-grid"><div><b>مبلغ ثابت</b><span>يستخدم مبلغ الكشف أو المتابعة المحدد.</span></div><div><b>نسبة مئوية</b><span>يحسب النسبة من قيمة الزيارة المدخلة.</span></div><div><b>أجر يومي</b><span>يسجل الأجر اليومي المحدد للطبيب.</span></div></div></section>`; }
+function soliIncomePage() { const data = soliData(); const total = data.income.reduce((sum, item) => sum + Number(item.amount || 0), 0); const today = data.income.filter((item) => item.date === soliToday()).reduce((sum, item) => sum + Number(item.amount || 0), 0); return `${soliPageHeader("الحسابات", "الوارد", "كل زيارة محفوظة هنا باسم الطبيب مع المبلغ المحسوب من بطاقة الطبيب.")}<section class="stats">${soliStat("إجمالي الحركات", data.income.length, "حركة محلية", "▣")}${soliStat("إجمالي الوارد", soliMoney(total), "كل الفترات", "↗")}${soliStat("وارد اليوم", soliMoney(today), "تاريخ اليوم", "▦")}${soliStat("الزيارات", data.visits.length, "مسجلة محليًا", "＋")}</section><section class="section-card"><div class="section-heading"><div><h3>حركات الوارد باسم الطبيب</h3><p>المبلغ هنا هو قيمة أجر الطبيب التي تم حسابها آليًا عند تسجيل الزيارة.</p></div><button class="primary-mini" data-soli-nav="visits">＋ تسجيل زيارة</button></div>${soliIncomeTable(data.income)}</section>`; }
+function soliReportsPage() { const data = soliData(); const grouped = data.income.reduce((map, item) => { map[item.doctorName] = (map[item.doctorName] || 0) + Number(item.amount || 0); return map; }, {}); return `${soliPageHeader("الحسابات", "تقارير الأطباء", "ملخص المستحقات المحسوبة من الزيارات المحلية.")}<section class="section-card"><div class="section-heading"><div><h3>مستحقات الأطباء</h3><p>تجميع حركات الوارد حسب اسم الطبيب.</p></div></div><div class="report-grid">${Object.keys(grouped).length ? Object.entries(grouped).map(([name, amount]) => `<article class="report-card"><div class="report-card-top"><span class="distribution-icon">⚕</span><span>${escapeHtml(name)}</span></div><strong>${soliMoney(amount)}</strong><small>إجمالي مستحقات مسجلة</small><div class="report-line"><i style="width:70%"></i></div><footer><span>من الزيارات</span><span>محلي</span></footer></article>`).join("") : `<div class="empty-state">سجّل أول زيارة لظهور تقرير الطبيب.</div>`}</div></section>`; }
+
+function soliRefreshVisitDoctors() { const form = document.getElementById("soli-visit-form"); if (!form) return; const departmentId = form.departmentId.value; const select = document.getElementById("soli-visit-doctor"); const current = select.value; select.innerHTML = `<option value="">اختر الطبيب</option>${soliAllDoctors().filter((d) => !departmentId || d.departmentId === departmentId).map((d) => `<option value="${d.id}">${escapeHtml(d.name)} — ${escapeHtml(d.specialty)}</option>`).join("")}`; if ([...select.options].some((option) => option.value === current)) select.value = current; soliUpdateVisitCalculation(); }
+function soliUpdateVisitCalculation() { const form = document.getElementById("soli-visit-form"); if (!form) return; const doctor = soliAllDoctors().find((d) => d.id === form.doctorId.value); const amountInput = document.getElementById("soli-visit-amount"); const type = form.visitType.value; if (doctor && doctor.paymentMode === "fixed") amountInput.value = type === "متابعة" ? Number(doctor.followupFee || 0) : Number(doctor.consultationFee || 0); const earning = soliCalculateEarning(doctor, type, amountInput.value); const box = document.getElementById("soli-visit-calculation"); box.innerHTML = doctor ? `<span>سيتم تسجيله في الوارد باسم ${escapeHtml(doctor.name)}</span><b>${soliMoney(earning)} · ${escapeHtml(soliFeeDescription(doctor))}</b>` : `<span>الحصة المتوقعة للطبيب</span><b>اختر الطبيب لمعرفة المبلغ</b>`; }
+function soliBindEvents() { document.getElementById("soli-logout")?.addEventListener("click", () => { clearSession(); renderLogin(); }); document.querySelectorAll("[data-soli-nav]").forEach((button) => button.addEventListener("click", () => { currentView = { type: button.dataset.soliNav, id: null }; if (button.dataset.soliPatientDept !== undefined) soliPatientDepartment = button.dataset.soliPatientDept; soliEditDoctorId = null; soliRenderPage(); })); document.querySelectorAll("[data-soli-dept]").forEach((button) => button.addEventListener("click", () => { currentView = { type: "department", id: button.dataset.soliDept }; soliEditDoctorId = null; soliRenderPage(); })); document.querySelectorAll("[data-soli-patient-id]").forEach((row) => row.addEventListener("click", () => { soliSelectedPatientId = row.dataset.soliPatientId; soliRenderPage(); })); const patientSearch = document.getElementById("soli-patient-search"); patientSearch?.addEventListener("input", () => { soliPatientQuery = patientSearch.value; soliRenderPage(); const input = document.getElementById("soli-patient-search"); input?.focus(); input?.setSelectionRange(input.value.length, input.value.length); }); const patientDepartment = document.getElementById("soli-patient-department"); patientDepartment?.addEventListener("change", () => { soliPatientDepartment = patientDepartment.value; soliSelectedPatientId = null; soliRenderPage(); }); document.querySelectorAll("[data-soli-edit-doctor]").forEach((button) => button.addEventListener("click", () => { soliEditDoctorId = button.dataset.soliEditDoctor; currentView = { type: "settings", id: null }; soliRenderPage(); window.scrollTo({ top: 0, behavior: "smooth" }); })); document.querySelector("[data-soli-cancel-edit]")?.addEventListener("click", () => { soliEditDoctorId = null; soliRenderPage(); });
+  const mode = document.getElementById("soli-payment-mode"); const modeFields = () => { document.querySelectorAll("[data-mode-fields]").forEach((field) => { field.style.display = field.dataset.modeFields === mode?.value ? "grid" : "none"; }); }; mode?.addEventListener("change", modeFields); modeFields();
+  document.getElementById("soli-doctor-form")?.addEventListener("submit", (event) => { event.preventDefault(); const form = event.currentTarget; const values = Object.fromEntries(new FormData(form).entries()); const data = soliData(); const doctor = { id: values.doctorId || form.dataset.doctorId || soliId("doctor"), ...values, consultationFee: Number(values.consultationFee || 0), followupFee: Number(values.followupFee || 0), percentage: Number(values.percentage || 0), dailyWage: Number(values.dailyWage || 0) }; const index = data.doctors.findIndex((item) => item.id === doctor.id); if (index >= 0) data.doctors[index] = doctor; else data.doctors.push(doctor); soliSaveData(data); soliEditDoctorId = doctor.id; showToast("تم حفظ بطاقة الطبيب ونظام الأجر"); soliRenderPage(); });
+  const visitForm = document.getElementById("soli-visit-form"); if (visitForm) { document.getElementById("soli-visit-department").addEventListener("change", soliRefreshVisitDoctors); document.getElementById("soli-visit-doctor").addEventListener("change", soliUpdateVisitCalculation); document.getElementById("soli-visit-type").addEventListener("change", soliUpdateVisitCalculation); document.getElementById("soli-visit-amount").addEventListener("input", soliUpdateVisitCalculation); soliRefreshVisitDoctors(); visitForm.addEventListener("submit", (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(visitForm).entries()); const data = soliData(); const doctor = data.doctors.find((item) => item.id === values.doctorId); if (!doctor) return showToast("اختر الطبيب أولًا"); const visitAmount = Number(values.visitAmount || 0); const doctorEarning = soliCalculateEarning(doctor, values.visitType, visitAmount); const visit = { id: soliId("visit"), departmentId: doctor.departmentId, doctorId: doctor.id, doctorName: doctor.name, patientName: values.patientName, visitType: values.visitType, visitAmount, doctorEarning, amount: doctorEarning, date: values.date || soliToday(), time: values.time || "--:--", notes: values.notes || "" }; data.visits.unshift(visit); data.income.unshift({ id: soliId("income"), date: visit.date, doctorId: doctor.id, doctorName: doctor.name, patientName: visit.patientName, departmentId: doctor.departmentId, visitType: visit.visitType, visitAmount, amount: doctorEarning, source: "زيارة" }); soliSaveData(data); showToast(`تم حفظ الزيارة وترحيل ${soliMoney(doctorEarning)} باسم ${doctor.name}`); currentView = { type: "income", id: null }; soliRenderPage(); }); } }
+function soliRenderPage() { const session = getSession(); if (!session) return renderLogin(); const catalog = soliCatalog(); const active = currentView.type === "department" ? currentView.id : currentView.type; let content = currentView.type === "dashboard" ? soliHome() : currentView.type === "department" ? soliDeptPage(currentView.id) : currentView.type === "doctors" ? soliDoctorsPage() : currentView.type === "settings" ? soliSettingsPage() : currentView.type === "visits" ? soliVisitPage() : currentView.type === "patients" ? soliPatientsPage() : currentView.type === "income" ? soliIncomePage() : currentView.type === "reports" ? soliReportsPage() : soliHome(); app.innerHTML = `<main class="app-shell">${soliSidebar(active)}<section class="main">${content}</section></main>`; soliBindEvents(); }
+function renderDashboard() { currentView = { type: "dashboard", id: null }; soliEditDoctorId = null; soliRenderPage(); }
+window.addEventListener("DOMContentLoaded", () => { if (getSession()) soliRenderPage(); else renderLogin(); });
+
+  </script>
 </body>
 </html>
