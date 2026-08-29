@@ -956,6 +956,61 @@ function soliBindEvents() { document.getElementById("soli-theme-toggle")?.addEve
   document.getElementById("soli-radiology-form")?.addEventListener("submit", (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget).entries()); if (!values.name) return; const data = soliData(); data.radiologyTests.push({ id: soliId("radiology"), name: values.name, price: Number(values.price || 0) }); soliSaveData(data); showToast("تم إضافة فحص الأشعة"); soliRenderPage(); });
   document.querySelectorAll("[data-soli-delete-radiology]").forEach((btn) => btn.addEventListener("click", () => { const data = soliData(); data.radiologyTests = data.radiologyTests.filter((t) => t.id !== btn.dataset.soliDeleteRadiology); soliSaveData(data); showToast("تم حذف فحص الأشعة"); soliRenderPage(); }));
 
+// Permission toggle handler
+document.querySelectorAll("[data-soli-perm-user]").forEach((btn) => btn.addEventListener("click", () => {
+  const userId = btn.dataset.soliPermUser;
+  const deptId = btn.dataset.soliPermDept;
+  const action = btn.dataset.soliPermAction;
+  const users = soliAllUsers();
+  const user = users.find((u) => u.id === userId);
+  if (!user) return;
+  if (!user.permissions) user.permissions = {};
+  if (!user.permissions[deptId]) user.permissions[deptId] = { view:false, add:false, edit:false, delete:false };
+  user.permissions[deptId][action] = !user.permissions[deptId][action];
+  soliSaveUsers(users);
+  showToast("تم تعديل صلاحية المستخدم");
+  soliRenderPage();
+}));
+
+// Ensure each user-card has action buttons and bind delete/edit
+document.querySelectorAll(".user-card").forEach((card) => {
+  if (!card.querySelector("[data-soli-delete-user]")) {
+    const uid = card.dataset.userId;
+    const actions = document.createElement("div");
+    actions.className = "user-card-actions";
+    actions.innerHTML = `<button class="outline-button" data-soli-edit-user="${uid}">تعديل</button><button class="danger-mini" data-soli-delete-user="${uid}">حذف</button>`;
+    card.appendChild(actions);
+  }
+});
+
+document.querySelectorAll("[data-soli-delete-user]").forEach((btn) => btn.addEventListener("click", () => {
+  const userId = btn.dataset.soliDeleteUser;
+  const users = soliAllUsers();
+  const user = users.find((u) => u.id === userId);
+  if (user && user.username === "admin") return showToast("لا يمكن حذف مدير النظام");
+  const filtered = users.filter((u) => u.id !== userId);
+  soliSaveUsers(filtered);
+  showToast("تم حذف المستخدم");
+  soliRenderPage();
+}));
+
+document.querySelectorAll("[data-soli-edit-user]").forEach((btn) => btn.addEventListener("click", () => {
+  const userId = btn.dataset.soliEditUser;
+  const users = soliAllUsers();
+  const user = users.find(u => u.id === userId);
+  if (!user) return;
+  currentView = { type: "users", id: null };
+  soliRenderPage();
+  setTimeout(() => {
+    const form = document.getElementById("soli-add-user-form");
+    if (!form) return;
+    form.name.value = user.name || "";
+    form.username.value = user.username || "";
+    form.password.value = user.password || "";
+    form.role.value = user.role || "استقبال";
+  }, 50);
+}));
+
   // Mobile sidebar toggle
   document.getElementById("soli-hamburger")?.addEventListener("click", () => {
     document.getElementById("soli-sidebar")?.classList.add("open");
@@ -1016,22 +1071,6 @@ function soliBindEvents() { document.getElementById("soli-theme-toggle")?.addEve
     showToast("تم إضافة المستخدم بنجاح");
     soliRenderPage();
   });
-
-  // Delete user handler
-  document.querySelectorAll("[data-soli-delete-user]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const userId = btn.dataset.soliDeleteUser;
-      const users = soliAllUsers();
-      const user = users.find((u) => u.id === userId);
-      if (user && user.username === "admin") return showToast("لا يمكن حذف مدير النظام");
-      const filtered = users.filter((u) => u.id !== userId);
-      soliSaveUsers(filtered);
-      showToast("تم حذف المستخدم");
-      soliRenderPage();
-    });
-  });
-
-
 
 function soliRenderPage() { const session = getSession(); if (!session) return renderLogin(); const catalog = soliCatalog(); const active = currentView.type === "department" ? currentView.id : currentView.type === "doctors" ? "settings" : currentView.type === "users" ? "users" : currentView.type === "expenses" ? "expenses" : currentView.type; let content = currentView.type === "dashboard" ? soliHome() : currentView.type === "department" ? soliDeptPage(currentView.id) : currentView.type === "settings" ? soliSettingsPage() : currentView.type === "doctors" ? soliSettingsPage() : currentView.type === "system" ? soliSystemPage() : currentView.type === "visits" ? soliVisitPage() : currentView.type === "patients" ? soliPatientsPage() : currentView.type === "income" ? soliIncomePage() : currentView.type === "reports" ? soliReportsPage() : currentView.type === "users" ? soliUsersPage() : currentView.type === "expenses" ? soliExpensesPage() : soliHome(); const mobileTopbar = `<div class="soli-mobile-topbar"><button class="soli-hamburger" id="soli-hamburger" type="button">☰</button><div class="soli-brand-mini"><b>SoliMedical</b><span>نظام إدارة المستشفى</span></div><button class="soli-back-btn" id="soli-back-btn" type="button">→</button></div><div class="soli-overlay" id="soli-overlay"></div>`; app.innerHTML = `<main class="app-shell">${mobileTopbar}${soliSidebar(active)}<section class="main">${content}</section></main>`; soliBindEvents(); }function renderDashboard() { currentView = { type: "dashboard", id: null }; soliEditDoctorId = null; soliRenderPage(); }
 window.addEventListener("DOMContentLoaded", () => { if (getSession()) soliRenderPage(); else renderLogin(); });
