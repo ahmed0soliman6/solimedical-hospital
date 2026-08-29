@@ -8,6 +8,7 @@
         if (t === "dark" || t === "amoled") document.documentElement.setAttribute("data-theme", t);
       } catch (e) {}
     })();
+});
   </script>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -547,9 +548,11 @@ body, .stat-card, .section-card, #app { transition: background .2s ease, color .
   </style>
 </head>
 <body>
+  <div id="root"></div>
   <div id="app" aria-live="polite"></div>
 
   <script id="solimedical-app">
+document.addEventListener("DOMContentLoaded", () => {
 "use strict";
 
 const LOCAL_AUTH = Object.freeze({
@@ -888,6 +891,8 @@ function soliBindEvents() { document.getElementById("soli-theme-toggle")?.addEve
 function soliRenderPage() { const session = getSession(); if (!session) return renderLogin(); const catalog = soliCatalog(); const active = currentView.type === "department" ? currentView.id : currentView.type === "doctors" ? "settings" : currentView.type; let content = currentView.type === "dashboard" ? soliHome() : currentView.type === "department" ? soliDeptPage(currentView.id) : currentView.type === "settings" ? soliSettingsPage() : currentView.type === "doctors" ? soliSettingsPage() : currentView.type === "system" ? soliSystemPage() : currentView.type === "visits" ? soliVisitPage() : currentView.type === "patients" ? soliPatientsPage() : currentView.type === "income" ? soliIncomePage() : currentView.type === "reports" ? soliReportsPage() : currentView.type === "users" ? soliUsersPage() : soliHome(); app.innerHTML = `<main class="app-shell">${soliSidebar(active)}<section class="main">${content}</section></main>`; soliBindEvents(); }function renderDashboard() { currentView = { type: "dashboard", id: null }; soliEditDoctorId = null; soliRenderPage(); }
 window.addEventListener("DOMContentLoaded", () => { if (getSession()) soliRenderPage(); else renderLogin(); });
 
+});
   </script>
+  <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>
