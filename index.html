@@ -1,6 +1,14 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
 <head>
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("solimedical-theme-v1");
+        if (t === "dark" || t === "amoled") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    })();
+  </script>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
@@ -299,6 +307,10 @@ button { cursor: pointer; }
 .form-actions { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
 .form-actions .form-submit { width: auto; min-width: 190px; padding: 0 22px; }
 .settings-doctor-list { display: grid; gap: 9px; }
+.settings-dept-grid { display: grid; gap: 12px; }
+.settings-dept-block .department-card { width: 100%; cursor: pointer; }
+.settings-dept-block.open .department-card { border-color: #9cd3ca; box-shadow: 0 8px 18px rgba(24,91,86,.08); }
+.settings-dept-doctor-list { margin-top: 10px; padding-right: 4px; }
 .settings-doctor-row { display: grid; grid-template-columns: 38px 1fr auto auto; align-items: center; gap: 11px; padding: 12px 13px; border: 1px solid #e4efed; border-radius: 13px; background: #fff; }
 .settings-doctor-main { min-width: 0; }
 .settings-doctor-main strong, .settings-doctor-main span, .settings-doctor-main small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -323,6 +335,15 @@ button { cursor: pointer; }
 .income-table th { color: var(--muted); background: #f8fbfa; font-size: 9px; }
 .income-table td strong { color: var(--teal-950); }
 .amount-cell { color: var(--teal-700); font-weight: 900; }
+.simple-list { display: grid; gap: 9px; margin-top: 14px; }
+.simple-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.simple-row b { color: var(--ink); font-size: 11px; }
+.simple-row span { color: var(--muted); font-size: 9px; }
+.simple-row-actions { display: flex; align-items: center; gap: 8px; }
+.danger-mini { padding: 7px 10px; border: 1px solid #f2d1cf; border-radius: 8px; background: transparent; color: var(--danger); font-size: 10px; font-weight: 800; }
+.danger-mini:hover { background: rgba(197,83,77,.12); }
+.quick-fee-form { display: flex; align-items: center; gap: 8px; }
+.quick-fee-form input { width: 90px; height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--input-bg); color: var(--ink); font-size: 10px; }
 
 @media (max-width: 1000px) { .quick-actions { grid-template-columns: 1fr; } .settings-doctor-row { grid-template-columns: 38px 1fr auto; } .settings-doctor-fee { grid-column: 2 / 3; min-width: 0; } .settings-doctor-row .outline-button { grid-column: 3 / 4; grid-row: 1 / 3; } }
 @media (max-width: 700px) { .form-grid, .earning-fields, .rule-grid { grid-template-columns: 1fr; } .field-wide { grid-column: auto; } .form-actions { flex-wrap: wrap; } .form-actions .form-submit { width: 100%; } .visit-calculation { align-items: flex-start; flex-direction: column; } }
@@ -372,6 +393,131 @@ button { cursor: pointer; }
 @media (max-width: 1100px) { .patient-workspace { grid-template-columns: 1fr; } .patient-detail-card { position: static; } }
 @media (max-width: 700px) { .patient-toolbar { grid-template-columns: 1fr; } .patient-toolbar .primary-mini { width: 100%; } .section-heading-actions { flex-wrap: wrap; gap: 6px; } }
 
+/* ============ Theme system: Light / Dark / AMOLED ============ */
+:root {
+  --surface-2: #f6faf9;
+  --input-bg: #fbfdfc;
+  --hover-bg: #eef9f6;
+  --pill-bg: #f0fbf8;
+  --pill-line: #cde7e2;
+  --pill-ink: #2e776e;
+}
+html { transition: background .2s ease; }
+body, .stat-card, .section-card, #app { transition: background .2s ease, color .2s ease, border-color .2s ease; }
+
+[data-theme="dark"] {
+  --page: #0c201f; --surface: #11302d; --surface-2: #163935; --input-bg: #0f2926;
+  --hover-bg: #1a423c; --line: #244945; --ink: #f2fbf9; --muted: #a9c4c0;
+  --mint: #12332f; --teal-100: #163d38; --danger: #ff958b; --gold: #f3c977;
+  --pill-bg: #16332f; --pill-line: #2a5b54; --pill-ink: #7fe4d2;
+}
+[data-theme="amoled"] {
+  --page: #000000; --surface: #000000; --surface-2: #0a0f0e; --input-bg: #060a09;
+  --hover-bg: #0e1a18; --line: #1c2624; --ink: #ffffff; --muted: #a3b8b5;
+  --mint: #060d0c; --teal-100: #0c1e1b; --danger: #ff958b; --gold: #f3c977;
+  --pill-bg: #0a1615; --pill-line: #1f3d38; --pill-ink: #7fe4d2;
+}
+
+/* theme toggle button */
+.theme-toggle { display: flex; align-items: center; gap: 7px; padding: 9px 13px; border: 1px solid var(--pill-line); border-radius: 999px; background: var(--pill-bg); color: var(--pill-ink); font-size: 10px; font-weight: 800; white-space: nowrap; }
+.theme-toggle:hover { filter: brightness(1.08); }
+
+/* headings/strong values that relied on a dark brand shade for contrast on white */
+:is([data-theme="dark"], [data-theme="amoled"]) .topbar h2,
+:is([data-theme="dark"], [data-theme="amoled"]) .stat-card strong,
+:is([data-theme="dark"], [data-theme="amoled"]) .section-heading h3,
+:is([data-theme="dark"], [data-theme="amoled"]) .department-main strong,
+:is([data-theme="dark"], [data-theme="amoled"]) .text-button:hover,
+:is([data-theme="dark"], [data-theme="amoled"]) .department-hero h3,
+:is([data-theme="dark"], [data-theme="amoled"]) .hero-facts b,
+:is([data-theme="dark"], [data-theme="amoled"]) .doctor-card-top strong,
+:is([data-theme="dark"], [data-theme="amoled"]) .filter-strip b,
+:is([data-theme="dark"], [data-theme="amoled"]) .report-card > strong,
+:is([data-theme="dark"], [data-theme="amoled"]) .big-summary strong,
+:is([data-theme="dark"], [data-theme="amoled"]) .settings-doctor-main strong,
+:is([data-theme="dark"], [data-theme="amoled"]) .visit-calculation b,
+:is([data-theme="dark"], [data-theme="amoled"]) .income-table td strong,
+:is([data-theme="dark"], [data-theme="amoled"]) .patient-cell strong,
+:is([data-theme="dark"], [data-theme="amoled"]) .patient-detail-head h3,
+:is([data-theme="dark"], [data-theme="amoled"]) .patient-detail-empty b,
+:is([data-theme="dark"], [data-theme="amoled"]) .amount-cell {
+  color: var(--ink);
+}
+
+/* white / off-white card & control surfaces */
+:is([data-theme="dark"], [data-theme="amoled"]) .doctor-card,
+:is([data-theme="dark"], [data-theme="amoled"]) .report-card,
+:is([data-theme="dark"], [data-theme="amoled"]) .secondary-action,
+:is([data-theme="dark"], [data-theme="amoled"]) .filter-strip,
+:is([data-theme="dark"], [data-theme="amoled"]) .settings-doctor-row,
+:is([data-theme="dark"], [data-theme="amoled"]) .settings-doctor-row .outline-button,
+:is([data-theme="dark"], [data-theme="amoled"]) .patient-search,
+:is([data-theme="dark"], [data-theme="amoled"]) .patient-search input,
+:is([data-theme="dark"], [data-theme="amoled"]) .patient-toolbar select {
+  background: var(--surface);
+  border-color: var(--line);
+}
+:is([data-theme="dark"], [data-theme="amoled"]) .field input,
+:is([data-theme="dark"], [data-theme="amoled"]) .form-grid select,
+:is([data-theme="dark"], [data-theme="amoled"]) .form-grid input,
+:is([data-theme="dark"], [data-theme="amoled"]) .earning-fields {
+  background: var(--input-bg);
+  border-color: var(--line);
+  color: var(--ink);
+}
+:is([data-theme="dark"], [data-theme="amoled"]) .schedule-table th,
+:is([data-theme="dark"], [data-theme="amoled"]) .appointment-table th,
+:is([data-theme="dark"], [data-theme="amoled"]) .income-table th,
+:is([data-theme="dark"], [data-theme="amoled"]) .patient-table th {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+:is([data-theme="dark"], [data-theme="amoled"]) .schedule-table th,
+:is([data-theme="dark"], [data-theme="amoled"]) .schedule-table td,
+:is([data-theme="dark"], [data-theme="amoled"]) .appointment-table th,
+:is([data-theme="dark"], [data-theme="amoled"]) .appointment-table td,
+:is([data-theme="dark"], [data-theme="amoled"]) .income-table th,
+:is([data-theme="dark"], [data-theme="amoled"]) .income-table td,
+:is([data-theme="dark"], [data-theme="amoled"]) .patient-table th,
+:is([data-theme="dark"], [data-theme="amoled"]) .patient-table td,
+:is([data-theme="dark"], [data-theme="amoled"]) .operation-note,
+:is([data-theme="dark"], [data-theme="amoled"]) .appointment,
+:is([data-theme="dark"], [data-theme="amoled"]) .doctor-footer,
+:is([data-theme="dark"], [data-theme="amoled"]) .patient-detail-head,
+:is([data-theme="dark"], [data-theme="amoled"]) .patient-info-grid {
+  border-color: var(--line);
+}
+:is([data-theme="dark"], [data-theme="amoled"]) .schedule-table tr:hover td,
+:is([data-theme="dark"], [data-theme="amoled"]) .appointment-table tr:hover td,
+:is([data-theme="dark"], [data-theme="amoled"]) .patient-row:hover td,
+:is([data-theme="dark"], [data-theme="amoled"]) .patient-row.selected td {
+  background: var(--hover-bg);
+}
+:is([data-theme="dark"], [data-theme="amoled"]) .department-card,
+:is([data-theme="dark"], [data-theme="amoled"]) .module {
+  background: linear-gradient(135deg, var(--surface), var(--surface-2));
+  border-color: var(--line);
+}
+:is([data-theme="dark"], [data-theme="amoled"]) .department-hero {
+  background: linear-gradient(105deg, var(--mint), var(--surface-2));
+  border-color: var(--line);
+}
+:is([data-theme="dark"], [data-theme="amoled"]) .hero-facts {
+  border-color: var(--line);
+}
+:is([data-theme="dark"], [data-theme="amoled"]) .visit-calculation,
+:is([data-theme="dark"], [data-theme="amoled"]) .notice {
+  background: linear-gradient(90deg, var(--mint), var(--surface-2));
+}
+:is([data-theme="dark"], [data-theme="amoled"]) .report-line {
+  background: var(--line);
+}
+:is([data-theme="dark"], [data-theme="amoled"]) .status-pill {
+  background: var(--pill-bg);
+  border-color: var(--pill-line);
+  color: var(--pill-ink);
+}
+
   </style>
 </head>
 <body>
@@ -393,6 +539,17 @@ const FAILURES_KEY = "solimedical-demo-login-guard-v1";
 const MAX_FAILURES = 5;
 const LOCK_MS = 60 * 1000;
 const app = document.getElementById("app");
+
+const SOLI_THEME_KEY = "solimedical-theme-v1";
+const SOLI_THEMES = {
+  light: { icon: "☀️", label: "فاتح" },
+  dark: { icon: "🌙", label: "غامق" },
+  amoled: { icon: "⚫", label: "أموليد" },
+};
+function soliGetTheme() { try { const t = localStorage.getItem(SOLI_THEME_KEY); return SOLI_THEMES[t] ? t : "light"; } catch (_) { return "light"; } }
+function soliSetTheme(theme) { try { localStorage.setItem(SOLI_THEME_KEY, theme); } catch (_) {} if (theme === "light") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", theme); }
+function soliNextTheme(theme) { const order = ["light", "dark", "amoled"]; return order[(order.indexOf(theme) + 1) % order.length]; }
+function soliThemeToggleButton() { const theme = soliGetTheme(); const meta = SOLI_THEMES[theme]; return `<button class="theme-toggle" id="soli-theme-toggle" type="button" title="تبديل وضع العرض"><span>${meta.icon}</span><span>${meta.label}</span></button>`; }
 
 const icons = { dashboard: "⌂", patients: "♙", calendar: "▦", doctors: "⚕", reports: "▤", settings: "⚙" };
 
@@ -515,6 +672,7 @@ let soliEditDoctorId = null;
 let soliPatientQuery = "";
 let soliPatientDepartment = "";
 let soliSelectedPatientId = null;
+let soliSettingsExpandedDept = null;
 
 function soliToday() {
   const date = new Date();
@@ -531,6 +689,32 @@ function soliDefaultDoctors() {
     const [paymentMode, consultationFee, followupFee, percentage, dailyWage] = fees[departmentId] || ["fixed", 70, 40, 0, 0];
     return { id: `${departmentId}-${index + 1}`, name: doctor.name, phone: `0100${String(index + 1).padStart(2, "0")}00000`, departmentId, specialty: doctor.specialty, room: doctor.room, days: doctor.days, hours: doctor.hours, status: doctor.status, paymentMode, consultationFee, followupFee, percentage, dailyWage };
   }));
+}
+function soliDefaultSpecialties() {
+  const set = new Set(soliDefaultDoctors().map((doctor) => doctor.specialty));
+  return [...set].map((name) => ({ id: soliId("specialty"), name }));
+}
+function soliDefaultEmployees() {
+  return [
+    { id: "emp-1", name: "منى السيد", role: "موظفة استقبال", departmentId: "outpatient", phone: "01000000001" },
+    { id: "emp-2", name: "أحمد فتحي", role: "محاسب", departmentId: "", phone: "01000000002" },
+    { id: "emp-3", name: "سلمى ناجي", role: "ممرضة", departmentId: "operations", phone: "01000000003" },
+  ];
+}
+function soliDefaultLabTests() {
+  return [
+    { id: "lab-1", name: "صورة دم كاملة", price: 150 },
+    { id: "lab-2", name: "وظائف كبد", price: 180 },
+    { id: "lab-3", name: "وظائف كلى", price: 160 },
+    { id: "lab-4", name: "سكر صائم", price: 60 },
+  ];
+}
+function soliDefaultRadiologyTests() {
+  return [
+    { id: "rad-1", name: "أشعة صدر", price: 200 },
+    { id: "rad-2", name: "سونار عام", price: 250 },
+    { id: "rad-3", name: "أشعة مقطعية", price: 900 },
+  ];
 }
 function soliDefaultPatients() {
   return [
@@ -550,9 +734,18 @@ function soliLoadData() {
   try {
     const raw = localStorage.getItem(SOLI_DATA_KEY);
     const data = raw ? JSON.parse(raw) : null;
-    if (data && Array.isArray(data.doctors) && Array.isArray(data.visits) && Array.isArray(data.income)) { if (!Array.isArray(data.patients)) data.patients = soliDefaultPatients(); return data; }
+    if (data && Array.isArray(data.doctors) && Array.isArray(data.visits) && Array.isArray(data.income)) {
+      let migrated = false;
+      if (!Array.isArray(data.patients)) { data.patients = soliDefaultPatients(); migrated = true; }
+      if (!Array.isArray(data.specialties)) { data.specialties = soliDefaultSpecialties(); migrated = true; }
+      if (!Array.isArray(data.employees)) { data.employees = soliDefaultEmployees(); migrated = true; }
+      if (!Array.isArray(data.labTests)) { data.labTests = soliDefaultLabTests(); migrated = true; }
+      if (!Array.isArray(data.radiologyTests)) { data.radiologyTests = soliDefaultRadiologyTests(); migrated = true; }
+      if (migrated) { try { localStorage.setItem(SOLI_DATA_KEY, JSON.stringify(data)); } catch (_) {} }
+      return data;
+    }
   } catch (_) { /* use seed */ }
-  const data = { doctors: soliDefaultDoctors(), visits: [], income: [], patients: soliDefaultPatients() };
+  const data = { doctors: soliDefaultDoctors(), visits: [], income: [], patients: soliDefaultPatients(), specialties: soliDefaultSpecialties(), employees: soliDefaultEmployees(), labTests: soliDefaultLabTests(), radiologyTests: soliDefaultRadiologyTests() };
   try { localStorage.setItem(SOLI_DATA_KEY, JSON.stringify(data)); } catch (_) { /* private mode */ }
   return data;
 }
@@ -588,9 +781,9 @@ function soliCalculateEarning(doctor, visitType, visitAmount) {
 function soliDepartmentOptions(selected = "") { return Object.entries(DEPARTMENTS).map(([id, d]) => `<option value="${id}" ${selected === id ? "selected" : ""}>${d.name}</option>`).join(""); }
 function soliDoctorOptions(selected = "") { return soliAllDoctors().map((d) => `<option value="${d.id}" ${selected === d.id ? "selected" : ""}>${escapeHtml(d.name)} — ${escapeHtml(DEPARTMENTS[d.departmentId]?.name || "")}</option>`).join(""); }
 function soliStatus(status) { return `<span class="status-badge ${status === "متاح" || status === "مؤكد" || status === "مضاف محليًا" ? "success" : status === "في إجازة" ? "muted" : "warning"}">${escapeHtml(status)}</span>`; }
-function soliPageHeader(kicker, title, subtitle) { return `<header class="topbar"><div><div class="eyebrow">${escapeHtml(kicker)}</div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(subtitle)}</p></div><div class="topbar-actions"><div class="status-pill"><span class="status-dot"></span> تشغيل محلي · بيانات تجريبية</div></div></header>`; }
+function soliPageHeader(kicker, title, subtitle) { return `<header class="topbar"><div><div class="eyebrow">${escapeHtml(kicker)}</div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(subtitle)}</p></div><div class="topbar-actions">${soliThemeToggleButton()}<div class="status-pill"><span class="status-dot"></span> تشغيل محلي · بيانات تجريبية</div></div></header>`; }
 function soliStat(label, value, note, icon) { return `<article class="stat-card"><div class="stat-top"><span>${label}</span><span class="stat-icon">${icon}</span></div><strong>${value}</strong><small>${note}</small></article>`; }
-function soliSidebar(active) { return `<aside class="sidebar">${brandMarkup(true)}<div class="side-label">إدارة المجمع الطبي</div><nav class="nav-list"><button class="nav-item${active === "dashboard" ? " active" : ""}" data-soli-nav="dashboard"><span class="nav-icon">⌂</span><span>الرئيسية</span></button><button class="nav-item${active === "visits" ? " active" : ""}" data-soli-nav="visits"><span class="nav-icon">＋</span><span>تسجيل زيارة</span></button><button class="nav-item${active === "patients" ? " active" : ""}" data-soli-nav="patients"><span class="nav-icon">♙</span><span>ملفات المرضى</span></button><button class="nav-item${active === "income" ? " active" : ""}" data-soli-nav="income"><span class="nav-icon">▣</span><span>الوارد</span></button><button class="nav-item${active === "doctors" ? " active" : ""}" data-soli-nav="doctors"><span class="nav-icon">⚕</span><span>الأطباء والجداول</span></button><button class="nav-item${active === "reports" ? " active" : ""}" data-soli-nav="reports"><span class="nav-icon">▤</span><span>التقارير</span></button><button class="nav-item${active === "settings" ? " active" : ""}" data-soli-nav="settings"><span class="nav-icon">⚙</span><span>إعدادات الأطباء</span></button></nav><div class="side-label department-label">الأقسام الطبية</div><nav class="department-nav">${Object.entries(soliCatalog()).map(([id, d]) => `<button class="department-nav-item${active === id ? " active" : ""}" data-soli-dept="${id}"><span class="nav-icon">${d.icon}</span><span>${d.short}</span><em>${d.doctors.length}</em></button>`).join("")}</nav><div class="sidebar-bottom"><div class="user-mini"><div class="avatar">أ</div><div><strong>مدير النظام</strong><span>صلاحية كاملة · محلي</span></div></div><button class="logout-btn" id="soli-logout">تسجيل الخروج</button></div></aside>`; }
+function soliSidebar(active) { return `<aside class="sidebar">${brandMarkup(true)}<div class="side-label">إدارة المجمع الطبي</div><nav class="nav-list"><button class="nav-item${active === "dashboard" ? " active" : ""}" data-soli-nav="dashboard"><span class="nav-icon">⌂</span><span>الرئيسية</span></button><button class="nav-item${active === "visits" ? " active" : ""}" data-soli-nav="visits"><span class="nav-icon">＋</span><span>تسجيل زيارة</span></button><button class="nav-item${active === "patients" ? " active" : ""}" data-soli-nav="patients"><span class="nav-icon">♙</span><span>ملفات المرضى</span></button><button class="nav-item${active === "income" ? " active" : ""}" data-soli-nav="income"><span class="nav-icon">▣</span><span>الوارد</span></button><button class="nav-item${active === "reports" ? " active" : ""}" data-soli-nav="reports"><span class="nav-icon">▤</span><span>التقارير</span></button><button class="nav-item${active === "settings" ? " active" : ""}" data-soli-nav="settings"><span class="nav-icon">⚙</span><span>إعدادات الأطباء</span></button><button class="nav-item${active === "system" ? " active" : ""}" data-soli-nav="system"><span class="nav-icon">🛠</span><span>إعدادات النظام</span></button></nav><div class="sidebar-bottom"><div class="user-mini"><div class="avatar">أ</div><div><strong>مدير النظام</strong><span>صلاحية كاملة · محلي</span></div></div><button class="logout-btn" id="soli-logout">تسجيل الخروج</button></div></aside>`; }
 
 function soliDepartmentCard(id, d) { const todayVisits = soliData().visits.filter((v) => v.departmentId === id && v.date === soliToday()).length; return `<button class="department-card ${d.color}" data-soli-dept="${id}"><div class="department-icon">${d.icon}</div><div class="department-main"><strong>${d.name}</strong><span>${d.description}</span></div><div class="department-meta"><b>${d.doctors.length}</b><small>أطباء</small><b>${d.rooms}</b><small>غرف</small><b>${d.appointments.length + todayVisits}</b><small>مواعيد</small></div><span class="card-arrow">←</span></button>`; }
 function soliHome() { const catalog = soliCatalog(); const data = soliData(); const doctors = data.doctors; const todayVisits = data.visits.filter((v) => v.date === soliToday()); const totalRooms = Object.values(catalog).reduce((n, d) => n + d.rooms, 0); const totalAppointments = Object.values(catalog).reduce((n, d) => n + d.appointments.length, 0); return `${soliPageHeader("لوحة المجمع", "صباح الخير، مدير النظام", "إدارة تشغيلية ومحاسبية موحدة لجميع أقسام المجمع الطبي.")}<section class="stats">${soliStat("الأقسام الطبية", Object.keys(catalog).length, "وحدات متخصصة", "✚")}${soliStat("العيادات والغرف", totalRooms, "في مجمع واحد", "⌂")}${soliStat("الأطباء", doctors.length, "بملفات مالية محددة", "⚕")}${soliStat("مواعيد اليوم", totalAppointments + todayVisits.length, "من جميع الأقسام", "▦")}</section><div class="quick-actions"><button class="primary-action" data-soli-nav="visits"><span>＋</span><div><b>تسجيل زيارة جديدة</b><small>يُرحّل أجر الطبيب تلقائيًا إلى الوارد</small></div></button><button class="secondary-action" data-soli-nav="settings"><span>⚙</span><div><b>إعدادات الأطباء</b><small>حدد الكشف والمتابعة والنسبة والأجر اليومي</small></div></button><button class="secondary-action" data-soli-nav="income"><span>▣</span><div><b>مراجعة الوارد</b><small>${data.income.length} عملية مسجلة محليًا</small></div></button></div><section class="section-card department-overview"><div class="section-heading"><div><h3>أقسام المجمع الطبي</h3><p>افتح القسم لمشاهدة الأطباء وجدول العمل والمواعيد والمحاسبة المرتبطة به.</p></div><span class="section-count">${Object.keys(catalog).length} أقسام</span></div><div class="department-grid">${Object.entries(catalog).map(([id, d]) => soliDepartmentCard(id, d)).join("")}</div></section><div class="content-grid home-lower"><section class="section-card"><div class="section-heading"><div><h3>آخر العمليات في الوارد</h3><p>تُنشأ تلقائيًا بعد تسجيل الزيارة.</p></div><button class="text-button" data-soli-nav="income">عرض الكل ←</button></div>${soliIncomeTable(data.income.slice(0, 5))}</section><section class="section-card"><div class="section-heading"><div><h3>توزيع الأطباء</h3><p>حسب القسم والتخصص.</p></div></div><div class="distribution-list">${Object.entries(catalog).map(([id, d]) => `<button class="distribution-row" data-soli-dept="${id}"><span class="distribution-icon ${d.color}">${d.icon}</span><span>${d.name}</span><b>${d.doctors.length}</b><div class="distribution-bar"><i style="width:${Math.max(8, d.doctors.length * 6)}%"></i></div></button>`).join("")}</div></section></div><div class="notice"><span>✓</span><div><b>منطق محاسبي محلي جاهز للتجربة</b><br>عند إضافة زيارة، يقرأ النظام إعداد الطبيب ويحسب المبلغ وفق كشف ثابت أو نسبة مئوية أو أجر يومي، ثم ينشئ حركة وارد باسم الطبيب.</div></div>`; }
@@ -605,10 +798,35 @@ function soliVisitTable(items) { if (!items.length) return `<div class="empty-st
 function soliPatientDetail(patient) { if (!patient) return `<div class="patient-detail-empty"><span>♙</span><b>اختر ملفًا من القائمة</b><small>ستظهر هنا البيانات الأساسية وآخر زيارة والطبيب المسؤول.</small></div>`; return `<div class="patient-detail-head"><div class="patient-large-avatar">${escapeHtml(patient.name.slice(0, 1))}</div><div><span class="eyebrow">ملف المريض · ${escapeHtml(patient.recordNo)}</span><h3>${escapeHtml(patient.name)}</h3><p>${escapeHtml(soliPatientDepartmentName(patient))} · ${escapeHtml(patient.lastAction)}</p></div></div><div class="patient-detail-status">${soliPatientStatus(patient.status)}</div><div class="patient-info-grid"><div><small>رقم الهاتف</small><b>${escapeHtml(patient.phone)}</b></div><div><small>النوع والعمر</small><b>${escapeHtml(patient.gender)} · ${escapeHtml(patient.age)} سنة</b></div><div><small>فصيلة الدم</small><b>${escapeHtml(patient.blood)}</b></div><div><small>الطبيب المسؤول</small><b>${escapeHtml(patient.doctorName)}</b></div><div><small>آخر زيارة</small><b>${escapeHtml(patient.lastVisit)}</b></div><div><small>التشخيص</small><b>${escapeHtml(patient.diagnosis)}</b></div></div><div class="patient-note"><span>ملاحظات الملف</span><b>${escapeHtml(patient.notes)}</b></div><div class="patient-detail-actions"><button class="primary-mini" type="button" data-soli-nav="visits">＋ تسجيل زيارة</button><button class="outline-button" type="button" data-soli-dept="${escapeHtml(patient.departmentId)}">فتح القسم</button></div>`; }
 function soliPatientRows(patients) { if (!patients.length) return `<tr><td colspan="7"><div class="empty-state">لا توجد ملفات مطابقة للبحث الحالي.</div></td></tr>`; return patients.map((patient) => `<tr class="patient-row ${soliSelectedPatientId === patient.id ? "selected" : ""}" data-soli-patient-id="${patient.id}"><td><div class="patient-cell"><span class="patient-mini-avatar">${escapeHtml(patient.name.slice(0, 1))}</span><strong>${escapeHtml(patient.name)}</strong></div></td><td>${escapeHtml(patient.recordNo)}</td><td>${escapeHtml(soliPatientDepartmentName(patient))}</td><td>${escapeHtml(patient.doctorName)}</td><td>${escapeHtml(patient.lastVisit)}</td><td>${escapeHtml(patient.diagnosis)}</td><td>${soliPatientStatus(patient.status)}</td></tr>`).join(""); }
 function soliPatientsPage() { const all = soliAllPatients(); const query = soliPatientQuery.trim().toLowerCase(); const filtered = all.filter((patient) => (!soliPatientDepartment || patient.departmentId === soliPatientDepartment) && (!query || [patient.name, patient.recordNo, patient.phone, patient.doctorName, patient.diagnosis].join(" ").toLowerCase().includes(query))); const selected = filtered.find((patient) => patient.id === soliSelectedPatientId) || filtered[0] || null; if (selected && selected.id !== soliSelectedPatientId) soliSelectedPatientId = selected.id; const deptCount = new Set(all.map((patient) => patient.departmentId)).size; return `${soliPageHeader("السجلات الطبية", "ملفات المرضى", "ملفات منظمة لكل قسم مع الطبيب المسؤول وآخر زيارة وتشخيص مختصر.")}<section class="stats">${soliStat("إجمالي الملفات", all.length, "ملفات تجريبية محلية", "♙")}${soliStat("نتائج البحث", filtered.length, "حسب الفلاتر الحالية", "⌕")}${soliStat("الأقسام المغطاة", deptCount, "في المجمع الطبي", "✚")}${soliStat("زيارات اليوم", soliData().visits.filter((v) => v.date === soliToday()).length, "مسجلة محليًا", "▦")}</section><section class="patient-toolbar"><div class="patient-search"><span>⌕</span><input id="soli-patient-search" type="search" placeholder="ابحث بالاسم أو رقم الملف أو الهاتف..." value="${escapeHtml(soliPatientQuery)}"></div><select id="soli-patient-department"><option value="">كل الأقسام</option>${soliDepartmentOptions(soliPatientDepartment)}</select><button class="primary-mini" type="button" data-soli-nav="visits">＋ تسجيل زيارة</button></section><section class="patient-workspace"><div class="section-card patient-list-card"><div class="section-heading"><div><h3>قائمة ملفات المرضى</h3><p>اختر أي ملف لمشاهدة تفاصيله.</p></div><span class="section-count">${filtered.length} ملف</span></div><div class="table-scroll"><table class="patient-table"><thead><tr><th>المريض</th><th>رقم الملف</th><th>القسم</th><th>الطبيب</th><th>آخر زيارة</th><th>التشخيص</th><th>الحالة</th></tr></thead><tbody>${soliPatientRows(filtered)}</tbody></table></div></div><aside class="section-card patient-detail-card">${soliPatientDetail(selected)}</aside></section>`; }
-function soliDoctorsPage() { const doctors = soliAllDoctors(); return `${soliPageHeader("الإدارة الطبية", "الأطباء والجداول", "دليل موحد للأطباء مع طريقة احتساب الكشف والمتابعة والأجر اليومي.")}<section class="filter-strip"><div><span>إجمالي الأطباء</span><b>${doctors.length}</b></div><div><span>أجر ثابت</span><b>${doctors.filter((d) => d.paymentMode === "fixed").length}</b></div><div><span>نسبة مئوية</span><b>${doctors.filter((d) => d.paymentMode === "percentage").length}</b></div><div><span>أجر يومي</span><b>${doctors.filter((d) => d.paymentMode === "daily").length}</b></div><button class="outline-button" data-soli-nav="settings">＋ إضافة طبيب</button></section><section class="section-card"><div class="section-heading"><div><h3>دليل الأطباء</h3><p>اضغط تعديل الطبيب للانتقال إلى بطاقة الإعدادات الخاصة به.</p></div></div>${soliDoctorCards(doctors)}</section>`; }
 
 function soliDoctorForm(doctor = {}) { const isEdit = Boolean(doctor.id); return `<section class="section-card doctor-form-card"><div class="section-heading"><div><h3>${isEdit ? "تعديل بطاقة الطبيب" : "إضافة طبيب جديد"}</h3><p>حدد بيانات الطبيب ونظام الأجر الذي سيُستخدم عند تسجيل الزيارة.</p></div><span class="section-count">ملف مالي</span></div><form id="soli-doctor-form" class="form-grid" data-doctor-id="${escapeHtml(doctor.id || "")}"><div class="field"><label>اسم الطبيب</label><input name="name" required value="${escapeHtml(doctor.name || "")}" placeholder="مثال: د. أحمد سامح"></div><div class="field"><label>رقم الهاتف</label><input name="phone" value="${escapeHtml(doctor.phone || "")}" placeholder="01xxxxxxxxx"></div><div class="field"><label>القسم</label><select name="departmentId" required>${soliDepartmentOptions(doctor.departmentId || "")}</select></div><div class="field"><label>التخصص</label><input name="specialty" required value="${escapeHtml(doctor.specialty || "")}" placeholder="مثال: استشاري باطنة"></div><div class="field"><label>العيادة / الغرفة</label><input name="room" value="${escapeHtml(doctor.room || "")}" placeholder="عيادة 101"></div><div class="field"><label>الحالة</label><select name="status"><option ${doctor.status === "متاح" || !doctor.status ? "selected" : ""}>متاح</option><option ${doctor.status === "في إجازة" ? "selected" : ""}>في إجازة</option><option ${doctor.status === "مناوب" ? "selected" : ""}>مناوب</option></select></div><div class="field field-wide"><label>أيام العمل</label><input name="days" value="${escapeHtml(doctor.days || "السبت · الإثنين · الأربعاء")}" placeholder="السبت · الإثنين · الأربعاء"></div><div class="field"><label>ساعات العمل</label><input name="hours" value="${escapeHtml(doctor.hours || "09:00 – 15:00")}" placeholder="09:00 – 15:00"></div><div class="field"><label>نظام الأجر</label><select name="paymentMode" id="soli-payment-mode"><option value="fixed" ${doctor.paymentMode !== "percentage" && doctor.paymentMode !== "daily" ? "selected" : ""}>مبلغ ثابت لكل كشف / متابعة</option><option value="percentage" ${doctor.paymentMode === "percentage" ? "selected" : ""}>نسبة مئوية من قيمة الزيارة</option><option value="daily" ${doctor.paymentMode === "daily" ? "selected" : ""}>أجر يومي ثابت</option></select></div><div class="earning-fields field-wide" data-mode-fields="fixed"><div class="field"><label>مبلغ الكشف (${SOLI_CURRENCY})</label><input type="number" min="0" step="0.01" name="consultationFee" value="${Number(doctor.consultationFee || 0)}"></div><div class="field"><label>مبلغ المتابعة (${SOLI_CURRENCY})</label><input type="number" min="0" step="0.01" name="followupFee" value="${Number(doctor.followupFee || 0)}"></div></div><div class="earning-fields field-wide" data-mode-fields="percentage"><div class="field"><label>نسبة الطبيب (%)</label><input type="number" min="0" max="100" step="0.01" name="percentage" value="${Number(doctor.percentage || 0)}"></div><div class="earning-help">عند تسجيل الزيارة، يحسب النظام النسبة تلقائيًا من قيمة الكشف أو المتابعة.</div></div><div class="earning-fields field-wide" data-mode-fields="daily"><div class="field"><label>الأجر اليومي (${SOLI_CURRENCY})</label><input type="number" min="0" step="0.01" name="dailyWage" value="${Number(doctor.dailyWage || 0)}"></div><div class="earning-help">تُسجل قيمة الأجر اليومي في حركة الوارد عند كل زيارة مرتبطة بالطبيب.</div></div><div class="form-actions field-wide"><button class="login-btn form-submit" type="submit">${isEdit ? "حفظ تعديلات الطبيب" : "إضافة الطبيب"}</button>${isEdit ? `<button class="outline-button" type="button" data-soli-cancel-edit>إلغاء التعديل</button>` : ""}</div></form></section>`; }
-function soliSettingsPage() { const data = soliData(); const editDoctor = data.doctors.find((d) => d.id === soliEditDoctorId) || null; return `${soliPageHeader("الإعدادات", "إعدادات الأطباء والأجور", "أنشئ بطاقة لكل طبيب وحدد الكشف والمتابعة والنسبة أو الأجر اليومي.")}${soliDoctorForm(editDoctor || {})}<section class="section-card"><div class="section-heading"><div><h3>بطاقات الأطباء</h3><p>هذه الإعدادات هي المصدر الذي يُستخدم عند تسجيل الزيارات.</p></div><span class="section-count">${data.doctors.length} طبيبًا</span></div><div class="settings-doctor-list">${data.doctors.map((doctor) => `<article class="settings-doctor-row"><div class="doctor-avatar">${escapeHtml(doctor.name.replace("د. ", "").slice(0, 1))}</div><div class="settings-doctor-main"><strong>${escapeHtml(doctor.name)}</strong><span>${escapeHtml(doctor.specialty)} · ${escapeHtml(DEPARTMENTS[doctor.departmentId]?.name || "")}</span><small>${escapeHtml(doctor.phone || "غير محدد")} · ${escapeHtml(doctor.days || "")} · ${escapeHtml(doctor.hours || "")}</small></div><div class="settings-doctor-fee"><b>${soliFeeDescription(doctor)}</b><span>${escapeHtml(doctor.room || "بدون غرفة")}</span></div><button class="outline-button" data-soli-edit-doctor="${doctor.id}">تعديل</button></article>`).join("")}</div></section>`; }
+function soliSettingsDeptCard(id, d, data) {
+  const deptDoctors = data.doctors.filter((doc) => doc.departmentId === id);
+  const expanded = soliSettingsExpandedDept === id;
+  return `<div class="settings-dept-block${expanded ? " open" : ""}"><button class="department-card ${d.color}" type="button" data-soli-settings-dept="${id}"><div class="department-icon">${d.icon}</div><div class="department-main"><strong>${d.name}</strong><span>${d.description}</span></div><div class="department-meta"><b>${deptDoctors.length}</b><small>أطباء</small><b>${d.rooms}</b><small>غرف</small></div><span class="card-arrow">${expanded ? "▲" : "▼"}</span></button>${expanded ? `<div class="settings-doctor-list settings-dept-doctor-list">${deptDoctors.length ? deptDoctors.map((doctor) => `<article class="settings-doctor-row"><div class="doctor-avatar">${escapeHtml(doctor.name.replace("د. ", "").slice(0, 1))}</div><div class="settings-doctor-main"><strong>${escapeHtml(doctor.name)}</strong><span>${escapeHtml(doctor.specialty)}</span><small>${escapeHtml(doctor.phone || "غير محدد")} · ${escapeHtml(doctor.days || "")} · ${escapeHtml(doctor.hours || "")}</small></div><div class="settings-doctor-fee"><b>${soliFeeDescription(doctor)}</b><span>${escapeHtml(doctor.room || "بدون غرفة")}</span></div><button class="outline-button" data-soli-edit-doctor="${doctor.id}">تعديل</button></article>`).join("") : `<div class="empty-state">لا يوجد أطباء في هذا القسم بعد.</div>`}</div>` : ""}</div>`;
+}
+function soliSettingsPage() { const data = soliData(); const catalog = soliCatalog(); const editDoctor = data.doctors.find((d) => d.id === soliEditDoctorId) || null; return `${soliPageHeader("الإعدادات", "إعدادات الأطباء والأجور", "أنشئ بطاقة لكل طبيب وحدد الكشف والمتابعة والنسبة أو الأجر اليومي، واضغط على القسم لعرض أطبائه وتعديلهم.")}${soliDoctorForm(editDoctor || {})}<section class="section-card"><div class="section-heading"><div><h3>الأقسام والأطباء</h3><p>اضغط على أي قسم لعرض قائمة منسدلة بأطبائه، ثم اضغط تعديل للتحكم ببياناته وأجره.</p></div><span class="section-count">${data.doctors.length} طبيبًا</span></div><div class="settings-dept-grid">${Object.entries(catalog).map(([id, d]) => soliSettingsDeptCard(id, d, data)).join("")}</div></section>`; }
+
+function soliSystemPage() {
+  const data = soliData();
+  const catalog = soliCatalog();
+  const specialties = data.specialties || [];
+  const employees = data.employees || [];
+  const labTests = data.labTests || [];
+  const radiologyTests = data.radiologyTests || [];
+
+  const specialtyList = specialties.length ? `<div class="simple-list">${specialties.map((s) => `<div class="simple-row"><b>${escapeHtml(s.name)}</b><div class="simple-row-actions"><button class="danger-mini" type="button" data-soli-delete-specialty="${s.id}">حذف</button></div></div>`).join("")}</div>` : `<div class="empty-state">لا توجد تخصصات مضافة بعد.</div>`;
+
+  const employeeList = employees.length ? `<div class="simple-list">${employees.map((e) => `<div class="simple-row"><div><b>${escapeHtml(e.name)}</b><span> · ${escapeHtml(e.role)} · ${escapeHtml(catalog[e.departmentId]?.short || "عام")}</span></div><div class="simple-row-actions"><span class="section-count">${escapeHtml(e.phone || "بدون رقم")}</span><button class="danger-mini" type="button" data-soli-delete-employee="${e.id}">حذف</button></div></div>`).join("")}</div>` : `<div class="empty-state">لا يوجد موظفون مضافون بعد.</div>`;
+
+  const labList = labTests.length ? `<div class="simple-list">${labTests.map((t) => `<div class="simple-row"><b>${escapeHtml(t.name)}</b><div class="simple-row-actions"><span class="section-count">${soliMoney(t.price)}</span><button class="danger-mini" type="button" data-soli-delete-labtest="${t.id}">حذف</button></div></div>`).join("")}</div>` : `<div class="empty-state">لا توجد تحاليل مضافة بعد.</div>`;
+
+  const radiologyList = radiologyTests.length ? `<div class="simple-list">${radiologyTests.map((t) => `<div class="simple-row"><b>${escapeHtml(t.name)}</b><div class="simple-row-actions"><span class="section-count">${soliMoney(t.price)}</span><button class="danger-mini" type="button" data-soli-delete-radiology="${t.id}">حذف</button></div></div>`).join("")}</div>` : `<div class="empty-state">لا توجد فحوصات أشعة مضافة بعد.</div>`;
+
+
+
+  return `${soliPageHeader("الإعدادات", "إعدادات النظام", "إدارة التخصصات والموظفين والتحاليل والأشعة. نسب وأجور الأطباء تُدار من بطاقة تسجيل الطبيب في إعدادات الأطباء.")}<section class="section-card"><div class="section-heading"><div><h3>التخصصات الطبية</h3><p>تُستخدم كمرجع عند تسجيل بيانات الأطباء الجدد.</p></div><span class="section-count">${specialties.length} تخصص</span></div><form id="soli-specialty-form" class="form-grid"><div class="field field-wide"><label>اسم التخصص</label><input name="name" required placeholder="مثال: استشاري عظام"></div><div class="form-actions field-wide"><button class="login-btn form-submit" type="submit">＋ إضافة تخصص</button></div></form>${specialtyList}</section><section class="section-card"><div class="section-heading"><div><h3>الموظفون</h3><p>الفريق الإداري والتمريضي غير المرتبط بنظام أجر الأطباء.</p></div><span class="section-count">${employees.length} موظف</span></div><form id="soli-employee-form" class="form-grid"><div class="field"><label>اسم الموظف</label><input name="name" required placeholder="اسم الموظف"></div><div class="field"><label>الوظيفة</label><input name="role" required placeholder="مثال: موظف استقبال"></div><div class="field"><label>القسم</label><select name="departmentId"><option value="">عام / كل الأقسام</option>${soliDepartmentOptions("")}</select></div><div class="field"><label>رقم الهاتف</label><input name="phone" placeholder="01xxxxxxxxx"></div><div class="form-actions field-wide"><button class="login-btn form-submit" type="submit">＋ إضافة موظف</button></div></form>${employeeList}</section><section class="section-card"><div class="section-heading"><div><h3>التحاليل</h3><p>قائمة التحاليل المتاحة وأسعارها الافتراضية.</p></div><span class="section-count">${labTests.length} تحليل</span></div><form id="soli-labtest-form" class="form-grid"><div class="field"><label>اسم التحليل</label><input name="name" required placeholder="مثال: صورة دم كاملة"></div><div class="field"><label>السعر (${SOLI_CURRENCY})</label><input type="number" min="0" step="0.01" name="price" required value="0"></div><div class="form-actions field-wide"><button class="login-btn form-submit" type="submit">＋ إضافة تحليل</button></div></form>${labList}</section><section class="section-card"><div class="section-heading"><div><h3>الأشعة</h3><p>قائمة فحوصات الأشعة وأسعارها الافتراضية.</p></div><span class="section-count">${radiologyTests.length} فحص</span></div><form id="soli-radiology-form" class="form-grid"><div class="field"><label>اسم الفحص</label><input name="name" required placeholder="مثال: أشعة صدر"></div><div class="field"><label>السعر (${SOLI_CURRENCY})</label><input type="number" min="0" step="0.01" name="price" required value="0"></div><div class="form-actions field-wide"><button class="login-btn form-submit" type="submit">＋ إضافة فحص</button></div></form>${radiologyList}</section>`;
+}
 
 function soliVisitPage() { return `${soliPageHeader("الاستقبال", "تسجيل زيارة جديدة", "اختر الطبيب ونوع الزيارة، وسيتم حساب حصة الطبيب وإضافتها تلقائيًا إلى الوارد.")}<section class="section-card visit-form-card"><div class="section-heading"><div><h3>بيانات الزيارة</h3><p>القيمة الافتراضية تتغير حسب بطاقة الطبيب، ويمكن مراجعتها قبل الحفظ.</p></div><span class="section-count">ترحيل تلقائي</span></div><form id="soli-visit-form" class="form-grid"><div class="field"><label>القسم</label><select name="departmentId" id="soli-visit-department" required>${soliDepartmentOptions("")}</select></div><div class="field"><label>الطبيب</label><select name="doctorId" id="soli-visit-doctor" required><option value="">اختر الطبيب</option>${soliDoctorOptions("")}</select></div><div class="field"><label>اسم المريض</label><input name="patientName" required placeholder="اكتب اسم المريض"></div><div class="field"><label>نوع الزيارة</label><select name="visitType" id="soli-visit-type"><option value="كشف">كشف</option><option value="متابعة">متابعة</option></select></div><div class="field"><label>قيمة الزيارة (${SOLI_CURRENCY})</label><input type="number" name="visitAmount" id="soli-visit-amount" min="0" step="0.01" required value="0"></div><div class="field"><label>التاريخ</label><input type="date" name="date" required value="${soliToday()}"></div><div class="field"><label>الوقت</label><input type="time" name="time" value="09:00"></div><div class="field"><label>ملاحظات</label><input name="notes" placeholder="اختياري"></div><div class="visit-calculation field-wide" id="soli-visit-calculation"><span>الحصة المتوقعة للطبيب</span><b>اختر الطبيب لمعرفة المبلغ</b></div><div class="form-actions field-wide"><button class="login-btn form-submit" type="submit">حفظ الزيارة وترحيلها للوارد</button></div></form></section><section class="section-card"><div class="section-heading"><div><h3>كيف يعمل الترحيل؟</h3><p>يستخدم النظام إعداد الأجر الموجود في بطاقة الطبيب.</p></div></div><div class="rule-grid"><div><b>مبلغ ثابت</b><span>يستخدم مبلغ الكشف أو المتابعة المحدد.</span></div><div><b>نسبة مئوية</b><span>يحسب النسبة من قيمة الزيارة المدخلة.</span></div><div><b>أجر يومي</b><span>يسجل الأجر اليومي المحدد للطبيب.</span></div></div></section>`; }
 function soliIncomePage() { const data = soliData(); const total = data.income.reduce((sum, item) => sum + Number(item.amount || 0), 0); const today = data.income.filter((item) => item.date === soliToday()).reduce((sum, item) => sum + Number(item.amount || 0), 0); return `${soliPageHeader("الحسابات", "الوارد", "كل زيارة محفوظة هنا باسم الطبيب مع المبلغ المحسوب من بطاقة الطبيب.")}<section class="stats">${soliStat("إجمالي الحركات", data.income.length, "حركة محلية", "▣")}${soliStat("إجمالي الوارد", soliMoney(total), "كل الفترات", "↗")}${soliStat("وارد اليوم", soliMoney(today), "تاريخ اليوم", "▦")}${soliStat("الزيارات", data.visits.length, "مسجلة محليًا", "＋")}</section><section class="section-card"><div class="section-heading"><div><h3>حركات الوارد باسم الطبيب</h3><p>المبلغ هنا هو قيمة أجر الطبيب التي تم حسابها آليًا عند تسجيل الزيارة.</p></div><button class="primary-mini" data-soli-nav="visits">＋ تسجيل زيارة</button></div>${soliIncomeTable(data.income)}</section>`; }
@@ -616,11 +834,20 @@ function soliReportsPage() { const data = soliData(); const grouped = data.incom
 
 function soliRefreshVisitDoctors() { const form = document.getElementById("soli-visit-form"); if (!form) return; const departmentId = form.departmentId.value; const select = document.getElementById("soli-visit-doctor"); const current = select.value; select.innerHTML = `<option value="">اختر الطبيب</option>${soliAllDoctors().filter((d) => !departmentId || d.departmentId === departmentId).map((d) => `<option value="${d.id}">${escapeHtml(d.name)} — ${escapeHtml(d.specialty)}</option>`).join("")}`; if ([...select.options].some((option) => option.value === current)) select.value = current; soliUpdateVisitCalculation(); }
 function soliUpdateVisitCalculation() { const form = document.getElementById("soli-visit-form"); if (!form) return; const doctor = soliAllDoctors().find((d) => d.id === form.doctorId.value); const amountInput = document.getElementById("soli-visit-amount"); const type = form.visitType.value; if (doctor && doctor.paymentMode === "fixed") amountInput.value = type === "متابعة" ? Number(doctor.followupFee || 0) : Number(doctor.consultationFee || 0); const earning = soliCalculateEarning(doctor, type, amountInput.value); const box = document.getElementById("soli-visit-calculation"); box.innerHTML = doctor ? `<span>سيتم تسجيله في الوارد باسم ${escapeHtml(doctor.name)}</span><b>${soliMoney(earning)} · ${escapeHtml(soliFeeDescription(doctor))}</b>` : `<span>الحصة المتوقعة للطبيب</span><b>اختر الطبيب لمعرفة المبلغ</b>`; }
-function soliBindEvents() { document.getElementById("soli-logout")?.addEventListener("click", () => { clearSession(); renderLogin(); }); document.querySelectorAll("[data-soli-nav]").forEach((button) => button.addEventListener("click", () => { currentView = { type: button.dataset.soliNav, id: null }; if (button.dataset.soliPatientDept !== undefined) soliPatientDepartment = button.dataset.soliPatientDept; soliEditDoctorId = null; soliRenderPage(); })); document.querySelectorAll("[data-soli-dept]").forEach((button) => button.addEventListener("click", () => { currentView = { type: "department", id: button.dataset.soliDept }; soliEditDoctorId = null; soliRenderPage(); })); document.querySelectorAll("[data-soli-patient-id]").forEach((row) => row.addEventListener("click", () => { soliSelectedPatientId = row.dataset.soliPatientId; soliRenderPage(); })); const patientSearch = document.getElementById("soli-patient-search"); patientSearch?.addEventListener("input", () => { soliPatientQuery = patientSearch.value; soliRenderPage(); const input = document.getElementById("soli-patient-search"); input?.focus(); input?.setSelectionRange(input.value.length, input.value.length); }); const patientDepartment = document.getElementById("soli-patient-department"); patientDepartment?.addEventListener("change", () => { soliPatientDepartment = patientDepartment.value; soliSelectedPatientId = null; soliRenderPage(); }); document.querySelectorAll("[data-soli-edit-doctor]").forEach((button) => button.addEventListener("click", () => { soliEditDoctorId = button.dataset.soliEditDoctor; currentView = { type: "settings", id: null }; soliRenderPage(); window.scrollTo({ top: 0, behavior: "smooth" }); })); document.querySelector("[data-soli-cancel-edit]")?.addEventListener("click", () => { soliEditDoctorId = null; soliRenderPage(); });
+function soliBindEvents() { document.getElementById("soli-theme-toggle")?.addEventListener("click", () => { soliSetTheme(soliNextTheme(soliGetTheme())); soliRenderPage(); }); document.getElementById("soli-logout")?.addEventListener("click", () => { clearSession(); renderLogin(); }); document.querySelectorAll("[data-soli-nav]").forEach((button) => button.addEventListener("click", () => { currentView = { type: button.dataset.soliNav, id: null }; if (button.dataset.soliPatientDept !== undefined) soliPatientDepartment = button.dataset.soliPatientDept; soliEditDoctorId = null; soliRenderPage(); })); document.querySelectorAll("[data-soli-dept]").forEach((button) => button.addEventListener("click", () => { currentView = { type: "department", id: button.dataset.soliDept }; soliEditDoctorId = null; soliRenderPage(); })); document.querySelectorAll("[data-soli-patient-id]").forEach((row) => row.addEventListener("click", () => { soliSelectedPatientId = row.dataset.soliPatientId; soliRenderPage(); })); const patientSearch = document.getElementById("soli-patient-search"); patientSearch?.addEventListener("input", () => { soliPatientQuery = patientSearch.value; soliRenderPage(); const input = document.getElementById("soli-patient-search"); input?.focus(); input?.setSelectionRange(input.value.length, input.value.length); }); const patientDepartment = document.getElementById("soli-patient-department"); patientDepartment?.addEventListener("change", () => { soliPatientDepartment = patientDepartment.value; soliSelectedPatientId = null; soliRenderPage(); }); document.querySelectorAll("[data-soli-edit-doctor]").forEach((button) => button.addEventListener("click", () => { soliEditDoctorId = button.dataset.soliEditDoctor; const doc = soliAllDoctors().find((d) => d.id === soliEditDoctorId); if (doc) soliSettingsExpandedDept = doc.departmentId; currentView = { type: "settings", id: null }; soliRenderPage(); window.scrollTo({ top: 0, behavior: "smooth" }); })); document.querySelector("[data-soli-cancel-edit]")?.addEventListener("click", () => { soliEditDoctorId = null; soliRenderPage(); }); document.querySelectorAll("[data-soli-settings-dept]").forEach((button) => button.addEventListener("click", () => { const id = button.dataset.soliSettingsDept; soliSettingsExpandedDept = soliSettingsExpandedDept === id ? null : id; soliRenderPage(); }));
   const mode = document.getElementById("soli-payment-mode"); const modeFields = () => { document.querySelectorAll("[data-mode-fields]").forEach((field) => { field.style.display = field.dataset.modeFields === mode?.value ? "grid" : "none"; }); }; mode?.addEventListener("change", modeFields); modeFields();
   document.getElementById("soli-doctor-form")?.addEventListener("submit", (event) => { event.preventDefault(); const form = event.currentTarget; const values = Object.fromEntries(new FormData(form).entries()); const data = soliData(); const doctor = { id: values.doctorId || form.dataset.doctorId || soliId("doctor"), ...values, consultationFee: Number(values.consultationFee || 0), followupFee: Number(values.followupFee || 0), percentage: Number(values.percentage || 0), dailyWage: Number(values.dailyWage || 0) }; const index = data.doctors.findIndex((item) => item.id === doctor.id); if (index >= 0) data.doctors[index] = doctor; else data.doctors.push(doctor); soliSaveData(data); soliEditDoctorId = doctor.id; showToast("تم حفظ بطاقة الطبيب ونظام الأجر"); soliRenderPage(); });
-  const visitForm = document.getElementById("soli-visit-form"); if (visitForm) { document.getElementById("soli-visit-department").addEventListener("change", soliRefreshVisitDoctors); document.getElementById("soli-visit-doctor").addEventListener("change", soliUpdateVisitCalculation); document.getElementById("soli-visit-type").addEventListener("change", soliUpdateVisitCalculation); document.getElementById("soli-visit-amount").addEventListener("input", soliUpdateVisitCalculation); soliRefreshVisitDoctors(); visitForm.addEventListener("submit", (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(visitForm).entries()); const data = soliData(); const doctor = data.doctors.find((item) => item.id === values.doctorId); if (!doctor) return showToast("اختر الطبيب أولًا"); const visitAmount = Number(values.visitAmount || 0); const doctorEarning = soliCalculateEarning(doctor, values.visitType, visitAmount); const visit = { id: soliId("visit"), departmentId: doctor.departmentId, doctorId: doctor.id, doctorName: doctor.name, patientName: values.patientName, visitType: values.visitType, visitAmount, doctorEarning, amount: doctorEarning, date: values.date || soliToday(), time: values.time || "--:--", notes: values.notes || "" }; data.visits.unshift(visit); data.income.unshift({ id: soliId("income"), date: visit.date, doctorId: doctor.id, doctorName: doctor.name, patientName: visit.patientName, departmentId: doctor.departmentId, visitType: visit.visitType, visitAmount, amount: doctorEarning, source: "زيارة" }); soliSaveData(data); showToast(`تم حفظ الزيارة وترحيل ${soliMoney(doctorEarning)} باسم ${doctor.name}`); currentView = { type: "income", id: null }; soliRenderPage(); }); } }
-function soliRenderPage() { const session = getSession(); if (!session) return renderLogin(); const catalog = soliCatalog(); const active = currentView.type === "department" ? currentView.id : currentView.type; let content = currentView.type === "dashboard" ? soliHome() : currentView.type === "department" ? soliDeptPage(currentView.id) : currentView.type === "doctors" ? soliDoctorsPage() : currentView.type === "settings" ? soliSettingsPage() : currentView.type === "visits" ? soliVisitPage() : currentView.type === "patients" ? soliPatientsPage() : currentView.type === "income" ? soliIncomePage() : currentView.type === "reports" ? soliReportsPage() : soliHome(); app.innerHTML = `<main class="app-shell">${soliSidebar(active)}<section class="main">${content}</section></main>`; soliBindEvents(); }
+  const visitForm = document.getElementById("soli-visit-form"); if (visitForm) { document.getElementById("soli-visit-department").addEventListener("change", soliRefreshVisitDoctors); document.getElementById("soli-visit-doctor").addEventListener("change", soliUpdateVisitCalculation); document.getElementById("soli-visit-type").addEventListener("change", soliUpdateVisitCalculation); document.getElementById("soli-visit-amount").addEventListener("input", soliUpdateVisitCalculation); soliRefreshVisitDoctors(); visitForm.addEventListener("submit", (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(visitForm).entries()); const data = soliData(); const doctor = data.doctors.find((item) => item.id === values.doctorId); if (!doctor) return showToast("اختر الطبيب أولًا"); const visitAmount = Number(values.visitAmount || 0); const doctorEarning = soliCalculateEarning(doctor, values.visitType, visitAmount); const visit = { id: soliId("visit"), departmentId: doctor.departmentId, doctorId: doctor.id, doctorName: doctor.name, patientName: values.patientName, visitType: values.visitType, visitAmount, doctorEarning, amount: doctorEarning, date: values.date || soliToday(), time: values.time || "--:--", notes: values.notes || "" }; data.visits.unshift(visit); data.income.unshift({ id: soliId("income"), date: visit.date, doctorId: doctor.id, doctorName: doctor.name, patientName: visit.patientName, departmentId: doctor.departmentId, visitType: visit.visitType, visitAmount, amount: doctorEarning, source: "زيارة" }); soliSaveData(data); showToast(`تم حفظ الزيارة وترحيل ${soliMoney(doctorEarning)} باسم ${doctor.name}`); currentView = { type: "income", id: null }; soliRenderPage(); }); }
+  document.getElementById("soli-specialty-form")?.addEventListener("submit", (event) => { event.preventDefault(); const name = String(new FormData(event.currentTarget).get("name") || "").trim(); if (!name) return; const data = soliData(); if (data.specialties.some((s) => s.name === name)) return showToast("هذا التخصص مضاف بالفعل"); data.specialties.push({ id: soliId("specialty"), name }); soliSaveData(data); showToast("تم إضافة التخصص"); soliRenderPage(); });
+  document.querySelectorAll("[data-soli-delete-specialty]").forEach((btn) => btn.addEventListener("click", () => { const data = soliData(); data.specialties = data.specialties.filter((s) => s.id !== btn.dataset.soliDeleteSpecialty); soliSaveData(data); showToast("تم حذف التخصص"); soliRenderPage(); }));
+  document.getElementById("soli-employee-form")?.addEventListener("submit", (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget).entries()); if (!values.name || !values.role) return; const data = soliData(); data.employees.push({ id: soliId("employee"), name: values.name, role: values.role, departmentId: values.departmentId || "", phone: values.phone || "" }); soliSaveData(data); showToast("تم إضافة الموظف"); soliRenderPage(); });
+  document.querySelectorAll("[data-soli-delete-employee]").forEach((btn) => btn.addEventListener("click", () => { const data = soliData(); data.employees = data.employees.filter((e) => e.id !== btn.dataset.soliDeleteEmployee); soliSaveData(data); showToast("تم حذف الموظف"); soliRenderPage(); }));
+  document.getElementById("soli-labtest-form")?.addEventListener("submit", (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget).entries()); if (!values.name) return; const data = soliData(); data.labTests.push({ id: soliId("labtest"), name: values.name, price: Number(values.price || 0) }); soliSaveData(data); showToast("تم إضافة التحليل"); soliRenderPage(); });
+  document.querySelectorAll("[data-soli-delete-labtest]").forEach((btn) => btn.addEventListener("click", () => { const data = soliData(); data.labTests = data.labTests.filter((t) => t.id !== btn.dataset.soliDeleteLabtest); soliSaveData(data); showToast("تم حذف التحليل"); soliRenderPage(); }));
+  document.getElementById("soli-radiology-form")?.addEventListener("submit", (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget).entries()); if (!values.name) return; const data = soliData(); data.radiologyTests.push({ id: soliId("radiology"), name: values.name, price: Number(values.price || 0) }); soliSaveData(data); showToast("تم إضافة فحص الأشعة"); soliRenderPage(); });
+  document.querySelectorAll("[data-soli-delete-radiology]").forEach((btn) => btn.addEventListener("click", () => { const data = soliData(); data.radiologyTests = data.radiologyTests.filter((t) => t.id !== btn.dataset.soliDeleteRadiology); soliSaveData(data); showToast("تم حذف فحص الأشعة"); soliRenderPage(); }));
+}
+function soliRenderPage() { const session = getSession(); if (!session) return renderLogin(); const catalog = soliCatalog(); const active = currentView.type === "department" ? currentView.id : currentView.type === "doctors" ? "settings" : currentView.type; let content = currentView.type === "dashboard" ? soliHome() : currentView.type === "department" ? soliDeptPage(currentView.id) : currentView.type === "settings" ? soliSettingsPage() : currentView.type === "doctors" ? soliSettingsPage() : currentView.type === "system" ? soliSystemPage() : currentView.type === "visits" ? soliVisitPage() : currentView.type === "patients" ? soliPatientsPage() : currentView.type === "income" ? soliIncomePage() : currentView.type === "reports" ? soliReportsPage() : soliHome(); app.innerHTML = `<main class="app-shell">${soliSidebar(active)}<section class="main">${content}</section></main>`; soliBindEvents(); }
 function renderDashboard() { currentView = { type: "dashboard", id: null }; soliEditDoctorId = null; soliRenderPage(); }
 window.addEventListener("DOMContentLoaded", () => { if (getSession()) soliRenderPage(); else renderLogin(); });
 
